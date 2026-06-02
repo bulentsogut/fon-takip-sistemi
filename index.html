@@ -4667,21 +4667,26 @@ async function fetchAll() {
     if (i + BATCH < tickerEntries.length) await sleep(300 + Math.random() * 200);
   }
 
-  // TEFAS'tan fonları paralel çek
+  // Fonlari FVT uzerinden cek (FVT bulamazsa TEFAS'a git - fetchQuote icinde halloluyor)
   if (fonEntries.length > 0) {
-    setStatus('loading', 'TEFAS fon verileri çekiliyor... (' + fonEntries.length + ' fon)');
-    await Promise.all(fonEntries.map(async function(code) {
-      try {
-        var chg = await fetchTefasFon(code);
-        results[code] = (chg !== null) ? chg : 0;
-        if (chg === null) failed++;
-      } catch(e) {
-        results[code] = 0;
-        failed++;
-      }
-      done++;
-      setStatus('loading', 'Çekiliyor: ' + done + ' / ' + total + (failed > 0 ? '  (' + failed + ' bulunamadı)' : ''));
-    }));
+    setStatus('loading', 'Fon verileri cekiliyor... (' + fonEntries.length + ' fon)');
+    var FONBATCH = 5;
+    for (var fi = 0; fi < fonEntries.length; fi += FONBATCH) {
+      var fonBatch = fonEntries.slice(fi, fi + FONBATCH);
+      await Promise.all(fonBatch.map(async function(code) {
+        try {
+          var chg = await fetchQuote(code, 'fund');
+          results[code] = (chg !== null) ? chg : 0;
+          if (chg === null) failed++;
+        } catch(e) {
+          results[code] = 0;
+          failed++;
+        }
+        done++;
+        setStatus('loading', 'Cekiliyor: ' + done + ' / ' + total + (failed > 0 ? '  (' + failed + ' bulunamadi)' : ''));
+      }));
+      if (fi + FONBATCH < fonEntries.length) await sleep(200);
+    }
   }
 
   // Otomatik çekilen veriler + manuel override'lar merge edilir
