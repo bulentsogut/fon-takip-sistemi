@@ -2433,22 +2433,39 @@ const saveR=r=>{
 
 // ── Kaydet / Yedekle ──────────────────────────────────
 function saveData(){
-  // Ekrandaki tüm input değerlerini önce localStorage'a yaz
-  var s = loadR();
+  // Mevcut kaydedilmiş veriyi base al
+  var s = {};
+  try { s = JSON.parse(_lsGet(SK)) || {}; } catch(e) {}
+  if(_fbReady && _fbData && _fbData.rates) Object.assign(s, _fbData.rates);
+
+  // Ekrandaki tüm .rinp input değerlerini üzerine yaz
   document.querySelectorAll('.rinp').forEach(function(inp){
     var d = inp.dataset.d, f = inp.dataset.f;
     var val = parseFloat(inp.value);
-    if(d && f && !isNaN(val) && val !== 0){
+    if(d && f && !isNaN(val)){
       if(!s[d]) s[d] = {};
       s[d][f] = val;
     }
   });
-  saveR(s);
+
+  // Hem localStorage hem Firebase'e kaydet
+  try { _lsSet(SK, JSON.stringify(s)); } catch(e) {}
+  try { fbSave('rates', s); _fbData.rates = s; } catch(e) {}
   toast('💾 Veriler kaydedildi','ok');
 }
 function backupData(){
-  // Önce ekrandaki tüm input değerlerini localStorage'a yaz
-  var s = loadR();
+  // Ekrandaki tüm .rinp input değerlerini oku
+  var s = {};
+  // Önce mevcut kaydedilmiş veriyi al (Firebase veya localStorage)
+  var existing = {};
+  try { existing = JSON.parse(_lsGet(SK)) || {}; } catch(e) {}
+  // _fbData varsa onu base al
+  if(_fbReady && _fbData && _fbData.rates) {
+    Object.assign(existing, _fbData.rates);
+  }
+  s = existing;
+
+  // Ekrandaki input'ları üzerine yaz (en güncel değerler)
   document.querySelectorAll('.rinp').forEach(function(inp){
     var d2 = inp.dataset.d, f2 = inp.dataset.f;
     var val = parseFloat(inp.value);
@@ -2457,37 +2474,52 @@ function backupData(){
       s[d2][f2] = val;
     }
   });
-  saveR(s);
-  // Şimdi yedek al
-  const d={v:5,at:new Date().toISOString(),rates:loadR(),
-           tefas:(()=>{try{return JSON.parse(_lsGet(TKEY));}catch{return null;}})()};
-  const a=document.createElement('a');
-  a.href=URL.createObjectURL(new Blob([JSON.stringify(d,null,2)],{type:'application/json'}));
-  const ts=new Date().toISOString().slice(0,16).replace('T','_').replace(':','');
-  a.download=`fon_yedek_${ts}.json`; a.click();
-  setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+
+  // Hem localStorage hem Firebase'e kaydet
+  try { _lsSet(SK, JSON.stringify(s)); } catch(e) {}
+  try { fbSave('rates', s); _fbData.rates = s; } catch(e) {}
+
+  // Yedek dosyasını EKRANDAN OKUNAN veriyle oluştur (loadR() değil, s kullan)
+  const tefasCache = (()=>{try{return JSON.parse(_lsGet(TKEY));}catch{return null;}})();
+  const backup = {v:5, at:new Date().toISOString(), rates:s, tefas:tefasCache};
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(backup,null,2)],{type:'application/json'}));
+  const ts = new Date().toISOString().slice(0,16).replace('T','_').replace(':','');
+  a.download = 'fon_yedek_'+ts+'.json';
+  a.click();
+  setTimeout(function(){ URL.revokeObjectURL(a.href); }, 1000);
   toast('⬇ Yedek indirildi','info');
 }
 function restoreData(input){
   const f=input.files[0]; if(!f)return;
   const r=new FileReader();
-  r.onload=e=>{
+  r.onload=function(e){
     try{
       const d=JSON.parse(e.target.result);
-      if(!d.rates){alert('Geçersiz yedek.');return;}
-      if(!confirm(`"${f.name}" geri yüklenecek. Devam?`))return;
-      saveR(d.rates);
+      if(!d.rates){alert('Gecersiz yedek.');return;}
+      if(!confirm(f.name+' geri yuklenecek. Devam?'))return;
+
+      // rates'i hem localStorage hem Firebase hem _fbData'ya yaz
+      try{ _lsSet(SK, JSON.stringify(d.rates)); }catch(err){}
+      try{ fbSave('rates', d.rates); }catch(err){}
+      _fbData = _fbData || {};
+      _fbData.rates = d.rates;
+
       if(d.tefas)try{_lsSet(TKEY,JSON.stringify(d.tefas));}catch{}
-      // liveRates: her iki ayın verisi + yedekten gelen
+
+      // liveRates güncelle
       liveRates = Object.assign({}, PREFILLED_MAY, PREFILLED_HAZ, d.rates);
       if(d.tefas && d.tefas.info) tefasInfo = d.tefas.info;
-      // Mayıs render → sonra Haziran
+
+      // Mayıs render → Haziran
       aktifAy='MAY'; WEEKS=ALL_WEEKS.MAY; PREFILLED=PREFILLED_MAY;
       render();
       aktifAy='HAZ'; WEEKS=ALL_WEEKS.HAZ; PREFILLED=PREFILLED_HAZ;
       hazBaslangicHesapla();
-      renderTefasCards(); render(); toast('⬆ Geri yüklendi','ok');
-    }catch(e){alert('Hata: '+e.message);}
+      renderTefasCards();
+      render();
+      toast('Geri yuklendi','ok');
+    }catch(err){alert('Hata: '+err.message);}
     input.value='';
   };
   r.readAsText(f);
