@@ -4483,12 +4483,9 @@ function fetchWithTimeout(url, options, ms) {
 
 async function fetchQuote(code, type) {
   const ticker = type === 'bist' ? (code + '.IS') : code;
-  const q1 = 'https://query1.finance.yahoo.com/v8/finance/chart/' + ticker + '?interval=1d&range=1d';
-  const q2 = 'https://query2.finance.yahoo.com/v8/finance/chart/' + ticker + '?interval=1d&range=1d';
+  // Netlify function uzerinden cek (CORS yok)
   const urls = [
-    q1, q2,
-    'https://api.allorigins.win/raw?url=' + encodeURIComponent(q1),
-    'https://api.allorigins.win/raw?url=' + encodeURIComponent(q2)
+    '/.netlify/functions/yahoo?ticker=' + encodeURIComponent(ticker) + '&range=1d'
   ];
   for (var i = 0; i < urls.length; i++) {
     try {
@@ -4684,9 +4681,7 @@ async function fetchGecmisKapanislar(code, type, isGunSayisi) {
   // 10 takvim günü = genellikle 7 iş günü, yeterince marj
   var range = '30d'; // 15 iş günü için ~21 takvim günü gerekir
   var urls = [
-    'https://query1.finance.yahoo.com/v8/finance/chart/' + ticker + '?interval=1d&range=' + range,
-    'https://query2.finance.yahoo.com/v8/finance/chart/' + ticker + '?interval=1d&range=' + range,
-    'https://api.allorigins.win/raw?url=' + encodeURIComponent('https://query1.finance.yahoo.com/v8/finance/chart/' + ticker + '?interval=1d&range=' + range),
+    '/.netlify/functions/yahoo?ticker=' + encodeURIComponent(ticker) + '&range=' + range,
   ];
 
   for (var u = 0; u < urls.length; u++) {
