@@ -4482,6 +4482,40 @@ function fetchWithTimeout(url, options, ms) {
 }
 
 async function fetchQuote(code, type) {
+  // Fon tipindeki kodlar: once FVT'den dene, bulamazsa TEFAS'a git
+  if (type === 'fund') {
+    // 1. FVT'den dene
+    try {
+      var fvtResp = await fetchWithTimeout(
+        '/.netlify/functions/fvt?fon=' + encodeURIComponent(code) + '&istek=getiri',
+        {}, 10000);
+      if (fvtResp.ok) {
+        var fvtData = await fvtResp.json();
+        if (fvtData.dailyReturn !== null && fvtData.dailyReturn !== undefined) {
+          return parseFloat(fvtData.dailyReturn);
+        }
+      }
+    } catch(e) {}
+    // 2. FVT bulamazsa TEFAS'tan dene
+    try {
+      var tefasResp = await fetchWithTimeout('/.netlify/functions/tefas', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({endpoint: 'fonFiyatBilgiGetir', body: {fonKodu: code, periyod: 1}})
+      }, 10000);
+      if (tefasResp.ok) {
+        var tefasData = await tefasResp.json();
+        var items = tefasData.resultList || tefasData.data || tefasData.items || (Array.isArray(tefasData) ? tefasData : []);
+        if (items.length >= 2) {
+          var todayPrice = parseFloat(items[0].FIYAT || items[0].fiyat || 0);
+          var yestPrice  = parseFloat(items[1].FIYAT || items[1].fiyat || 0);
+          if (yestPrice > 0) return parseFloat(((todayPrice - yestPrice) / yestPrice * 100).toFixed(4));
+        }
+      }
+    } catch(e) {}
+    return null;
+  }
+
   const ticker = type === 'bist' ? (code + '.IS') : code;
   // Netlify function uzerinden cek (CORS yok)
   const urls = [
