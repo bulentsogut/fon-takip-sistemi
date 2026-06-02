@@ -2284,7 +2284,7 @@ function _lsDel(key){
 // Kullanıcının "Güncelle" ile eklediği ek işlemler (localStorage'dan yüklenir)
 var DEFAULT_TRX_EXTRA = (function(){
   try{
-    var data = JSON.parse(localStorage.getItem('fon_trx_extra_v1'))||[];
+    var data = JSON.parse(_lsGet(TRX_EXTRA_KEY))||[];
     // IJC 11.05.2026 oncesindeki kayitlari temizle
     data = data.filter(function(t){
       if(t.fon.toUpperCase()!=='IJC') return true;
@@ -2451,7 +2451,13 @@ function saveData(){
   // Hem localStorage hem Firebase'e kaydet
   try { _lsSet(SK, JSON.stringify(s)); } catch(e) {}
   try { fbSave('rates', s); _fbData.rates = s; } catch(e) {}
-  toast('💾 Veriler kaydedildi','ok');
+  // TRX_EXTRA da kaydet
+  try {
+    var tExtra = JSON.parse(_lsGet(TRX_EXTRA_KEY)) || [];
+    fbSave('trx_extra', tExtra);
+    if(_fbData) _fbData.trx_extra = tExtra;
+  } catch(e) {}
+  toast('Kaydedildi','ok');
 }
 function backupData(){
   // Ekrandaki tüm .rinp input değerlerini oku
@@ -2481,7 +2487,18 @@ function backupData(){
 
   // Yedek dosyasını EKRANDAN OKUNAN veriyle oluştur (loadR() değil, s kullan)
   const tefasCache = (()=>{try{return JSON.parse(_lsGet(TKEY));}catch{return null;}})();
-  const backup = {v:5, at:new Date().toISOString(), rates:s, tefas:tefasCache};
+  // TRX ve TRX_EXTRA da yedekle (portföy işlemleri + TL düzeltme tutarları)
+  const trxCache = (()=>{try{return JSON.parse(_lsGet(TRX_KEY))||[];}catch{return [];}})();
+  const trxExtraCache = (()=>{try{return JSON.parse(_lsGet(TRX_EXTRA_KEY))||[];}catch{return [];}})();
+  // Firebase'deki trx verilerini de dahil et
+  if(_fbReady && _fbData){
+    var fbTrx = _fbData.trx || trxCache;
+    var fbTrxExtra = _fbData.trx_extra || trxExtraCache;
+  } else {
+    var fbTrx = trxCache;
+    var fbTrxExtra = trxExtraCache;
+  }
+  const backup = {v:5, at:new Date().toISOString(), rates:s, tefas:tefasCache, trx:fbTrx, trx_extra:fbTrxExtra};
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([JSON.stringify(backup,null,2)],{type:'application/json'}));
   const ts = new Date().toISOString().slice(0,16).replace('T','_').replace(':','');
@@ -2504,6 +2521,18 @@ function restoreData(input){
       try{ fbSave('rates', d.rates); }catch(err){}
       _fbData = _fbData || {};
       _fbData.rates = d.rates;
+
+      // TRX ve TRX_EXTRA geri yükle
+      if(d.trx && d.trx.length > 0){
+        try{ _lsSet(TRX_KEY, JSON.stringify(d.trx)); }catch(err){}
+        try{ fbSave('trx', d.trx); _fbData.trx = d.trx; }catch(err){}
+      }
+      if(d.trx_extra && d.trx_extra.length > 0){
+        try{ _lsSet(TRX_EXTRA_KEY, JSON.stringify(d.trx_extra)); }catch(err){}
+        try{ fbSave('trx_extra', d.trx_extra); _fbData.trx_extra = d.trx_extra; }catch(err){}
+        // DEFAULT_TRX_EXTRA'yı da güncelle
+        DEFAULT_TRX_EXTRA = d.trx_extra;
+      }
 
       if(d.tefas)try{_lsSet(TKEY,JSON.stringify(d.tefas));}catch{}
 
