@@ -4534,6 +4534,52 @@ async function fetchTefasFon(fonKodu) {
   return null;
 }
 
+// FVT'den portföy dağılımını çek ve FUNDS objesini güncelle
+async function loadFVTPortfolio(fonKodu) {
+  try {
+    var resp = await fetchWithTimeout(
+      '/.netlify/functions/fvt?fon=' + fonKodu, {}, 10000);
+    if (!resp.ok) return null;
+    var data = await resp.json();
+    if (!data.holdings || data.holdings.length === 0) return null;
+
+    // holdings'i FUNDS formatına çevir
+    var newHoldings = data.holdings.map(function(h) {
+      var type = h.etf ? 'us' : h.yabanci ? 'us' : 'bist';
+      // Fon kodlarını tespit et (küçük harf veya belirli pattern)
+      if (h.kod.length <= 3 || h.kod.match(/^[A-Z]{3}[0-9]?F?$/)) type = 'fund';
+      return {
+        code: h.kod,
+        name: h.ad || h.kod,
+        weight: h.agirlik,
+        type: type
+      };
+    }).filter(function(h) { return h.weight > 0.1; }); // %0.1 altını atla
+
+    return {holdings: newHoldings, aciklamaTarihi: data.aciklamaTarihi};
+  } catch(e) {
+    console.warn('FVT portfoy yuklenemedi:', fonKodu, e.message);
+    return null;
+  }
+}
+
+async function refreshAllPortfolios() {
+  var fonlar = Object.keys(FUNDS);
+  var updated = 0;
+  for (var i = 0; i < fonlar.length; i++) {
+    var fon = fonlar[i];
+    var result = await loadFVTPortfolio(fon);
+    if (result && result.holdings.length > 0) {
+      FUNDS[fon].holdings = result.holdings;
+      FUNDS[fon].aciklamaTarihi = result.aciklamaTarihi;
+      updated++;
+    }
+  }
+  if (updated > 0) {
+    console.log('FVT portfoy guncellendi:', updated, 'fon');
+  }
+}
+
 async function fetchAll() {
   // Yahoo Finance için CORS proxy wrapper
   async function yahooFetch(url) {
@@ -4547,8 +4593,11 @@ async function fetchAll() {
   }
 
   try {
-  setStatus('loading', 'Veriler çekiliyor...');
+  setStatus('loading', 'Veriler cekiliyor...');
   setRefreshLoading(true);
+
+  // FVT'den guncel portfoy dagilimini al
+  await refreshAllPortfolios();
 
   // Hisseleri ve fonları ayır
   var tickers = {};
