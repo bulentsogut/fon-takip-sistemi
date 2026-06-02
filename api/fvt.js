@@ -23,10 +23,18 @@ export default async function handler(req, res) {
   // Gunluk getiri istegi
   if (istek === 'getiri') {
     try {
-      const fonUrl = 'https://fvt.com.tr/api/funds/' + fonKodu.toUpperCase();
-      const response = await fetch(fonUrl, { headers });
-      if (!response.ok) { res.status(response.status).json({ error: 'FVT HTTP ' + response.status }); return; }
-      const data = await response.json();
+      // Once /api/funds/ dene, 404 gelirse /api/stocks/ dene (BYF fonlar icin)
+      let fonUrl = 'https://fvt.com.tr/api/funds/' + fonKodu.toUpperCase();
+      let response = await fetch(fonUrl, { headers });
+      if (!response.ok) {
+        // BYF endpoint dene
+        fonUrl = 'https://fvt.com.tr/api/stocks/' + fonKodu.toUpperCase();
+        response = await fetch(fonUrl, { headers });
+      }
+      // Asagidaki response.ok kontrolu icin response'u override et
+      const _response = response;
+      if (!_response.ok) { res.status(_response.status).json({ error: 'FVT HTTP ' + _response.status }); return; }
+      const data = await _response.json();
       const priceHistory = data.data && data.data.priceHistory;
       let dailyReturn = null;
       if (priceHistory && priceHistory.length >= 2) {
