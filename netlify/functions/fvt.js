@@ -82,14 +82,14 @@ exports.handler = async function(event, context) {
         var agirlik = parseFloat(item.agirlik) || 0;
         
         // Tip tespiti
+        // FVT'de etf:1 = yatirim fonu (BYF/Fon kategorisi)
+        // yabanci:1 = yabanci hisse (ABD vb)
+        // ikisi de 0 = BIST hissesi
         var tip;
         if (item.etf === 1) {
-          tip = 'etf';
-        } else if (FON_KATEGORILERI.indexOf(item.hissekategori) !== -1 
-                   || kod.match(/^[A-Z]{2,4}[0-9]?F[0-9]?$/)  // TPKGYF1 gibi
-                   || kod.match(/^[A-Z]{3}[0-9]$/)              // TI1, RS1, CFO gibi kisa kodlar
-                   || kod.length <= 3 && !item.yabanci) {        // 3 harf, yerli = muhtemelen fon
-          tip = 'fund';
+          tip = 'fund'; // FVT'de etf alani aslinda fon demek
+        } else if (kod.match(/[0-9]F[0-9]?$/) || kod.match(/^[A-Z]{2,4}[0-9]F/)) {
+          tip = 'fund'; // TPKGYF1 gibi fon kodu pattern
         } else if (item.yabanci === 1) {
           tip = 'us';
         } else {
