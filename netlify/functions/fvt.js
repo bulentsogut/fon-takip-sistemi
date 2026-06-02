@@ -1,8 +1,52 @@
 exports.handler = async function(event, context) {
   const fonKodu = event.queryStringParameters && event.queryStringParameters.fon;
+  const istek = event.queryStringParameters && event.queryStringParameters.istek; // 'distribution' veya 'getiri'
 
   if (!fonKodu) {
     return { statusCode: 400, body: JSON.stringify({ error: 'fon parametresi gerekli' }) };
+  }
+
+  // Gunluk getiri istegi
+  if (istek === 'getiri') {
+    try {
+      const fonUrl = 'https://fvt.com.tr/api/funds/' + fonKodu.toUpperCase();
+      const response = await fetch(fonUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+          'Accept': 'application/json',
+          'Referer': 'https://fvt.com.tr/',
+          'Origin': 'https://fvt.com.tr'
+        }
+      });
+      if (!response.ok) return { statusCode: response.status, body: JSON.stringify({ error: 'FVT HTTP ' + response.status }) };
+      const data = await response.json();
+      var fonData = (data.data && data.data.fund) ? data.data.fund : (data.data || data);
+      var priceHistory = data.data && data.data.priceHistory;
+      
+      var dailyReturn = null;
+      
+      // En guvenilir yol: priceHistory[0] ve [1] fiyatlarindan hesapla
+      if (priceHistory && priceHistory.length >= 2) {
+        var todayPrice = parseFloat(priceHistory[0].fiyat);
+        var yesterdayPrice = parseFloat(priceHistory[1].fiyat);
+        if (yesterdayPrice > 0) {
+          dailyReturn = parseFloat(((todayPrice - yesterdayPrice) / yesterdayPrice * 100).toFixed(4));
+        }
+      }
+      
+      // Yedek: getiri alani
+      if (dailyReturn === null && fonData.getiri) {
+        dailyReturn = parseFloat(fonData.getiri);
+      }
+      
+      return {
+        statusCode: 200,
+        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+        body: JSON.stringify({ fon: fonKodu.toUpperCase(), dailyReturn: dailyReturn })
+      };
+    } catch(err) {
+      return { statusCode: 500, body: JSON.stringify({ error: err.message }) };
+    }
   }
 
   const url = 'https://fvt.com.tr/api/funds/' + fonKodu.toUpperCase() + '/distribution';
