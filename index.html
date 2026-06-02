@@ -2645,7 +2645,7 @@ function _tk_fwt(url, options, ms) {
 // TEFAS istekleri Netlify Function üzerinden gider (CORS yok)
 async function tefasPost(endpoint, body) {
   var resp = await _tk_fwt(
-    '/.netlify/functions/tefas',
+    '/api/tefas',
     {method:'POST',
      headers:{'Content-Type':'application/json'},
      body: JSON.stringify({endpoint: endpoint, body: Object.assign({dil:'TR'}, body)})},
@@ -4487,7 +4487,7 @@ async function fetchQuote(code, type) {
     // 1. FVT'den dene
     try {
       var fvtResp = await fetchWithTimeout(
-        '/.netlify/functions/fvt?fon=' + encodeURIComponent(code) + '&istek=getiri',
+        '/api/fvt?fon=' + encodeURIComponent(code) + '&istek=getiri',
         {}, 10000);
       if (fvtResp.ok) {
         var fvtData = await fvtResp.json();
@@ -4498,7 +4498,7 @@ async function fetchQuote(code, type) {
     } catch(e) {}
     // 2. FVT bulamazsa TEFAS'tan dene
     try {
-      var tefasResp = await fetchWithTimeout('/.netlify/functions/tefas', {
+      var tefasResp = await fetchWithTimeout('/api/tefas', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({endpoint: 'fonFiyatBilgiGetir', body: {fonKodu: code, periyod: 1}})
@@ -4519,7 +4519,7 @@ async function fetchQuote(code, type) {
   const ticker = type === 'bist' ? (code + '.IS') : code;
   // Netlify function uzerinden cek (CORS yok)
   const urls = [
-    '/.netlify/functions/yahoo?ticker=' + encodeURIComponent(ticker) + '&range=1d'
+    '/api/yahoo?ticker=' + encodeURIComponent(ticker) + '&range=1d'
   ];
   for (var i = 0; i < urls.length; i++) {
     try {
@@ -4551,7 +4551,7 @@ async function fetchTefasFon(fonKodu) {
     try {
       var fetchBody = {fonKodu: fonKodu, dil: 'TR', fonTip: fonTipler[t]};
       var resp = await fetchWithTimeout(
-        '/.netlify/functions/tefas',
+        '/api/tefas',
         {method:'POST', headers:{'Content-Type':'application/json'},
          body: JSON.stringify({endpoint:'fonBilgiGetir', body: fetchBody})}, 10000);
       if (!resp.ok) continue;
@@ -4572,7 +4572,7 @@ async function fetchTefasFon(fonKodu) {
 async function loadFVTPortfolio(fonKodu) {
   try {
     var resp = await fetchWithTimeout(
-      '/.netlify/functions/fvt?fon=' + fonKodu, {}, 10000);
+      '/api/fvt?fon=' + fonKodu, {}, 10000);
     if (!resp.ok) return null;
     var data = await resp.json();
     if (!data.holdings || data.holdings.length === 0) return null;
@@ -4767,7 +4767,7 @@ async function fetchGecmisKapanislar(code, type, isGunSayisi) {
   // 10 takvim günü = genellikle 7 iş günü, yeterince marj
   var range = '30d'; // 15 iş günü için ~21 takvim günü gerekir
   var urls = [
-    '/.netlify/functions/yahoo?ticker=' + encodeURIComponent(ticker) + '&range=' + range,
+    '/api/yahoo?ticker=' + encodeURIComponent(ticker) + '&range=' + range,
   ];
 
   for (var u = 0; u < urls.length; u++) {
