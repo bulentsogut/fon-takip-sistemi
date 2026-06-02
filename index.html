@@ -4578,11 +4578,18 @@ async function loadFVTPortfolio(fonKodu) {
     if (!data.holdings || data.holdings.length === 0) return null;
 
     // holdings'i FUNDS formatina cevir — sunucudan gelen tip bilgisini kullan
+    // BYF fonlari: FVT'de veri yok, cash olarak isle
+    var BYF_KODLAR = ['GLDTRF','GMSTRF','ZPX3GF','ZPX30F','TPKGY','TPKGYF1'];
+
     var newHoldings = data.holdings
       .filter(function(h) { return h.agirlik > 0.1; })
       .map(function(h) {
-        // sunucu 'tip' yolluyorsa kullan, yoksa tahmin et
-        var type = h.tip || (h.etf ? 'etf' : h.yabanci ? 'us' : 'bist');
+        var type;
+        if (BYF_KODLAR.indexOf(h.kod) !== -1) {
+          type = 'cash'; // BYF - veri yok, hesaplamaya katma
+        } else {
+          type = h.tip || (h.etf ? 'fund' : h.yabanci ? 'us' : 'bist');
+        }
         return {
           code: h.kod,
           name: h.ad || h.kod,
