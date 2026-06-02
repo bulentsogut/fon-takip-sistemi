@@ -2488,7 +2488,13 @@ function backupData(){
   // Yedek dosyasını EKRANDAN OKUNAN veriyle oluştur (loadR() değil, s kullan)
   const tefasCache = (()=>{try{return JSON.parse(_lsGet(TKEY));}catch{return null;}})();
   // TRX ve TRX_EXTRA da yedekle (portföy işlemleri + TL düzeltme tutarları)
-  const trxCache = (()=>{try{return JSON.parse(_lsGet(TRX_KEY))||[];}catch{return [];}})();
+  const trxCache = (()=>{
+    try{
+      var t = JSON.parse(_lsGet(TRX_KEY))||[];
+      // localStorage boşsa DEFAULT_TRX'i kullan
+      return t.length > 0 ? t : (typeof DEFAULT_TRX !== 'undefined' ? DEFAULT_TRX : []);
+    }catch{return typeof DEFAULT_TRX !== 'undefined' ? DEFAULT_TRX : [];}
+  })();
   const trxExtraCache = (()=>{try{return JSON.parse(_lsGet(TRX_EXTRA_KEY))||[];}catch{return [];}})();
   // Firebase'deki trx verilerini de dahil et
   if(_fbReady && _fbData){
@@ -2526,6 +2532,8 @@ function restoreData(input){
       if(d.trx && d.trx.length > 0){
         try{ _lsSet(TRX_KEY, JSON.stringify(d.trx)); }catch(err){}
         try{ fbSave('trx', d.trx); _fbData.trx = d.trx; }catch(err){}
+        // saveTrx ile de güncelle
+        try{ saveTrx(d.trx); }catch(err){}
       }
       if(d.trx_extra && d.trx_extra.length > 0){
         try{ _lsSet(TRX_EXTRA_KEY, JSON.stringify(d.trx_extra)); }catch(err){}
@@ -3896,6 +3904,16 @@ fbLoad(function(fbdata) {
 });
 
 function startApp() {
+  // Firebase'den trx ve trx_extra da yükle
+  if(_fbReady && _fbData){
+    if(_fbData.trx && _fbData.trx.length > 0){
+      try{ _lsSet(TRX_KEY, JSON.stringify(_fbData.trx)); }catch(e){}
+    }
+    if(_fbData.trx_extra && _fbData.trx_extra.length > 0){
+      try{ _lsSet(TRX_EXTRA_KEY, JSON.stringify(_fbData.trx_extra)); }catch(e){}
+      DEFAULT_TRX_EXTRA = _fbData.trx_extra;
+    }
+  }
   const saved=loadR();
 if(Object.keys(saved).length === 0){
   setTimeout(function(){
