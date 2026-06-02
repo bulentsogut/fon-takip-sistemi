@@ -3977,31 +3977,7 @@ function startApp() {
     }
   }
   const saved=loadR();
-if(Object.keys(saved).length === 0){
-  setTimeout(function(){
-    var banner = document.createElement('div');
-    banner.id = 'restore-banner';
-    banner.style.cssText = 'position:fixed;bottom:70px;left:50%;transform:translateX(-50%);background:#1a2a3a;border:1px solid rgba(167,139,250,0.4);border-radius:10px;padding:12px 20px;z-index:9998;display:flex;align-items:center;gap:12px;font-size:0.78rem;color:#a78bfa;white-space:nowrap;box-shadow:0 4px 20px rgba(0,0,0,0.5);';
-    var inp = document.createElement('input');
-    inp.type='file'; inp.accept='.json'; inp.style.display='none';
-    inp.onchange = function(){ restoreData(this); var b=document.getElementById('restore-banner'); if(b) b.remove(); };
-    var lbl = document.createElement('label');
-    lbl.style.cssText = 'background:rgba(167,139,250,0.15);border:1px solid rgba(167,139,250,0.4);color:#a78bfa;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:0.75rem;';
-    lbl.textContent = 'Yedek Yukle';
-    lbl.appendChild(inp);
-    var txt = document.createElement('span');
-    txt.textContent = 'Kayitli veri bulunamadi.';
-    var cls = document.createElement('button');
-    cls.textContent = 'x';
-    cls.style.cssText = 'background:none;border:none;color:#666;cursor:pointer;font-size:1rem;';
-    cls.onclick = function(){ var b=document.getElementById('restore-banner'); if(b) b.remove(); };
-    banner.appendChild(txt);
-    banner.appendChild(lbl);
-    banner.appendChild(cls);
-    document.body.appendChild(banner);
-    setTimeout(function(){ var b=document.getElementById('restore-banner'); if(b) b.remove(); }, 10000);
-  }, 800);
-}
+
 // liveRates: her iki ayın PREFILLED'ı + localStorage (Haziran açılışında Mayıs verisi de olsun)
 liveRates=Object.assign({}, PREFILLED_MAY, PREFILLED_HAZ, Object.keys(saved).length>0?saved:{});
 // TEFAS kartlarını dinamik oluştur
@@ -4579,7 +4555,7 @@ async function loadFVTPortfolio(fonKodu) {
 
     // holdings'i FUNDS formatina cevir — sunucudan gelen tip bilgisini kullan
     // BYF fonlari: FVT'de veri yok, cash olarak isle
-    var BYF_KODLAR = ['GLDTRF','GMSTRF','ZPX3GF','ZPX30F','TPKGY','TPKGYF1'];
+    var BYF_KODLAR = ['GLDTRF','GMSTRF','ZPX3GF','ZPX30F','TPKGYF1']; // TPKGY FVT'den fund olarak geliyor
 
     var newHoldings = data.holdings
       .filter(function(h) { return h.agirlik > 0.01; })
@@ -6055,25 +6031,7 @@ function migrateFromBackup(input) {
 
 
 <!-- Veri Taşıma Wizard -->
-<div id="migrateModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.88);z-index:9998;align-items:center;justify-content:center;">
-  <div style="background:#0d1520;border:1px solid rgba(0,180,255,0.35);border-radius:16px;padding:32px;max-width:480px;width:90%;">
-    <div style="font-family:Syne,sans-serif;font-size:1.2rem;font-weight:800;color:#00b4ff;margin-bottom:8px;">📂 Eski Verileri Taşı</div>
-    <div style="font-size:0.72rem;color:#4e6a82;margin-bottom:20px;line-height:1.7;">
-      Bu cihazda FON TAKİP verisi bulunamadı.<br>
-      <strong style="color:#e8f4fd">Eski FON_TAKIP dosyasından</strong> veri taşımak için:<br>
-      <span style="color:#00ffc8">1.</span> Eski dosyayı aç → <strong>⬇ Yedekle</strong> butonuna bas<br>
-      <span style="color:#00ffc8">2.</span> İnen JSON dosyasını aşağıdan yükle
-    </div>
-    <label style="display:block;background:rgba(0,180,255,0.08);border:1px dashed rgba(0,180,255,0.35);border-radius:10px;padding:20px;text-align:center;cursor:pointer;font-size:0.78rem;color:#4e6a82;margin-bottom:16px;">
-      📁 JSON yedek dosyasını seç veya sürükle
-      <input type="file" accept=".json" style="display:none" onchange="migrateFromBackup(this)">
-    </label>
-    <button onclick="document.getElementById('migrateModal').style.display='none'" 
-      style="width:100%;background:rgba(78,106,130,0.1);border:1px solid rgba(78,106,130,0.25);color:#4e6a82;font-family:DM Mono,monospace;font-size:0.78rem;padding:10px;border-radius:8px;cursor:pointer;">
-      Atla — Verilerimi TEFAS'tan Çekeceğim
-    </button>
-  </div>
-</div>
+
 
 </body>
 </html>
