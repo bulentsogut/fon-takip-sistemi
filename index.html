@@ -1619,12 +1619,12 @@ _db.ref('fonmerkezi').on('value', function(snap) {
 <!-- Ana Navigasyon -->
 <nav class="main-nav">
   <div class="nav-logo">📊 FON MERKEZİ</div>
-  <button class="nav-tab active" id="tab-takip" onclick="switchTab('takip')">
+  <button class="nav-tab" id="tab-takip" onclick="switchTab('takip')">
     <div class="nav-dot"></div>
     FON TAKİP
     <span class="nav-badge">CANLI</span>
   </button>
-  <button class="nav-tab tahmin-tab" id="tab-tahmin" onclick="switchTab('tahmin')">
+  <button class="nav-tab tahmin-tab active" id="tab-tahmin" onclick="switchTab('tahmin')">
     <div class="nav-dot"></div>
     GETİRİ TAHMİN
   </button>
@@ -1635,7 +1635,7 @@ _db.ref('fonmerkezi').on('value', function(snap) {
 </nav>
 
 <!-- TAKİP PANELİ -->
-<div class="tab-panel active" id="panel-takip">
+<div class="tab-panel" id="panel-takip">
   <div class="wrap">
 <div class="wrap">
 <header>
@@ -1749,7 +1749,7 @@ _db.ref('fonmerkezi').on('value', function(snap) {
 </div>
 
 <!-- TAHMİN PANELİ -->
-<div class="tab-panel" id="panel-tahmin">
+<div class="tab-panel active" id="panel-tahmin">
 
   <!-- Ofset Senkron Paneli — TAHMİN sekmesinde görünür -->
   <div class="ofset-sync-panel" id="ofsetSyncPanel">
@@ -5396,7 +5396,33 @@ function saveFaizValues() {
 // ═══════════════════════════════════════════════════
 var _activeTab = 'takip';
 
+var _takipUnlocked = false;
+var _TAKIP_SIFRE = '1234'; // Şifreyi buradan değiştirebilirsiniz
+
 window.switchTab = function switchTab(tab) {
+  // Fon Takip sekmesi şifre korumalı
+  if(tab === 'takip' && !_takipUnlocked){
+    var modal = document.createElement('div');
+    modal.id = 'sifre-modal';
+    modal.style.cssText = 'position:fixed;inset:0;background:rgba(4,8,20,0.95);z-index:99999;display:flex;align-items:center;justify-content:center;';
+    modal.innerHTML = '<div style="background:#0d1c2b;border:1px solid rgba(0,180,255,0.3);border-radius:14px;padding:32px 28px;width:min(360px,90vw);text-align:center;">'
+      + '<div style="font-family:Syne,sans-serif;font-size:1.3rem;font-weight:800;color:#00b4ff;margin-bottom:8px;">🔒 FON TAKİP</div>'
+      + '<div style="font-size:0.75rem;color:#4e6a82;margin-bottom:20px;">Bu bölüm şifre korumalıdır.</div>'
+      + '<input id="sifre-input" type="password" placeholder="Şifre giriniz" style="width:100%;background:rgba(0,180,255,0.07);border:1px solid rgba(0,180,255,0.3);border-radius:8px;color:#e2e8f0;font-family:DM Mono,monospace;font-size:1rem;padding:10px 14px;outline:none;box-sizing:border-box;text-align:center;letter-spacing:4px;">'
+      + '<div id="sifre-hata" style="color:#ff4757;font-size:0.72rem;margin-top:8px;height:16px;"></div>'
+      + '<div style="display:flex;gap:10px;margin-top:16px;">'
+      + '<button onclick="sifreKontrol()" style="flex:1;background:rgba(0,180,255,0.15);border:1px solid rgba(0,180,255,0.4);color:#00b4ff;font-family:DM Mono,monospace;font-size:0.85rem;padding:11px;border-radius:8px;cursor:pointer;font-weight:700;">Giriş</button>'
+      + '<button onclick="document.getElementById('sifre-modal').remove()" style="flex:1;background:rgba(255,71,87,0.1);border:1px solid rgba(255,71,87,0.3);color:#ff4757;font-family:DM Mono,monospace;font-size:0.85rem;padding:11px;border-radius:8px;cursor:pointer;">İptal</button>'
+      + '</div></div>';
+    document.body.appendChild(modal);
+    setTimeout(function(){ document.getElementById('sifre-input').focus(); }, 100);
+    // Enter ile giriş
+    document.getElementById('sifre-input').addEventListener('keydown', function(e){
+      if(e.key === 'Enter') sifreKontrol();
+    });
+    return;
+  }
+
   _activeTab = tab;
   document.querySelectorAll('.tab-panel').forEach(function(p) {
     p.classList.toggle('active', p.id === 'panel-' + tab);
@@ -5406,9 +5432,21 @@ window.switchTab = function switchTab(tab) {
   });
   document.getElementById('tab-' + tab).classList.add('active');
 
-  // Tahmin sekmesine geçince ofset durumunu güncelle
   if (tab === 'tahmin') {
     renderNavOfsetStatus();
+  }
+}
+
+function sifreKontrol(){
+  var girilen = document.getElementById('sifre-input').value;
+  if(girilen === _TAKIP_SIFRE){
+    _takipUnlocked = true;
+    document.getElementById('sifre-modal').remove();
+    switchTab('takip');
+  } else {
+    document.getElementById('sifre-hata').textContent = 'Hatalı şifre, tekrar deneyin.';
+    document.getElementById('sifre-input').value = '';
+    document.getElementById('sifre-input').focus();
   }
 }
 
