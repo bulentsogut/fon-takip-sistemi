@@ -4543,18 +4543,19 @@ async function loadFVTPortfolio(fonKodu) {
     var data = await resp.json();
     if (!data.holdings || data.holdings.length === 0) return null;
 
-    // holdings'i FUNDS formatına çevir
-    var newHoldings = data.holdings.map(function(h) {
-      var type = h.etf ? 'us' : h.yabanci ? 'us' : 'bist';
-      // Fon kodlarını tespit et (küçük harf veya belirli pattern)
-      if (h.kod.length <= 3 || h.kod.match(/^[A-Z]{3}[0-9]?F?$/)) type = 'fund';
-      return {
-        code: h.kod,
-        name: h.ad || h.kod,
-        weight: h.agirlik,
-        type: type
-      };
-    }).filter(function(h) { return h.weight > 0.1; }); // %0.1 altını atla
+    // holdings'i FUNDS formatina cevir — sunucudan gelen tip bilgisini kullan
+    var newHoldings = data.holdings
+      .filter(function(h) { return h.agirlik > 0.1; })
+      .map(function(h) {
+        // sunucu 'tip' yolluyorsa kullan, yoksa tahmin et
+        var type = h.tip || (h.etf ? 'etf' : h.yabanci ? 'us' : 'bist');
+        return {
+          code: h.kod,
+          name: h.ad || h.kod,
+          weight: h.agirlik,
+          type: type
+        };
+      });
 
     return {holdings: newHoldings, aciklamaTarihi: data.aciklamaTarihi};
   } catch(e) {
@@ -4564,10 +4565,12 @@ async function loadFVTPortfolio(fonKodu) {
 }
 
 async function refreshAllPortfolios() {
-  var fonlar = Object.keys(FUNDS);
+  // Sadece takip edilen fonlari guncelle (portfoyumuzde olan fonlar)
+  var takipFonlar = ['DFI','TLY','PHE','CPT','IJC','PBR'];
   var updated = 0;
-  for (var i = 0; i < fonlar.length; i++) {
-    var fon = fonlar[i];
+  for (var i = 0; i < takipFonlar.length; i++) {
+    var fon = takipFonlar[i];
+    if (!FUNDS[fon]) continue;
     var result = await loadFVTPortfolio(fon);
     if (result && result.holdings.length > 0) {
       FUNDS[fon].holdings = result.holdings;
