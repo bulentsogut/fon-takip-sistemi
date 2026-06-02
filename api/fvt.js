@@ -68,15 +68,22 @@ export default async function handler(req, res) {
         const kod = item.hisseKodu.trim();
         let tip;
         const sirketAdi = (item.sirketAdi || '').trim();
-        if (item.etf === 1) {
-          tip = 'fund'; // FVT'de etf=1 yatirim fonu demek
-        } else if (kod.match(/[0-9]F[0-9]?$/) || kod.match(/^[A-Z]{2,4}[0-9]F/)) {
-          tip = 'fund'; // TPKGYF1 gibi fon kodu pattern
-        } else if (sirketAdi === '' && item.yabanci === 0) {
-          tip = 'fund'; // Isim bos + yerli = yatirim fonu
+        // BYF listesi - veri yok, cash say
+        const BYF = ['GLDTRF','GMSTRF','ZPX3GF','ZPX30F','TPKGY','TPKGYF1'];
+        if (BYF.indexOf(kod) !== -1) {
+          tip = 'cash';
+        } else if (item.etf === 1) {
+          tip = 'fund';
         } else if (item.yabanci === 1) {
           tip = 'us';
+        } else if (sirketAdi === '') {
+          tip = 'fund'; // isim bos = fon
+        } else if (item.hissekategori >= 20 && item.hissekategori <= 40) {
+          tip = 'fund'; // fon kategorisi
         } else {
+          // Son kontrol: FVT'de /api/funds/ endpoint'i var mi?
+          // Bu async oldugundan burada yapamiyoruz
+          // Onceki tip tespitlerini kullan
           tip = 'bist';
         }
         return {
