@@ -59,10 +59,13 @@ export default async function handler(req, res) {
       .map(item => {
         const kod = item.hisseKodu.trim();
         let tip;
+        const sirketAdi = (item.sirketAdi || '').trim();
         if (item.etf === 1) {
-          tip = 'fund';
+          tip = 'fund'; // FVT'de etf=1 yatirim fonu demek
         } else if (kod.match(/[0-9]F[0-9]?$/) || kod.match(/^[A-Z]{2,4}[0-9]F/)) {
-          tip = 'fund';
+          tip = 'fund'; // TPKGYF1 gibi fon kodu pattern
+        } else if (sirketAdi === '' && item.yabanci === 0) {
+          tip = 'fund'; // Isim bos + yerli = yatirim fonu
         } else if (item.yabanci === 1) {
           tip = 'us';
         } else {
