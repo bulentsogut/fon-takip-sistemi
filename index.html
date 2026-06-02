@@ -1619,12 +1619,12 @@ _db.ref('fonmerkezi').on('value', function(snap) {
 <!-- Ana Navigasyon -->
 <nav class="main-nav">
   <div class="nav-logo">📊 FON MERKEZİ</div>
-  <button class="nav-tab" id="tab-takip" onclick="switchTab('takip')">
+  <button class="nav-tab" id="tab-takip">
     <div class="nav-dot"></div>
     FON TAKİP
     <span class="nav-badge">CANLI</span>
   </button>
-  <button class="nav-tab tahmin-tab active" id="tab-tahmin" onclick="switchTab('tahmin')">
+  <button class="nav-tab tahmin-tab active" id="tab-tahmin">
     <div class="nav-dot"></div>
     GETİRİ TAHMİN
   </button>
@@ -1913,6 +1913,63 @@ _db.ref('fonmerkezi').on('value', function(snap) {
 
 <!-- TAKİP JS -->
 <script>
+// Şifre sistemi — TAKİP JS yüklenince aktif olsun
+var _takipUnlocked = false;
+var _TAKIP_SIFRE = '1234';
+
+function doSwitchTab(tab) {
+  var panels = document.querySelectorAll('.tab-panel');
+  panels.forEach(function(p){ p.classList.toggle('active', p.id === 'panel-' + tab); });
+  var tabs = document.querySelectorAll('.nav-tab');
+  tabs.forEach(function(t){ t.classList.remove('active'); });
+  var activeTab = document.getElementById('tab-' + tab);
+  if(activeTab) activeTab.classList.add('active');
+  if(tab === 'tahmin' && typeof renderNavOfsetStatus === 'function') renderNavOfsetStatus();
+}
+
+function sifreKontrol(){
+  var el = document.getElementById('sifre-input');
+  if(!el) return;
+  if(el.value === _TAKIP_SIFRE){
+    _takipUnlocked = true;
+    var m = document.getElementById('sifre-modal');
+    if(m) m.remove();
+    doSwitchTab('takip');
+  } else {
+    var hata = document.getElementById('sifre-hata');
+    if(hata) hata.textContent = 'Hatali sifre, tekrar deneyin.';
+    el.value = '';
+    el.focus();
+  }
+}
+
+// Buton event listener'ları — DOM hazır olunca ekle
+document.addEventListener('DOMContentLoaded', function(){
+  var btnTakip = document.getElementById('tab-takip');
+  var btnTahmin = document.getElementById('tab-tahmin');
+  if(btnTakip) btnTakip.addEventListener('click', function(){
+    if(!_takipUnlocked){
+      var modal = document.createElement('div');
+      modal.id = 'sifre-modal';
+      modal.style.cssText = 'position:fixed;inset:0;background:rgba(4,8,20,0.95);z-index:99999;display:flex;align-items:center;justify-content:center;';
+      modal.innerHTML = '<div style="background:#0d1c2b;border:1px solid rgba(0,180,255,0.3);border-radius:14px;padding:32px 28px;width:min(360px,90vw);text-align:center;">'
+        + '<div style="font-size:1.3rem;font-weight:800;color:#00b4ff;margin-bottom:8px;">FON TAKIP</div>'
+        + '<div style="font-size:0.75rem;color:#4e6a82;margin-bottom:20px;">Bu bolum sifre korumalidır.</div>'
+        + '<input id="sifre-input" type="password" placeholder="Sifre" style="width:100%;background:rgba(0,180,255,0.07);border:1px solid rgba(0,180,255,0.3);border-radius:8px;color:#e2e8f0;font-size:1rem;padding:10px 14px;outline:none;box-sizing:border-box;text-align:center;letter-spacing:4px;">'
+        + '<div id="sifre-hata" style="color:#ff4757;font-size:0.72rem;margin-top:8px;height:16px;"></div>'
+        + '<div style="display:flex;gap:10px;margin-top:16px;">'
+        + '<button onclick="sifreKontrol()" style="flex:1;background:rgba(0,180,255,0.15);border:1px solid rgba(0,180,255,0.4);color:#00b4ff;font-size:0.85rem;padding:11px;border-radius:8px;cursor:pointer;font-weight:700;">Giris</button>'
+        + '<button onclick="document.getElementById('sifre-modal').remove()" style="flex:1;background:rgba(255,71,87,0.1);border:1px solid rgba(255,71,87,0.3);color:#ff4757;font-size:0.85rem;padding:11px;border-radius:8px;cursor:pointer;">Iptal</button>'
+        + '</div></div>';
+      document.body.appendChild(modal);
+      setTimeout(function(){ var inp=document.getElementById('sifre-input'); if(inp){inp.focus(); inp.addEventListener('keydown',function(e){if(e.key==='Enter')sifreKontrol();});} }, 100);
+    } else {
+      doSwitchTab('takip');
+    }
+  });
+  if(btnTahmin) btnTahmin.addEventListener('click', function(){ doSwitchTab('tahmin'); });
+});
+
 // TAKİP MODÜLÜ
 // TAKİP MODÜLÜ
 
