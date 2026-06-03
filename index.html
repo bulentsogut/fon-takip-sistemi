@@ -3963,6 +3963,15 @@ if(!_lsGet(TRX_KEY)){
 fbLoad(function(fbdata) {
   _fbData = fbdata;
   startApp();
+  // startApp bitti, simdi FVT portfoy agirliklarini guncelle
+  // setTimeout ile async fonksiyonların yuklenmesini bekle
+  setTimeout(function(){
+    if(typeof refreshAllPortfolios === 'function'){
+      refreshAllPortfolios().then(function(){
+        if(typeof render === 'function') render();
+      });
+    }
+  }, 100);
 });
 
 function startApp() {
@@ -4004,6 +4013,64 @@ window._takipGetLoadR     = function() { return loadR(); };
 
 <!-- TAHMİN JS -->
 <script>
+async function loadFVTPortfolio(fonKodu) {
+  try {
+    var resp = await fetchWithTimeout(
+      '/api/fvt?fon=' + fonKodu, {}, 10000);
+    if (!resp.ok) return null;
+    var data = await resp.json();
+    if (!data.holdings || data.holdings.length === 0) return null;
+
+    // holdings'i FUNDS formatina cevir — sunucudan gelen tip bilgisini kullan
+    // BYF fonlari: FVT'de veri yok, cash olarak isle
+    var BYF_KODLAR = ['GLDTRF','GMSTRF','ZPX3GF','ZPX30F','TPKGYF1']; // TPKGY FVT'den fund olarak geliyor
+
+    var newHoldings = data.holdings
+      .filter(function(h) { return h.agirlik > 0.01; })
+      .map(function(h) {
+        var type;
+        if (BYF_KODLAR.indexOf(h.kod) !== -1) {
+          type = 'cash'; // BYF - veri yok, hesaplamaya katma
+        } else {
+          type = h.tip || (h.etf ? 'fund' : h.yabanci ? 'us' : 'bist');
+        }
+        return {
+          code: h.kod,
+          name: h.ad || h.kod,
+          weight: h.agirlik,
+          type: type
+        };
+      });
+
+    return {holdings: newHoldings, aciklamaTarihi: data.aciklamaTarihi};
+  } catch(e) {
+    console.warn('FVT portfoy yuklenemedi:', fonKodu, e.message);
+    return null;
+  }
+}
+
+async function refreshAllPortfolios() {
+  // Sadece takip edilen fonlari guncelle (portfoyumuzde olan fonlar)
+  var takipFonlar = ['DFI','TLY','PHE','CPT','IJC','PBR'];
+  var updated = 0;
+  for (var i = 0; i < takipFonlar.length; i++) {
+    var fon = takipFonlar[i];
+    if (!FUNDS[fon]) continue;
+    var result = await loadFVTPortfolio(fon);
+    if (result && result.holdings.length > 0) {
+      FUNDS[fon].holdings = result.holdings;
+      FUNDS[fon].aciklamaTarihi = result.aciklamaTarihi;
+      updated++;
+    }
+  }
+  if (updated > 0) {
+    console.log('FVT portfoy guncellendi:', updated, 'fon');
+    if(typeof toast === 'function') toast('FVT portfoy guncellendi: ' + updated + ' fon', 'ok');
+  }
+}
+
+
+
 // TAHMİN modülü — global scope (renderFunds, updateUI vb. dışarıdan erişilebilir)
 
 // ════════════════════════════════════════════════════════
@@ -4544,62 +4611,6 @@ async function fetchTefasFon(fonKodu) {
 }
 
 // FVT'den portföy dağılımını çek ve FUNDS objesini güncelle
-async function loadFVTPortfolio(fonKodu) {
-  try {
-    var resp = await fetchWithTimeout(
-      '/api/fvt?fon=' + fonKodu, {}, 10000);
-    if (!resp.ok) return null;
-    var data = await resp.json();
-    if (!data.holdings || data.holdings.length === 0) return null;
-
-    // holdings'i FUNDS formatina cevir — sunucudan gelen tip bilgisini kullan
-    // BYF fonlari: FVT'de veri yok, cash olarak isle
-    var BYF_KODLAR = ['GLDTRF','GMSTRF','ZPX3GF','ZPX30F','TPKGYF1']; // TPKGY FVT'den fund olarak geliyor
-
-    var newHoldings = data.holdings
-      .filter(function(h) { return h.agirlik > 0.01; })
-      .map(function(h) {
-        var type;
-        if (BYF_KODLAR.indexOf(h.kod) !== -1) {
-          type = 'cash'; // BYF - veri yok, hesaplamaya katma
-        } else {
-          type = h.tip || (h.etf ? 'fund' : h.yabanci ? 'us' : 'bist');
-        }
-        return {
-          code: h.kod,
-          name: h.ad || h.kod,
-          weight: h.agirlik,
-          type: type
-        };
-      });
-
-    return {holdings: newHoldings, aciklamaTarihi: data.aciklamaTarihi};
-  } catch(e) {
-    console.warn('FVT portfoy yuklenemedi:', fonKodu, e.message);
-    return null;
-  }
-}
-
-async function refreshAllPortfolios() {
-  // Sadece takip edilen fonlari guncelle (portfoyumuzde olan fonlar)
-  var takipFonlar = ['DFI','TLY','PHE','CPT','IJC','PBR'];
-  var updated = 0;
-  for (var i = 0; i < takipFonlar.length; i++) {
-    var fon = takipFonlar[i];
-    if (!FUNDS[fon]) continue;
-    var result = await loadFVTPortfolio(fon);
-    if (result && result.holdings.length > 0) {
-      FUNDS[fon].holdings = result.holdings;
-      FUNDS[fon].aciklamaTarihi = result.aciklamaTarihi;
-      updated++;
-    }
-  }
-  if (updated > 0) {
-    console.log('FVT portfoy guncellendi:', updated, 'fon');
-    if(typeof toast === 'function') toast('FVT portfoy guncellendi: ' + updated + ' fon', 'ok');
-  }
-}
-
 async function fetchAll() {
   // Yahoo Finance için CORS proxy wrapper
   async function yahooFetch(url) {
@@ -4694,16 +4705,6 @@ async function fetchAll() {
     setRefreshLoading(false);
   }
 }
-
-// Sayfa acilisinda FVT portfoy agirliklarini guncelle
-// (tum fonksiyonlar tanımlandıktan sonra)
-document.addEventListener('DOMContentLoaded', function(){
-  if(typeof refreshAllPortfolios === 'function'){
-    refreshAllPortfolios().then(function(){
-      if(typeof render === 'function') render();
-    });
-  }
-});
 
 // Fallback: 9 Mayis 2026
 function useFallbackData() {
