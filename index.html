@@ -2168,6 +2168,7 @@ tbody tr:hover{background:rgba(0,180,255,0.035);}
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
 <script>
+
 const firebaseConfig = {
   apiKey: "AIzaSyBfbSQ11fc68FhAIPfD4LPy689OL5epuKE",
   authDomain: "fon-takip-7af2c.firebaseapp.com",
@@ -2220,308 +2221,9 @@ _db.ref('fonmerkezi').on('value', function(snap) {
     }
   }
 });
-</script>
-</head>
-<body>
-<div id="fcard-global-tooltip"></div>
 
-<!-- Ana Navigasyon -->
-<nav class="main-nav">
-  <div class="nav-logo">📊 FON MERKEZİ</div>
-  <button class="nav-tab" id="tab-takip">
-    <div class="nav-dot"></div>
-    FON TAKİP
-    <span class="nav-badge">CANLI</span>
-  </button>
-  <button class="nav-tab tahmin-tab active" id="tab-tahmin">
-    <div class="nav-dot"></div>
-    GETİRİ TAHMİN
-  </button>
-  <div class="nav-ofset-status">
-    <div class="ofset-sync-dot" id="navSyncDot"></div>
-    <span id="navSyncText">Ofset senkronu bekleniyor</span>
-  </div>
-</nav>
 
-<!-- TAKİP PANELİ -->
-<div class="tab-panel" id="panel-takip">
-  <div class="wrap">
-<div class="wrap">
-<header>
-  <div><h1>FON TAKİP</h1><div class="sub">Yatırım Fonu Portföy Yönetim Paneli</div></div>
-  <div id="hdate"></div>
-</header>
 
-<div class="status-bar">
-  <div class="status-item">Kaynak: <span>TEFAS (Takasbank)</span></div>
-  <div class="status-item">Fonlar: <span>DFI · TLY · PHE · CPT</span></div>
-  <div class="status-item" id="last-update">Son güncelleme: <span>—</span></div>
-  <div class="loading-overlay" id="loading"><div class="spinner"></div> Çekiliyor…</div>
-  <div class="bar-acts">
-    <button class="abtn save" onclick="saveData()">💾 Kaydet</button>
-    <button class="abtn bkp" onclick="backupData()">⬇ Yedekle</button>
-    <label class="abtn rst" style="cursor:pointer;">⬆ Geri Yükle<input type="file" accept=".json" style="display:none" onchange="restoreData(this)"></label>
-    <button class="abtn" id="refresh-btn" onclick="fetchAllFunds()">⟳ TEFAS</button>
-    <button class="abtn rst" onclick="openPortfoyModal()">⚙ Portföy</button>
-    <button class="abtn" style="background:rgba(167,139,250,0.12);border-color:rgba(167,139,250,0.4);color:#a78bfa" onclick="openDegisiklikler()">Fondaki Değişiklikler</button>
-    <button class="abtn" style="background:rgba(255,71,87,0.08);border-color:rgba(255,71,87,0.3);color:#ff4757" onclick="geriAl()">&#8629; Geri Al</button>
-    <button class="abtn save" onclick="openManualUpdate()">✎ El ile Guncelle</button>
-  </div>
-</div>
-<div class="error-bar" id="error-bar">⚠ <span id="error-msg"></span></div>
-
-<div class="hero-row">
-  <div class="hcard main">
-    <div class="hlabel">Toplam Fon Sepeti Değeri</div>
-    <div class="hval" id="h-total">—</div>
-    <div class="hsub" id="hero-baslangic">Başlangıç: ₺2.656.427 · 04.02.2026</div>
-    <div class="badge pos" id="h-totalpct">—</div>
-  </div>
-  <div class="hcard"><div class="hlabel">Mayıs Getirisi</div><div class="hval" style="font-size:1.5rem;color:var(--green)" id="h-may">—</div><div class="badge pos" id="h-maypct">—</div></div>
-  <div class="hcard"><div class="hlabel">Nisan Getirisi</div><div class="hval" style="font-size:1.5rem;color:var(--green)">₺271.534</div><div class="badge pos">▲ %6.43</div></div>
-  <div class="hcard"><div class="hlabel">Mart Getirisi</div><div class="hval" style="font-size:1.5rem;color:var(--green)">₺255.135</div><div class="badge pos">▲ %80.6</div></div>
-</div>
-
-<p class="stitle">Fonlar</p>
-<div class="fund-row" id="fund-row">
-  <div class="fcard dfi"><div class="fname">DFI</div><div class="hlabel" style="margin-top:4px">Atlas Portföy Serbest Fon</div><div class="ftotal" id="fc-dfi">—</div><div class="fret" id="fc-dfiret">—</div><div class="fprice-row"><div><div class="fprice-label">Birim Fiyat</div><div class="fprice-val dfi-c" id="fp-dfi">—</div></div><div><div class="fprice-label">Bugün</div><div class="fday-ret" id="fd-dfi">—</div></div></div></div>
-  <div class="fcard tly"><div class="fname">TLY</div><div class="hlabel" style="margin-top:4px">Tera Portföy Birinci Serbest Fon</div><div class="ftotal" id="fc-tly">—</div><div class="fret" id="fc-tlyret">—</div><div class="fprice-row"><div><div class="fprice-label">Birim Fiyat</div><div class="fprice-val tly-c" id="fp-tly">—</div></div><div><div class="fprice-label">Bugün</div><div class="fday-ret" id="fd-tly">—</div></div></div></div>
-  <div class="fcard phe"><div class="fname">PHE</div><div class="hlabel" style="margin-top:4px">Pusula Portföy Hisse Senedi Fonu</div><div class="ftotal" id="fc-phe">—</div><div class="fret" id="fc-pheret">—</div><div class="fprice-row"><div><div class="fprice-label">Birim Fiyat</div><div class="fprice-val phe-c" id="fp-phe">—</div></div><div><div class="fprice-label">Bugün</div><div class="fday-ret" id="fd-phe">—</div></div></div></div>
-  <div class="fcard cpt"><div class="fname">CPT</div><div class="hlabel" style="margin-top:4px">Rota Portföy Çip Teknolojileri</div><div class="ftotal" id="fc-cpt">—</div><div class="fret" id="fc-cptret">—</div><div class="fprice-row"><div><div class="fprice-label">Birim Fiyat</div><div class="fprice-val cpt-c" id="fp-cpt">—</div></div><div><div class="fprice-label">Bugün</div><div class="fday-ret" id="fd-cpt">—</div></div></div></div>
-</div>
-
-<div class="chart-box">
-  <p class="stitle" style="margin-bottom:10px">Aylık Getiri</p>
-  <svg class="chart" viewBox="0 0 900 140" id="chart">
-    <defs><linearGradient id="gr" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#2ed573" stop-opacity="0.35"/><stop offset="100%" stop-color="#2ed573" stop-opacity="0"/></linearGradient></defs>
-  </svg>
-</div>
-
-<p class="stitle">Aylık Özet <span style="font-size:0.6rem;font-family:DM Mono,monospace;font-weight:400;letter-spacing:0;text-transform:none;color:var(--muted)">· aya tıkla → gün/hafta detayı</span></p>
-<div class="mo-row" style="margin-bottom:14px;">
-  <div class="mocard" id="mo-OCA" onclick="openMonth('OCA')"><div class="moname">Ocak</div><div class="mokar gp">₺145.354</div><div class="mopct gp">▲ %2.88</div><div class="mo-hint">↓ detay</div></div>
-  <div class="mocard" id="mo-SUB" onclick="openMonth('SUB')"><div class="moname">Şubat</div><div class="mokar gp">₺141.281</div><div class="mopct gz">%2.80</div><div class="mo-hint">↓ detay</div></div>
-  <div class="mocard" id="mo-MAR" onclick="openMonth('MAR')"><div class="moname">Mart</div><div class="mokar gp">₺255.135</div><div class="mopct gp">▲ %80.6</div><div class="mo-hint">↓ detay</div></div>
-  <div class="mocard" id="mo-NIS" onclick="openMonth('NIS')"><div class="moname">Nisan</div><div class="mokar gp">₺271.534</div><div class="mopct gp">▲ %6.43</div><div class="mo-hint">↓ detay</div></div>
-  <div class="mocard" id="mo-MAY" onclick="openMonth('MAY')"><div class="moname">Mayıs</div><div class="mokar gp" id="mo-may-kar">—</div><div class="mopct gp" id="mo-may-pct">—</div><div class="mo-hint">↓ detay</div></div>
-  <div class="mocard cur" id="mo-HAZ" onclick="openMonth('HAZ')"><div class="moname">Haziran ✦</div><div class="mokar gp" id="mo-haz-kar">—</div><div class="mopct gp" id="mo-haz-pct">—</div><div class="mo-hint">↓ detay</div></div>
-</div>
-
-<!-- Drilldown -->
-<div id="drill">
-  <div class="drill-panel">
-    <div class="drill-hdr">
-      <div class="drill-title" id="drill-title"></div>
-      <div style="display:flex;align-items:center;gap:12px;">
-        <span id="drill-meta" style="font-size:0.7rem;color:var(--muted)"></span>
-        <button class="drill-close" onclick="closeMonth()">✕ Kapat</button>
-      </div>
-    </div>
-    <div class="drill-tabs" id="drill-tabs"></div>
-    <div class="drill-sum" id="drill-sum"></div>
-    <div class="drill-tscroll"><table class="dtbl"><thead><tr id="drill-thead"></tr></thead><tbody id="drill-tbody"></tbody></table></div>
-  </div>
-</div>
-
-<div class="tbox">
-  <div class="thead-bar">
-    <h3 id="detay-baslik">Günlük Detay — Haziran 2026</h3>
-    <div style="display:flex;align-items:center;gap:8px"><button class="ay-btn ay-btn-aktif" data-ay="MAY" onclick="ayDegistir('MAY')" style="font-family:var(--mono);font-size:0.65rem;padding:3px 10px;border-radius:6px;border:1px solid rgba(0,180,255,0.4);background:rgba(0,180,255,0.12);color:#00b4ff;cursor:pointer;">Mayıs</button><button class="ay-btn" data-ay="HAZ" onclick="ayDegistir('HAZ')" style="font-family:var(--mono);font-size:0.65rem;padding:3px 10px;border-radius:6px;border:1px solid rgba(0,180,255,0.2);background:transparent;color:var(--muted);cursor:pointer;">Haziran</button><span style="font-size:0.65rem;color:var(--muted)"><span class="live-dot"></span>Yeşil kutular TEFAS'tan otomatik dolduruldu</span></div>
-  </div>
-  <div class="tscroll"><table>
-    <thead><tr>
-      <th>Tarih</th>
-      <th style="color:var(--dfi)">DFI %</th><th style="color:var(--dfi)">DFI TL</th>
-      <th style="color:var(--tly)">TLY %</th><th style="color:var(--tly)">TLY TL</th>
-      <th style="color:var(--phe)">PHE %</th><th style="color:var(--phe)">PHE TL</th>
-      <th style="color:var(--cpt)">CPT %</th><th style="color:var(--cpt)">CPT TL</th>
-      <th>% Değişim</th><th>Günlük K/Z</th><th>Sepet Toplamı</th>
-    </tr></thead>
-    <tbody id="tbody"></tbody>
-  </table></div>
-</div>
-
-<p class="stitle">Formül Yapısı</p>
-<div class="fbox"><div class="fgrid">
-  <div class="fitem"><div class="finame">Günlük TL Yansıması</div><div class="ficode">= Fon_Değeri × Getiri_%</div><div class="fidesc">Önceki günkü fon değeri × girilen yüzde oranı</div></div>
-  <div class="fitem"><div class="finame">Gün Sonu Fon Değeri</div><div class="ficode">= Önceki + TL_Yansıması</div><div class="fidesc">Her gün kümülatif olarak güncellenir</div></div>
-  <div class="fitem"><div class="finame">Sepet Toplamı</div><div class="ficode">= DFI + TLY + PHE + CPT</div><div class="fidesc">Dört fonun gün sonu değerlerinin toplamı</div></div>
-  <div class="fitem"><div class="finame">Günlük % Değişim</div><div class="ficode">= (Bugün − Dün) / Bugün</div><div class="fidesc">Sepetin günlük yüzdesel değişimi</div></div>
-  <div class="fitem"><div class="finame">Aylık Getiri</div><div class="ficode">= Son / İlk − 1</div><div class="fidesc">Ayın son ve ilk sepet değeri farkı</div></div>
-  <div class="fitem"><div class="finame">Toplam K/Z</div><div class="ficode">= Σ Günlük TL Getirileri</div><div class="fidesc">Tüm günlerin TL getirisinin toplamı</div></div>
-</div></div>
-
-<footer>FON TAKİP &nbsp;·&nbsp; TEFAS Canlı Veri &nbsp;·&nbsp; Veriler Takasbank TEFAS'tan çekilmektedir &nbsp;·&nbsp; Yatırım tavsiyesi değildir</footer>
-</div>
-<div id="toast"></div>
-  </div>
-</div>
-
-<!-- TAHMİN PANELİ -->
-<div class="tab-panel active" id="panel-tahmin">
-
-  <!-- Ofset Senkron Paneli — TAHMİN sekmesinde görünür -->
-  <div class="ofset-sync-panel" id="ofsetSyncPanel">
-    <div class="ofset-sync-left">
-      <div class="ofset-sync-title">
-        <span>⟳</span> OTOMATİK OFSET SENKRONU
-      </div>
-      <div class="ofset-sync-desc">
-        FON TAKİP sekmesindeki TEFAS gerçek kapanış verilerinden son 5 iş gününün
-        <strong style="color:#00ffc8">(gerçek − tahmin)</strong> farkının ortalaması hesaplanarak
-        her fona ait ofset otomatik güncellenir.
-      </div>
-      <div class="ofset-sync-chips" id="ofsetSyncChips">
-        <span style="font-size:10px;color:#4e6a82;font-family:DM Mono,monospace;">Henüz hesaplanmadı — "Ofseti Hesapla" butonuna bas</span>
-      </div>
-      <div class="ofset-gun-sayisi" id="ofsetGunSayisi"></div>
-    </div>
-    <div style="display:flex;flex-direction:column;gap:8px;align-self:center">
-      <button id="btnOtomatikOfset" class="btn-ofset-sync" onclick="otomatikOfsetHesapla()"
-        style="background:linear-gradient(135deg,rgba(0,255,200,0.18),rgba(0,180,255,0.12));border-color:rgba(0,255,200,0.5);color:#00ffc8;font-size:11px">
-        ⚡ Otomatik Ofset Hesapla
-      </button>
-      <button class="btn-ofset-sync" onclick="snapshotTahminler(true)"
-        style="background:linear-gradient(135deg,rgba(79,163,255,0.12),rgba(79,163,255,0.06));border-color:rgba(79,163,255,0.3);color:#4fa3ff;font-size:10px">
-        📸 Manuel Tahmini Kaydet
-      </button>
-      <button class="btn-ofset-sync" onclick="hesaplaVeUygulaOfset()"
-        style="background:rgba(78,106,130,0.1);border-color:rgba(78,106,130,0.3);color:#4e6a82;font-size:10px">
-        ✦ Kayıtlı Tahminle Hesapla
-      </button>
-    </div>
-  </div>
-
-  <div class="app">
-<div class="app">
-
-  <!-- Header -->
-  <div class="header">
-    <div class="logo-area">
-      <div class="logo-icon">📊</div>
-      <div class="logo-text">
-        <h1>FON GETİRİ TAHMİN</h1>
-        <p>TLY · DFI · PHE · CPT — Ağırlıklı Gün Sonu Tahmini</p>
-      </div>
-    </div>
-    <div class="header-right">
-      <div class="date-badge" id="dateBadge">—</div>
-      <button class="refresh-btn" id="refreshBtn" onclick="fetchAll()">
-        <span id="refreshIcon">⟳</span> VERİLERİ GÜNCELLE
-      </button>
-      <button class="auto-refresh-btn" id="autoRefreshBtn" onclick="toggleAutoRefresh()">
-        <span id="autoIcon">⏱</span> <span id="autoLabel">OTOMATİK GÜNCELLE</span>
-      </button>
-      <button class="manual-btn" onclick="openManualModal()">
-        ✎ MANUEL GİR
-      </button>
-      <button class="manual-btn" onclick="openFaizModal()" style="border-color:#ffcc44;color:#ffcc44;background:linear-gradient(135deg,#2a2010,#1a1508);">
-        ⚙ FAİZ ORANLARI
-      </button>
-    </div>
-  </div>
-
-  <!-- Status -->
-  <div class="status-strip">
-    <div class="status-dot" id="statusDot"></div>
-    <span id="statusText">Verileri çekmek için "Verileri Güncelle" butonuna tıklayın.</span>
-  </div>
-
-  <!-- Summary cards -->
-  <div class="section-label">PORTFÖY ÖZETI</div>
-  <div class="summary-row" id="summaryRow">
-    <div class="summary-card" style="--accent-color:#4fa3ff; border-color:rgba(79,163,255,0.25);">
-      <div class="sc-label" style="color:#4fa3ff;">TLY</div>
-      <div class="sc-value" id="sum-tly" style="--val-color:#fff">—</div>
-      <div class="sc-sub">Tera Portföy Birinci Serbest</div>
-    </div>
-    <div class="summary-card" style="--accent-color:#3ef5a0; border-color:rgba(62,245,160,0.25);">
-      <div class="sc-label" style="color:#3ef5a0;">DFI</div>
-      <div class="sc-value" id="sum-dfi" style="--val-color:#fff">—</div>
-      <div class="sc-sub">Atlas Portföy Serbest</div>
-    </div>
-    <div class="summary-card" style="--accent-color:#ff5c7a; border-color:rgba(255,92,122,0.25);">
-      <div class="sc-label" style="color:#ff5c7a;">PHE</div>
-      <div class="sc-value" id="sum-phe" style="--val-color:#fff">—</div>
-      <div class="sc-sub">Pusula Portföy Hisse Senedi</div>
-    </div>
-    <div class="summary-card" style="--accent-color:#ffcc44; border-color:rgba(255,204,68,0.25);">
-      <div class="sc-label" style="color:#ffcc44;">CPT</div>
-      <div class="sc-value" id="sum-cpt" style="--val-color:#fff">—</div>
-      <div class="sc-sub">Rota Portföy Teknoloji</div>
-    </div>
-    <div class="summary-card" style="--accent-color:#ff6b6b; border-color:rgba(255,107,107,0.25);">
-      <div class="sc-label" style="color:#ff6b6b;">IJC</div>
-      <div class="sc-value" id="sum-ijc" style="--val-color:#fff">—</div>
-      <div class="sc-sub">İş Portföy Kare Teknoloji</div>
-    </div>
-    <div class="summary-card" style="--accent-color:#a78bfa; border-color:rgba(167,139,250,0.25);">
-      <div class="sc-label" style="color:#a78bfa;">PBR</div>
-      <div class="sc-value" id="sum-pbr" style="--val-color:#fff">—</div>
-      <div class="sc-sub">Pusula Portföy Birinci Değişken</div>
-    </div>
-  </div>
-
-  <!-- Funds -->
-  <div class="section-label">FON DETAYLARI</div>
-  <div class="funds-grid" id="fundsGrid">
-    <!-- rendered by JS -->
-  </div>
-
-  <!-- Gerçek Değer Girişi ve Düzeltme Paneli -->
-  
-  <!-- Tahmin vs Gerçek Kıyas Tablosu -->
-  <div class="section-label" style="margin-top:28px">TAHMİN — GERÇEK KIYASI</div>
-  <div style="background:rgba(13,21,40,0.9);border:1px solid rgba(99,179,255,0.18);border-radius:14px;padding:20px 24px;margin-bottom:28px">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:10px">
-      <div style="font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:#4fa3ff">
-        📊 Tahmin · Gerçek · Δ/2 · Ofset Etkinlik Analizi
-      </div>
-      <div style="font-family:var(--mono);font-size:9px;color:var(--muted)">
-        Tahmin = model &nbsp;|&nbsp; Gerçek = TEFAS &nbsp;|&nbsp; Δ/2 = düzeltme &nbsp;|&nbsp; +Ofset = düzeltilmiş (yeşil = iyileşti)
-      </div>
-    </div>
-    <div id="kiyasTablosu">
-      <div style="color:#4e6a82;font-size:11px;padding:8px;font-family:monospace">Yükleniyor...</div>
-    </div>
-  </div>
-
-<div class="section-label">GERÇEK DEĞER & DÜZELTME</div>
-  <div class="gercek-panel">
-    <div class="gercek-panel-title">
-      📊 Gün Sonu Gerçek Getiri Girişi
-    </div>
-    <div class="gercek-grid" id="gercekGrid">
-      <!-- JS ile doldurulur -->
-    </div>
-    <div class="ofset-ozet" id="ofsetOzet"></div>
-    <div class="gercek-actions">
-      <button class="btn-duzelt" onclick="duzeltmeUygula()">
-        ✦ Düzeltmeyi Bir Sonraki Güne Uygula
-      </button>
-      <button class="btn-duzelt-reset" onclick="ofsetSifirla()">
-        ✕ Ofsetleri Sıfırla
-      </button>
-      <div class="duzelt-info">
-        Gün sonunda TEFAS'tan açıklanan gerçek değeri girin → Farkı hesapla →
-        <strong style="color:var(--amber)">Düzeltme Uygula</strong> butonuna bas →
-        Yarın tahminlere otomatik düzeltme eklenir.
-        Geçmiş farkların <strong style="color:var(--accent)">ağırlıklı ortalaması</strong> kullanılır.
-      </div>
-    </div>
-  </div>
-
-  <!-- Footer -->
-  <div class="footer-note">
-    ⚠️ TAHMİN NOTU: Bu veriler seans içi/sonu hisse değişimlerine dayalı ağırlıklı ortalama tahminidir. Fonların gerçek NAV değerleri bir sonraki iş günü TEFAS tarafından açıklanır. Portföy dağılımları aylık KAP bildirimleri baz alınmaktadır ve günlük değişebilir. Bu bilgiler yatırım tavsiyesi değildir.
-  </div>
-
-</div>
-  </div>
-</div>
-
-<!-- TAKİP JS -->
-<script>
 // Şifre sistemi — TAKİP JS yüklenince aktif olsun
 var _takipUnlocked = false;
 var _TAKIP_SIFRE = '5622';
@@ -4619,10 +4321,9 @@ window._takipGetPREFILLED = function() { return PREFILLED; };
 window._takipGetLiveRates = function() { return liveRates; };
 window._takipGetLoadR     = function() { return loadR(); };
 
-</script>
 
-<!-- TAHMİN JS -->
-<script>
+
+
 async function fetchAll() {
   // Yahoo Finance için CORS proxy wrapper
   async function yahooFetch(url) {
@@ -5542,10 +5243,9 @@ function saveFaizValues() {
   setStatus('live', 'Faiz oranları güncellendi ve hesaplamalar yenilendi.');
 }
 
-</script>
 
-<!-- SEKME SİSTEMİ & OFSET SENKRON -->
-<script>
+
+
 // ═══════════════════════════════════════════════════
 // SEKME YÖNETİMİ
 // ═══════════════════════════════════════════════════
@@ -6050,6 +5750,7 @@ function migrateFromBackup(input) {
     }, 800);
   }
 })();
+
 
 </script>
 
