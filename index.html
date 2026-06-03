@@ -4575,12 +4575,13 @@ fbLoad(function(fbdata) {
   // startApp bitti, simdi FVT portfoy agirliklarini guncelle
   // setTimeout ile async fonksiyonların yuklenmesini bekle
   setTimeout(function(){
-    if(typeof refreshAllPortfolios === 'function'){
-      refreshAllPortfolios().then(function(){
+    var fn = window.refreshAllPortfolios || (typeof refreshAllPortfolios !== 'undefined' ? refreshAllPortfolios : null);
+    if(fn){
+      fn().then(function(){
         if(typeof render === 'function') render();
       });
     }
-  }, 100);
+  }, 500);
 });
 
 function startApp() {
@@ -4639,7 +4640,8 @@ async function fetchAll() {
   setRefreshLoading(true);
 
   // FVT'den guncel portfoy dagilimini al
-  await refreshAllPortfolios();
+  if(typeof refreshAllPortfolios === 'function') await refreshAllPortfolios();
+  else if(window.refreshAllPortfolios) await window.refreshAllPortfolios();
 
   // Hisseleri ve fonları ayır
   var tickers = {};
