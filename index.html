@@ -4704,7 +4704,7 @@ async function fetchAll() {
   });
 
   var results = {};
-  var done = 0, failed = 0;
+  var done = 0, failed = 0, failedList = [];
   var tickerEntries = Object.entries(tickers);
   var fonEntries    = Object.keys(fonlar);
   var total = tickerEntries.length + fonEntries.length;
@@ -4717,7 +4717,7 @@ async function fetchAll() {
       var code = entry[0], type = entry[1];
       var chg = await fetchQuote(code, type);
       results[code] = (chg !== null) ? chg : 0;
-      if (chg === null) failed++;
+      if (chg === null) { failed++; failedList.push(code); }
       done++;
       setStatus('loading', 'Çekiliyor: ' + done + ' / ' + total + (failed > 0 ? '  (' + failed + ' bulunamadı)' : ''));
     }));
@@ -4731,10 +4731,10 @@ async function fetchAll() {
       try {
         var chg = await fetchTefasFon(code);
         results[code] = (chg !== null) ? chg : 0;
-        if (chg === null) failed++;
+        if (chg === null) { failed++; failedList.push(code); }
       } catch(e) {
         results[code] = 0;
-        failed++;
+        failed++; failedList.push(code);
       }
       done++;
       setStatus('loading', 'Çekiliyor: ' + done + ' / ' + total + (failed > 0 ? '  (' + failed + ' bulunamadı)' : ''));
@@ -4750,7 +4750,8 @@ async function fetchAll() {
   if (failed === 0) {
     setStatus('live', 'Tüm veriler güncellendi — ' + lastFetchTime.toLocaleTimeString('tr-TR') + ' · ' + total + ' hisse');
   } else if (ok > 0) {
-    setStatus('live', 'Güncellendi — ' + lastFetchTime.toLocaleTimeString('tr-TR') + ' · ' + ok + '/' + total + ' hisse (' + failed + ' bulunamadı)');
+    var failedStr = failedList.length > 0 ? ' [' + failedList.join(', ') + ']' : '';
+    setStatus('live', 'Güncellendi — ' + lastFetchTime.toLocaleTimeString('tr-TR') + ' · ' + ok + '/' + total + ' hisse (' + failed + ' bulunamadı' + failedStr + ')');
   } else {
     useFallbackData();
     setStatus('error', 'Veri çekilemedi. İnternet bağlantısını kontrol et ve tekrar dene.');
