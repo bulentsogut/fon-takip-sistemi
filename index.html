@@ -429,7 +429,7 @@ function renderFunds() {
   }).join('');
 }
 
-async function loadFVTPortfolio(fonKodu) {
+window.loadFVTPortfolio = async function loadFVTPortfolio(fonKodu) {
   try {
     var resp = await fetchWithTimeout(
       '/api/fvt?fon=' + fonKodu, {}, 10000);
@@ -465,7 +465,7 @@ async function loadFVTPortfolio(fonKodu) {
   }
 }
 
-async function refreshAllPortfolios() {
+window.refreshAllPortfolios = async function refreshAllPortfolios() {
   // Sadece takip edilen fonlari guncelle (portfoyumuzde olan fonlar)
   var takipFonlar = ['DFI','TLY','PHE','CPT','IJC','PBR'];
   var updated = 0;
