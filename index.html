@@ -4526,9 +4526,9 @@ async function fetchQuote(code, type) {
   }
 
   const ticker = type === 'bist' ? (code + '.IS') : code;
-  // Netlify function uzerinden cek (CORS yok)
+  // 5d range ile cek - son 2 gunun kapanisini kullanarak dogru hesapla
   const urls = [
-    '/api/yahoo?ticker=' + encodeURIComponent(ticker) + '&range=1d'
+    '/api/yahoo?ticker=' + encodeURIComponent(ticker) + '&range=5d'
   ];
   for (var i = 0; i < urls.length; i++) {
     try {
@@ -4542,10 +4542,36 @@ async function fetchQuote(code, type) {
       var data = await resp.json();
       var meta = data && data.chart && data.chart.result && data.chart.result[0] && data.chart.result[0].meta;
       if (!meta) continue;
+      // Önce regularMarketChangePercent kullan (en güvenilir)
+      if (meta.regularMarketChangePercent != null && meta.regularMarketChangePercent !== 0) {
+        return parseFloat(meta.regularMarketChangePercent.toFixed(4));
+      }
+      // Yedek: fiyat farkından hesapla (sadece previousClose kullan, chartPreviousClose değil)
+      // regularMarketChangePercent varsa kullan
+      if (meta.regularMarketChangePercent != null && meta.regularMarketChangePercent !== 0) {
+        return parseFloat(meta.regularMarketChangePercent.toFixed(4));
+      }
+      // indicators'tan son 2 gunun kapanisini kullan (en guvenilir)
+      var closes = data.chart.result[0].indicators &&
+                   data.chart.result[0].indicators.adjclose &&
+                   data.chart.result[0].indicators.adjclose[0] &&
+                   data.chart.result[0].indicators.adjclose[0].adjclose;
+      if (closes && closes.length >= 2) {
+        var today = closes[closes.length - 1];
+        var yesterday = closes[closes.length - 2];
+        if (today && yesterday && yesterday !== 0) {
+          var chg = (today - yesterday) / yesterday * 100;
+          if (Math.abs(chg) > 25) return null; // Asiri buyuk = veri hatasi
+          return parseFloat(chg.toFixed(4));
+        }
+      }
+      // Son care: meta fiyatlarindan hesapla
       var price = meta.regularMarketPrice;
-      var prev  = meta.previousClose || meta.chartPreviousClose;
+      var prev  = meta.previousClose;
       if (price && prev && prev !== 0) {
-        return parseFloat(((price - prev) / prev * 100).toFixed(4));
+        var chg2 = (price - prev) / prev * 100;
+        if (Math.abs(chg2) > 25) return null;
+        return parseFloat(chg2.toFixed(4));
       }
     } catch(e) { /* query2 dene */ }
   }
@@ -5165,7 +5191,10 @@ function saveManualValues() {
   var tickers = {};
   Object.entries(FUNDS).forEach(function(entry) {
     entry[1].holdings.forEach(function(h) {
-      if (h.type === 'bist' || h.type === 'us' || h.type === 'fund') tickers[h.code] = true;
+      const isRealCode = !h.code.includes('-') && !['REPO','MEVDUAT','TAKASBANK'].includes(h.code);
+      if (h.type === 'bist' || h.type === 'us' || h.type === 'fund' || (h.type === 'cash' && isRealCode)) {
+        tickers[h.code] = true;
+      }
     });
   });
 
