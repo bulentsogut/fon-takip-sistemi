@@ -1824,36 +1824,7 @@ _db.ref('fonmerkezi').on('value', function(snap) {
   <!-- Summary cards -->
   <div class="section-label">PORTFÖY ÖZETI</div>
   <div class="summary-row" id="summaryRow">
-    <div class="summary-card" style="--accent-color:#4fa3ff; border-color:rgba(79,163,255,0.25);">
-      <div class="sc-label" style="color:#4fa3ff;">TLY</div>
-      <div class="sc-value" id="sum-tly" style="--val-color:#fff">—</div>
-      <div class="sc-sub">Tera Portföy Birinci Serbest</div>
-    </div>
-    <div class="summary-card" style="--accent-color:#3ef5a0; border-color:rgba(62,245,160,0.25);">
-      <div class="sc-label" style="color:#3ef5a0;">DFI</div>
-      <div class="sc-value" id="sum-dfi" style="--val-color:#fff">—</div>
-      <div class="sc-sub">Atlas Portföy Serbest</div>
-    </div>
-    <div class="summary-card" style="--accent-color:#ff5c7a; border-color:rgba(255,92,122,0.25);">
-      <div class="sc-label" style="color:#ff5c7a;">PHE</div>
-      <div class="sc-value" id="sum-phe" style="--val-color:#fff">—</div>
-      <div class="sc-sub">Pusula Portföy Hisse Senedi</div>
-    </div>
-    <div class="summary-card" style="--accent-color:#ffcc44; border-color:rgba(255,204,68,0.25);">
-      <div class="sc-label" style="color:#ffcc44;">CPT</div>
-      <div class="sc-value" id="sum-cpt" style="--val-color:#fff">—</div>
-      <div class="sc-sub">Rota Portföy Teknoloji</div>
-    </div>
-    <div class="summary-card" style="--accent-color:#ff6b6b; border-color:rgba(255,107,107,0.25);">
-      <div class="sc-label" style="color:#ff6b6b;">IJC</div>
-      <div class="sc-value" id="sum-ijc" style="--val-color:#fff">—</div>
-      <div class="sc-sub">İş Portföy Kare Teknoloji</div>
-    </div>
-    <div class="summary-card" style="--accent-color:#a78bfa; border-color:rgba(167,139,250,0.25);">
-      <div class="sc-label" style="color:#a78bfa;">PBR</div>
-      <div class="sc-value" id="sum-pbr" style="--val-color:#fff">—</div>
-      <div class="sc-sub">Pusula Portföy Birinci Değişken</div>
-    </div>
+    <!-- JS tarafindan render edilir -->
   </div>
 
   <!-- Funds -->
@@ -3965,10 +3936,18 @@ if(!_lsGet(TRX_KEY)){
 // Firebase'den veri yükle, sonra render et
 fbLoad(function(fbdata) {
   _fbData = fbdata;
+  // Kaldirilmis fonlari sil
+  if(fbdata && fbdata.removedFunds){
+    Object.keys(fbdata.removedFunds).forEach(function(fon){
+      delete FUNDS[fon];
+    });
+  }
   // Custom fonları Firebase'den yükle
   if(fbdata && fbdata.customFunds){
     try {
       Object.keys(fbdata.customFunds).forEach(function(fon){
+        // Kaldirilmis fonlari ekleme
+        if(fbdata.removedFunds && fbdata.removedFunds[fon]) return;
         if(!FUNDS[fon]) {
           FUNDS[fon] = fbdata.customFunds[fon];
           if(typeof FON_OFSET !== 'undefined') FON_OFSET[fon] = FON_OFSET[fon] || 0;
@@ -4360,6 +4339,25 @@ let lastFetchTime = null;
 // RENDER — initial skeleton
 // ════════════════════════════════════════════════════════
 function renderFunds() {
+  // Summary kartları render et (dinamik)
+  const summaryRow = document.getElementById('summaryRow');
+  if (summaryRow) {
+    const renkler = { TLY:'#4fa3ff', DFI:'#3ef5a0', PHE:'#ff5c7a', CPT:'#ffcc44', IJC:'#ff6b6b', PBR:'#a78bfa' };
+    summaryRow.innerHTML = Object.entries(FUNDS).map(([id, fund]) => {
+      const renk = renkler[id] || ('#' + Math.floor(Math.random()*0xffffff).toString(16).padStart(6,'0'));
+      const rgb = renk.replace('#','');
+      const r = parseInt(rgb.slice(0,2),16), g = parseInt(rgb.slice(2,4),16), b = parseInt(rgb.slice(4,6),16);
+      return '<div class="summary-card" style="--accent-color:' + renk + '; border-color:rgba(' + r + ',' + g + ',' + b + ',0.25);">'
+        + '<div style="display:flex;justify-content:space-between;align-items:center;">'
+        + '<div class="sc-label" style="color:' + renk + ';">' + id + '</div>'
+        + '<button class="sum-sil-btn" data-fon="" + id + "" title="Fonu kaldir" style="background:none;border:none;color:rgba(255,255,255,0.2);cursor:pointer;font-size:0.8rem;padding:0 2px;line-height:1;">✕</button>'
+        + '</div>'
+        + '<div class="sc-value" id="sum-' + id.toLowerCase() + '" style="--val-color:#fff">—</div>'
+        + '<div class="sc-sub">' + (fund.name || id) + '</div>'
+        + '</div>';
+    }).join('');
+  }
+
   const grid = document.getElementById('fundsGrid');
   grid.innerHTML = Object.entries(FUNDS).map(([id, fund]) => {
     // Gerçek fon kodları (tire içermeyenler, REPO/MEVDUAT olmayanlar) fund gibi işle
@@ -4458,7 +4456,18 @@ function renderFunds() {
         </div>
       </div>
     `;
-  }).join('');
+    }).join('');
+
+  // Summary kartlarindaki X butonlarina listener ekle
+  var summaryRowEl = document.getElementById('summaryRow');
+  if(summaryRowEl){
+    summaryRowEl.querySelectorAll('.sum-sil-btn').forEach(function(btn){
+      btn.addEventListener('click', function(e){
+        e.stopPropagation();
+        fonSilOnay(this.dataset.fon);
+      });
+    });
+  }
 }
 
 // ════════════════════════════════════════════════════════
@@ -5717,18 +5726,29 @@ async function fonEkle() {
 }
 
 async function fonSil(kod) {
-  if (!confirm(kod + ' fonunu silmek istediginizden emin misiniz?')) return;
+  if (!confirm(kod + ' fonunu listeden kaldirmak istediginizden emin misiniz?')) return;
 
   delete FUNDS[kod];
-  delete FON_OFSET[kod];
+  if(typeof FON_OFSET !== 'undefined') delete FON_OFSET[kod];
 
-  if (_fbData && _fbData.customFunds) {
+  // Firebase'den kaldir
+  if (_fbData && _fbData.customFunds && _fbData.customFunds[kod]) {
     delete _fbData.customFunds[kod];
     fbSave('customFunds', _fbData.customFunds);
   }
+  // Kaldirilanlari Firebase'e kaydet (sayfa yenilenince tekrar gelmesin)
+  if(!_fbData.removedFunds) _fbData.removedFunds = {};
+  _fbData.removedFunds[kod] = true;
+  fbSave('removedFunds', _fbData.removedFunds);
 
   if (typeof renderFunds === 'function') renderFunds();
-  openFonEkleModal();
+  var m = document.getElementById('fonEkleModal');
+  if(m) openFonEkleModal();
+}
+
+function fonSilOnay(kod) {
+  // Summary karttaki X butonundan
+  fonSil(kod);
 }
 
 window.addEventListener('load', function(){
