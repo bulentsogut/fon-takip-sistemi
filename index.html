@@ -4054,7 +4054,7 @@ const FUNDS = {
       { code: 'MANAS', name: 'Manas Enerji Yönetimi Sanayi ve Ticaret A.Ş.', weight: 0.04, type: 'bist' },
       { code: 'EFOR',  name: 'Efor Yatırım Sanayi ve Ticaret A.Ş.', weight: 0.01, type: 'bist' },
       // Gayrimenkul YF + Fonlar
-      { code: 'TPKGY', name: 'TPKGY Gayrimenkul Yatırım Fonu', weight: 10.71, type: 'fund' },
+      { code: 'TPKGYF1', name: 'TPKGY Gayrimenkul Yatırım Fonu', weight: 10.71, type: 'fund' },
       { code: 'HMV',   name: 'Hedef Portföy Mavi Hisse Senedi Serbest Fonu', weight: 1.63, type: 'fund' },
       { code: 'T3B',   name: 'Tera Portföy Üçüncü Hisse Senedi Serbest Fonu', weight: 0.03, type: 'fund' },
       // Nakit / Para Piyasası — hesaplamaya katılmaz
@@ -4348,17 +4348,19 @@ let lastFetchTime = null;
 function renderFunds() {
   const grid = document.getElementById('fundsGrid');
   grid.innerHTML = Object.entries(FUNDS).map(([id, fund]) => {
-    const typeOrder = {bist: 1, fund: 2, us: 3};
+    // Gerçek fon kodları (tire içermeyenler, REPO/MEVDUAT olmayanlar) fund gibi işle
+    const isRealFundCode = h => h.type === 'cash' && !h.code.includes('-') && !['REPO','MEVDUAT','TAKASBANK','TERS-REPO','FIN-BONO','VADELI-TEM','KIRA-SERT'].includes(h.code);
+    const typeOrder = {bist: 1, fund: 2, us: 3, cash: 4};
     const activeHoldings = fund.holdings
-      .filter(h => h.type !== 'cash')
+      .filter(h => h.type !== 'cash' || isRealFundCode(h))
       .slice()
       .sort((a, b) => {
         const ta = typeOrder[a.type] || 4;
         const tb = typeOrder[b.type] || 4;
         if (ta !== tb) return ta - tb;
-        return b.weight - a.weight; // aynı tip içinde ağırlığa göre
+        return b.weight - a.weight;
       });
-    const cashHoldings = fund.holdings.filter(h => h.type === 'cash' && h.weight !== 0);
+    const cashHoldings = fund.holdings.filter(h => h.type === 'cash' && h.weight !== 0 && !isRealFundCode(h));
 
     const activeRows = activeHoldings.map(h => `
       <tr>
@@ -5040,6 +5042,25 @@ function updateUI() {
     let coveredWeight = 0;
 
     fund.holdings.forEach(h => {
+      // Gerçek fon kodları (TPKGYF1 gibi) cash tipinde olsa bile priceCache kullan
+      const isRealFundCode = h.type === 'cash' && !h.code.includes('-') && !['REPO','MEVDUAT','TAKASBANK','TERS-REPO','FIN-BONO','VADELI-TEM','KIRA-SERT'].includes(h.code);
+      if (isRealFundCode) {
+        const chg = priceCache[h.code] ?? 0;
+        const contrib = (h.weight / 100) * chg;
+        weightedReturn += contrib;
+        coveredWeight += h.weight;
+        const chgEl = document.getElementById(`chg-${id}-${h.code}`);
+        if (chgEl) {
+          const cls = chg > 0 ? 'pos' : chg < 0 ? 'neg' : 'neu';
+          chgEl.innerHTML = `<span class="${cls}">${chg > 0 ? '+' : ''}${chg.toFixed(2)}%</span>`;
+        }
+        const contEl = document.getElementById(`contrib-${id}-${h.code}`);
+        if (contEl) {
+          contEl.className = `td-contrib ${chg > 0 ? 'pos' : chg < 0 ? 'neg' : 'neu'}`;
+          contEl.textContent = `${chg >= 0 ? '+' : ''}${contrib.toFixed(4)}%`;
+        }
+        return;
+      }
       // Para piyasası araçları: günlük faiz katkısı hesapla
       if (h.type === 'cash') {
         const dailyRate = getDailyRate(h.code);
