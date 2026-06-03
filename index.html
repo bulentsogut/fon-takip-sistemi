@@ -3938,8 +3938,12 @@ fbLoad(function(fbdata) {
   _fbData = fbdata;
   // Kaldirilmis fonlari sil
   if(fbdata && fbdata.removedFunds){
-    Object.keys(fbdata.removedFunds).forEach(function(fon){
-      delete FUNDS[fon];
+    Object.keys(fbdata.removedFunds).forEach(function(fonKey){
+      // safeKod -> gercek kod (alt çizgi _ yerine bos)
+      delete FUNDS[fonKey];
+      // Orijinal kod da dene
+      var origKod = fonKey.replace(/_/g, '');
+      if(origKod !== fonKey) delete FUNDS[origKod];
     });
   }
   // Custom fonları Firebase'den yükle
@@ -4645,7 +4649,8 @@ async function refreshAllPortfolios() {
   for (var i = 0; i < takipFonlar.length; i++) {
     var fon = takipFonlar[i];
     // Kaldirilmis fonlari atla
-    if(_fbData && _fbData.removedFunds && _fbData.removedFunds[fon]) continue;
+    var safeF = fon.replace(/[.#$\/\[\]]/g, '_');
+    if(_fbData && _fbData.removedFunds && (_fbData.removedFunds[fon] || _fbData.removedFunds[safeF])) continue;
     if (!FUNDS[fon]) continue;
     var result = await loadFVTPortfolio(fon);
     if (result && result.holdings.length > 0) {
@@ -5708,20 +5713,26 @@ async function fonEkle() {
 }
 
 async function fonSil(kod) {
+  if(!kod || typeof kod !== 'string' || kod.trim() === '') return;
+  kod = kod.trim().toUpperCase();
   if (!confirm(kod + ' fonunu listeden kaldirmak istediginizden emin misiniz?')) return;
 
   delete FUNDS[kod];
   if(typeof FON_OFSET !== 'undefined') delete FON_OFSET[kod];
 
-  // Firebase'den kaldir
+  // Firebase'den kaldir (custom ise)
   if (_fbData && _fbData.customFunds && _fbData.customFunds[kod]) {
     delete _fbData.customFunds[kod];
     fbSave('customFunds', _fbData.customFunds);
   }
-  // Kaldirilanlari Firebase'e kaydet (sayfa yenilenince tekrar gelmesin)
-  if(!_fbData.removedFunds) _fbData.removedFunds = {};
-  _fbData.removedFunds[kod] = true;
-  fbSave('removedFunds', _fbData.removedFunds);
+
+  // Kaldirilanlari Firebase'e kaydet — key olarak fonkodu kullan (gecerli karakter kontrolu)
+  var safeKod = kod.replace(/[.#$\/\[\]]/g, '_');
+  if(safeKod) {
+    if(!_fbData.removedFunds) _fbData.removedFunds = {};
+    _fbData.removedFunds[safeKod] = true;
+    try { fbSave('removedFunds', _fbData.removedFunds); } catch(e) { console.warn('removedFunds kayit hatasi:', e); }
+  }
 
   if (typeof renderFunds === 'function') renderFunds();
   var m = document.getElementById('fonEkleModal');
