@@ -3970,31 +3970,7 @@ function startApp() {
     }
   }
   const saved=loadR();
-if(Object.keys(saved).length === 0){
-  setTimeout(function(){
-    var banner = document.createElement('div');
-    banner.id = 'restore-banner';
-    banner.style.cssText = 'position:fixed;bottom:70px;left:50%;transform:translateX(-50%);background:#1a2a3a;border:1px solid rgba(167,139,250,0.4);border-radius:10px;padding:12px 20px;z-index:9998;display:flex;align-items:center;gap:12px;font-size:0.78rem;color:#a78bfa;white-space:nowrap;box-shadow:0 4px 20px rgba(0,0,0,0.5);';
-    var inp = document.createElement('input');
-    inp.type='file'; inp.accept='.json'; inp.style.display='none';
-    inp.onchange = function(){ restoreData(this); var b=document.getElementById('restore-banner'); if(b) b.remove(); };
-    var lbl = document.createElement('label');
-    lbl.style.cssText = 'background:rgba(167,139,250,0.15);border:1px solid rgba(167,139,250,0.4);color:#a78bfa;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:0.75rem;';
-    lbl.textContent = 'Yedek Yukle';
-    lbl.appendChild(inp);
-    var txt = document.createElement('span');
-    txt.textContent = 'Kayitli veri bulunamadi.';
-    var cls = document.createElement('button');
-    cls.textContent = 'x';
-    cls.style.cssText = 'background:none;border:none;color:#666;cursor:pointer;font-size:1rem;';
-    cls.onclick = function(){ var b=document.getElementById('restore-banner'); if(b) b.remove(); };
-    banner.appendChild(txt);
-    banner.appendChild(lbl);
-    banner.appendChild(cls);
-    document.body.appendChild(banner);
-    setTimeout(function(){ var b=document.getElementById('restore-banner'); if(b) b.remove(); }, 10000);
-  }, 800);
-}
+
 // liveRates: her iki ayın PREFILLED'ı + localStorage (Haziran açılışında Mayıs verisi de olsun)
 liveRates=Object.assign({}, PREFILLED_MAY, PREFILLED_HAZ, Object.keys(saved).length>0?saved:{});
 // TEFAS kartlarını dinamik oluştur
@@ -4661,9 +4637,15 @@ async function loadFVTPortfolio(fonKodu) {
 async function refreshAllPortfolios() {
   // Sadece takip edilen fonlari guncelle (portfoyumuzde olan fonlar)
   var takipFonlar = ['DFI','TLY','PHE','CPT','IJC','PBR'];
+  // Custom fonlari da ekle
+  if(_fbData && _fbData.customFunds){
+    Object.keys(_fbData.customFunds).forEach(function(f){ if(takipFonlar.indexOf(f)<0) takipFonlar.push(f); });
+  }
   var updated = 0;
   for (var i = 0; i < takipFonlar.length; i++) {
     var fon = takipFonlar[i];
+    // Kaldirilmis fonlari atla
+    if(_fbData && _fbData.removedFunds && _fbData.removedFunds[fon]) continue;
     if (!FUNDS[fon]) continue;
     var result = await loadFVTPortfolio(fon);
     if (result && result.holdings.length > 0) {
