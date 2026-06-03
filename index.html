@@ -4066,7 +4066,8 @@ async function refreshAllPortfolios() {
   if (updated > 0) {
     console.log('FVT portfoy guncellendi:', updated, 'fon');
     if(typeof toast === 'function') toast('FVT portfoy guncellendi: ' + updated + ' fon', 'ok');
-    // Tahmin panelini guncelle
+    // Tabloyu yeniden render et (agirliklar guncellendi)
+    if(typeof renderFunds === 'function') renderFunds();
     if(typeof updateUI === 'function') updateUI();
   }
 }
