@@ -4348,8 +4348,17 @@ let lastFetchTime = null;
 function renderFunds() {
   const grid = document.getElementById('fundsGrid');
   grid.innerHTML = Object.entries(FUNDS).map(([id, fund]) => {
-    const activeHoldings = fund.holdings.filter(h => h.type !== 'cash');
-    const cashHoldings   = fund.holdings.filter(h => h.type === 'cash' && h.weight !== 0);
+    const typeOrder = {bist: 1, fund: 2, us: 3};
+    const activeHoldings = fund.holdings
+      .filter(h => h.type !== 'cash')
+      .slice()
+      .sort((a, b) => {
+        const ta = typeOrder[a.type] || 4;
+        const tb = typeOrder[b.type] || 4;
+        if (ta !== tb) return ta - tb;
+        return b.weight - a.weight; // aynı tip içinde ağırlığa göre
+      });
+    const cashHoldings = fund.holdings.filter(h => h.type === 'cash' && h.weight !== 0);
 
     const activeRows = activeHoldings.map(h => `
       <tr>
