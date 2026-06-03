@@ -4645,7 +4645,11 @@ async function refreshAllPortfolios() {
     var result = await loadFVTPortfolio(fon);
     if (result && result.holdings.length > 0) {
       // Nakit kalemleri koru (TERS-REPO, MEVDUAT vb.) — FVT bunları vermiyor
-      var cashKalemleri = FUNDS[fon].holdings.filter(function(h){ return h.type === 'cash'; });
+      // Ama FVT'den gelen kodlarla cakisan nakit kalemleri ekleme (duplicate onle)
+      var fvtKodlar = new Set(result.holdings.map(function(h){ return h.code; }));
+      var cashKalemleri = FUNDS[fon].holdings.filter(function(h){
+        return h.type === 'cash' && !fvtKodlar.has(h.code);
+      });
       FUNDS[fon].holdings = result.holdings.concat(cashKalemleri);
       FUNDS[fon].aciklamaTarihi = result.aciklamaTarihi;
       updated++;
@@ -4682,6 +4686,10 @@ async function fetchAll() {
     f.holdings.forEach(function(h) {
       if (h.type === 'bist' || h.type === 'us') tickers[h.code] = h.type;
       else if (h.type === 'fund') fonlar[h.code] = true;
+      // cash tipinde ama gercek fon kodu olanlari da ekle (TPKGYF1 gibi)
+      else if (h.type === 'cash' && !h.code.includes('-') && !['REPO','MEVDUAT','TAKASBANK','TERS-REPO','FIN-BONO','VADELI-TEM','KIRA-SERT'].includes(h.code)) {
+        fonlar[h.code] = true;
+      }
     });
   });
 
