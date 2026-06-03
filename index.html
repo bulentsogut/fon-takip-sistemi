@@ -4542,18 +4542,10 @@ async function fetchQuote(code, type) {
       var data = await resp.json();
       var meta = data && data.chart && data.chart.result && data.chart.result[0] && data.chart.result[0].meta;
       if (!meta) continue;
-      // Önce regularMarketChangePercent kullan (en güvenilir)
-      if (meta.regularMarketChangePercent != null && meta.regularMarketChangePercent !== 0) {
-        return parseFloat(meta.regularMarketChangePercent.toFixed(4));
-      }
-      // Yedek: fiyat farkından hesapla (sadece previousClose kullan, chartPreviousClose değil)
       var price = meta.regularMarketPrice;
-      var prev  = meta.previousClose; // chartPreviousClose kullanma — sermaye artırımı hatası verebilir
+      var prev  = meta.previousClose || meta.chartPreviousClose;
       if (price && prev && prev !== 0) {
-        var chg = (price - prev) / prev * 100;
-        // Aşırı büyük değişimler muhtemelen veri hatasıdır
-        if (Math.abs(chg) > 25) return null;
-        return parseFloat(chg.toFixed(4));
+        return parseFloat(((price - prev) / prev * 100).toFixed(4));
       }
     } catch(e) { /* query2 dene */ }
   }
