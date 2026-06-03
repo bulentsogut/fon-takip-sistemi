@@ -4616,7 +4616,9 @@ async function refreshAllPortfolios() {
     if (!FUNDS[fon]) continue;
     var result = await loadFVTPortfolio(fon);
     if (result && result.holdings.length > 0) {
-      FUNDS[fon].holdings = result.holdings;
+      // Nakit kalemleri koru (TERS-REPO, MEVDUAT vb.) — FVT bunları vermiyor
+      var cashKalemleri = FUNDS[fon].holdings.filter(function(h){ return h.type === 'cash'; });
+      FUNDS[fon].holdings = result.holdings.concat(cashKalemleri);
       FUNDS[fon].aciklamaTarihi = result.aciklamaTarihi;
       updated++;
     }
@@ -5108,7 +5110,10 @@ function openManualModal() {
   Object.entries(FUNDS).forEach(function(entry) {
     var id = entry[0], fund = entry[1];
     fund.holdings.forEach(function(h) {
-      if (h.type === 'bist' || h.type === 'us' || h.type === 'fund') {
+      // cash tipinde olanları da dahil et (GLDTRF, GMSTRF gibi BYF fonlar)
+      // ama TERS-REPO, MEVDUAT gibi sahte kodları hariç tut
+      const isRealCode = !h.code.includes('-') && !['REPO','MEVDUAT','TAKASBANK'].includes(h.code);
+      if (h.type === 'bist' || h.type === 'us' || h.type === 'fund' || (h.type === 'cash' && isRealCode)) {
         if (!tickers[h.code]) tickers[h.code] = { type: h.type, name: h.name || h.code };
       }
     });
