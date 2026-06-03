@@ -3991,6 +3991,8 @@ hazBaslangicHesapla(); // Mayıs sonu bakiyelerini al (MONTH_DATA.MAY artık dol
 render(); // Haziran görünümü
 try{const c=JSON.parse(_lsGet(TKEY));if(c&&(Date.now()-c.ts)<3600000){tefasInfo=c.info||{};document.getElementById('last-update').innerHTML=`Cache: <span style="color:var(--gold)">${new Date(c.ts).toLocaleTimeString('tr-TR')}</span>`;renderTefasCards();}}catch{}
 
+// Sayfa acilisinda FVT'den guncel portfoy agirliklarini al
+refreshAllPortfolios().then(function(){ render(); });
 
 } // startApp sonu
 
