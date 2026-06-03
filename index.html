@@ -6022,7 +6022,7 @@ function migrateFromBackup(input) {
       if (d.tefas) try { localStorage.setItem('fon_tefas_v3', JSON.stringify(d.tefas)); } catch(e2) {}
       // Reload liveRates
       liveRates = Object.assign({}, PREFILLED, d.rates || {});
-      document.getElementById('migrateModal').style.display = 'none';
+      
       renderTefasCardsHTML();
       render();
       toast('Veriler taşındı — ' + Object.keys(d.rates||{}).length + ' günlük veri yüklendi', 'ok');
@@ -6041,12 +6041,12 @@ function migrateFromBackup(input) {
     if (keys.length < 6) {
       // 800ms bekle — sayfa renderlansin
       setTimeout(function() {
-        document.getElementById('migrateModal').style.display = 'flex';
+        
       }, 800);
     }
   } catch(e) {
     setTimeout(function() {
-      document.getElementById('migrateModal').style.display = 'flex';
+      
     }, 800);
   }
 })();
@@ -6055,25 +6055,7 @@ function migrateFromBackup(input) {
 
 
 <!-- Veri Taşıma Wizard -->
-<div id="migrateModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.88);z-index:9998;align-items:center;justify-content:center;">
-  <div style="background:#0d1520;border:1px solid rgba(0,180,255,0.35);border-radius:16px;padding:32px;max-width:480px;width:90%;">
-    <div style="font-family:Syne,sans-serif;font-size:1.2rem;font-weight:800;color:#00b4ff;margin-bottom:8px;">📂 Eski Verileri Taşı</div>
-    <div style="font-size:0.72rem;color:#4e6a82;margin-bottom:20px;line-height:1.7;">
-      Bu cihazda FON TAKİP verisi bulunamadı.<br>
-      <strong style="color:#e8f4fd">Eski FON_TAKIP dosyasından</strong> veri taşımak için:<br>
-      <span style="color:#00ffc8">1.</span> Eski dosyayı aç → <strong>⬇ Yedekle</strong> butonuna bas<br>
-      <span style="color:#00ffc8">2.</span> İnen JSON dosyasını aşağıdan yükle
-    </div>
-    <label style="display:block;background:rgba(0,180,255,0.08);border:1px dashed rgba(0,180,255,0.35);border-radius:10px;padding:20px;text-align:center;cursor:pointer;font-size:0.78rem;color:#4e6a82;margin-bottom:16px;">
-      📁 JSON yedek dosyasını seç veya sürükle
-      <input type="file" accept=".json" style="display:none" onchange="migrateFromBackup(this)">
-    </label>
-    <button onclick="document.getElementById('migrateModal').style.display='none'" 
-      style="width:100%;background:rgba(78,106,130,0.1);border:1px solid rgba(78,106,130,0.25);color:#4e6a82;font-family:DM Mono,monospace;font-size:0.78rem;padding:10px;border-radius:8px;cursor:pointer;">
-      Atla — Verilerimi TEFAS'tan Çekeceğim
-    </button>
-  </div>
-</div>
+
 
 </body>
 </html>
