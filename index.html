@@ -4330,7 +4330,7 @@ function renderFunds() {
       return '<div class="summary-card" style="--accent-color:' + renk + '; border-color:rgba(' + r + ',' + g + ',' + b + ',0.25);">'
         + '<div style="display:flex;justify-content:space-between;align-items:center;">'
         + '<div class="sc-label" style="color:' + renk + ';">' + id + '</div>'
-        + '<button class="sum-sil-btn" data-fon="" + id + "" title="Fonu kaldir" style="background:none;border:none;color:rgba(255,255,255,0.2);cursor:pointer;font-size:0.8rem;padding:0 2px;line-height:1;">✕</button>'
+        + '<button class="sum-sil-btn" data-fon="' + id + '" title="Fonu kaldir" style="background:none;border:none;color:rgba(255,255,255,0.2);cursor:pointer;font-size:0.8rem;padding:0 2px;line-height:1;">&#10005;</button>'
         + '</div>'
         + '<div class="sc-value" id="sum-' + id.toLowerCase() + '" style="--val-color:#fff">—</div>'
         + '<div class="sc-sub">' + (fund.name || id) + '</div>'
