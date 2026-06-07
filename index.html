@@ -662,7 +662,6 @@ tbody tr:hover{background:rgba(0,180,255,0.035);}
 
 .spin { animation: spin 1s linear infinite; display: inline-block; }
 @keyframes spin { to { transform: rotate(360deg); } }
-@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
 
 /* ── Summary row ── */
 .summary-row {
@@ -1803,9 +1802,6 @@ _db.ref('fonmerkezi').on('value', function(snap) {
       </button>
       <button class="auto-refresh-btn" id="autoRefreshBtn" onclick="toggleAutoRefresh()">
         <span id="autoIcon">⏱</span> <span id="autoLabel">OTOMATİK GÜNCELLE</span>
-      </button>
-      <button class="auto-refresh-btn" id="liveBtn" onclick="toggleLiveMode()" style="border-color:rgba(255,71,87,0.4);color:#ff4757;background:linear-gradient(135deg,#1a0508,#0d0305);">
-        <span id="liveIcon">⬤</span> <span id="liveLabel">CANLI MOD</span>
       </button>
       <button class="manual-btn" onclick="openManualModal()">
         ✎ MANUEL GİR
@@ -5273,68 +5269,6 @@ var autoRefreshTimer   = null;
 var autoRefreshInterval = 60; // saniye (başlangıç: 1 dk)
 var autoRefreshOptions  = [30, 60, 120, 300]; // saniye seçenekleri
 var autoRefreshIdx      = 1; // varsayılan: 60s
-
-// CANLI MOD
-var liveModeTimer = null;
-var liveModeInterval = 10; // saniye
-
-async function fetchPricesOnly() {
-  // Sadece Yahoo fiyatlarini cek — portfoy agirliklarini degistirme
-  var tickers = {};
-  Object.values(FUNDS).forEach(function(f) {
-    f.holdings.forEach(function(h) {
-      if (h.type === 'bist' || h.type === 'us') tickers[h.code] = h.type;
-    });
-  });
-  var entries = Object.entries(tickers);
-  var results = {};
-  var BATCH = 10;
-  for (var i = 0; i < entries.length; i += BATCH) {
-    var batch = entries.slice(i, i + BATCH);
-    await Promise.all(batch.map(async function(entry) {
-      var code = entry[0], type = entry[1];
-      var chg = await fetchQuote(code, type);
-      if (chg !== null) results[code] = chg;
-    }));
-    if (i + BATCH < entries.length) await sleep(50);
-  }
-  // Sadece gelen verileri guncelle, eskiyi koru
-  Object.assign(priceCache, results, manualOverrides);
-  lastFetchTime = new Date();
-  updateUI();
-  // Status guncelle
-  var el = document.getElementById('statusText');
-  if(el) el.innerHTML = '<span style="color:#ff4757;">⬤ CANLI</span> — ' + lastFetchTime.toLocaleTimeString('tr-TR');
-}
-
-function toggleLiveMode() {
-  var btn = document.getElementById('liveBtn');
-  var icon = document.getElementById('liveIcon');
-  var label = document.getElementById('liveLabel');
-  if (liveModeTimer) {
-    clearInterval(liveModeTimer);
-    liveModeTimer = null;
-    btn.style.borderColor = 'rgba(255,71,87,0.4)';
-    btn.style.color = '#ff4757';
-    btn.style.background = 'linear-gradient(135deg,#1a0508,#0d0305)';
-    icon.textContent = '⬤';
-    label.textContent = 'CANLI MOD';
-  } else {
-    // Once bir tam fetchAll yap (portfoy + fiyatlar)
-    fetchAll().then(function(){
-      // Sonra sadece fiyat guncellemesi baslat
-      liveModeTimer = setInterval(function(){
-        fetchPricesOnly();
-      }, liveModeInterval * 1000);
-    });
-    btn.style.borderColor = 'rgba(255,71,87,0.9)';
-    btn.style.color = '#ff4757';
-    btn.style.background = 'linear-gradient(135deg,#3a0508,#2d0305)';
-    icon.style.animation = 'pulse 1s infinite';
-    icon.textContent = '⬤';
-    label.textContent = 'CANLI: ' + liveModeInterval + 's — DURDUR';
-  }
-}
 
 function toggleAutoRefresh() {
   if (autoRefreshTimer) {
