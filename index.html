@@ -2627,6 +2627,20 @@ function updateDate(){
     el.textContent = tarih + ' ' + saat;
   }catch(e){}
 }
+
+function setRefreshLoading(isLoading){
+  try{
+    var btn = document.getElementById('refreshBtn');
+    var icon = document.getElementById('refreshIcon');
+    if(btn){
+      btn.classList.toggle('loading', !!isLoading);
+      btn.disabled = !!isLoading;
+    }
+    if(icon){
+      icon.classList.toggle('spin', !!isLoading);
+    }
+  }catch(e){}
+}
 // Kullanıcının "Güncelle" ile eklediği ek işlemler (localStorage'dan yüklenir)
 var DEFAULT_TRX_EXTRA = (function(){
   try{
