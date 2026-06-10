@@ -1597,6 +1597,29 @@ tbody tr:hover{background:rgba(0,180,255,0.035);}
 .holding-new{box-shadow:inset 2px 0 0 rgba(46,213,115,.55);}
 .holding-removed{opacity:.48;}
 
+
+/* Portföy ağırlık güncelleme özeti */
+.portfoy-degisim-ozet{
+  display:none;
+  background:rgba(13,21,40,.86);
+  border:1px solid rgba(99,179,255,.16);
+  border-radius:10px;
+  padding:10px 12px;
+  margin:-10px 0 22px;
+  font-family:var(--mono);
+  font-size:10px;
+  line-height:1.55;
+}
+.portfoy-degisim-ozet.show{display:block;}
+.portfoy-degisim-baslik{color:#7dd6ff;font-weight:700;letter-spacing:.08em;text-transform:uppercase;margin-bottom:7px;}
+.portfoy-degisim-fon{display:flex;align-items:flex-start;gap:8px;flex-wrap:wrap;margin:5px 0;}
+.portfoy-degisim-kod{min-width:42px;font-weight:800;color:#d8e8ff;}
+.portfoy-degisim-chip{display:inline-flex;align-items:center;gap:4px;border-radius:5px;padding:3px 7px;border:1px solid;margin:2px 3px 2px 0;}
+.portfoy-degisim-chip.new{background:rgba(46,213,115,.10);border-color:rgba(46,213,115,.35);color:#2ed573;}
+.portfoy-degisim-chip.changed{background:rgba(255,204,68,.10);border-color:rgba(255,204,68,.35);color:#ffcc44;}
+.portfoy-degisim-chip.removed{background:rgba(255,92,122,.10);border-color:rgba(255,92,122,.35);color:#ff5c7a;}
+.portfoy-degisim-empty{color:var(--muted);}
+
 </style>
 <!-- Firebase SDK -->
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
@@ -1873,6 +1896,7 @@ _db.ref('fonmerkezi').on('value', function(snap) {
     <div class="status-dot" id="statusDot"></div>
     <span id="statusText">Verileri çekmek için "Verileri Güncelle" butonuna tıklayın.</span>
   </div>
+  <div id="portfoyDegisimOzet" class="portfoy-degisim-ozet"></div>
 
   <!-- Summary cards -->
   <div class="section-label">PORTFÖY ÖZETI</div>
@@ -4728,17 +4752,91 @@ function aktifTahminFonlari() {
   }).sort();
 }
 
+function htmlEscapeDegisim(v) {
+  return String(v == null ? '' : v)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function portfoyHisseMi(h) {
+  var tip = String((h && h.type) || '').toLowerCase();
+  return tip === 'bist' || tip === 'us' || tip === 'etf';
+}
+
+function portfoyDegisimleriniCikar(fon, holdings) {
+  var sonuc = {fon: fon, yeni: [], degisen: [], cikan: []};
+  (holdings || []).forEach(function(h) {
+    if (!portfoyHisseMi(h)) return;
+    var kod = String(h.code || '').toUpperCase();
+    if (!kod) return;
+    var eski = (h.prevWeight == null || isNaN(Number(h.prevWeight))) ? null : Number(h.prevWeight);
+    var yeni = Number(h.weight || 0);
+    var fark = (h.weightDelta == null || isNaN(Number(h.weightDelta))) ? (eski == null ? yeni : yeni - eski) : Number(h.weightDelta);
+
+    if (h.isRemovedHolding) {
+      sonuc.cikan.push({code: kod, oldWeight: eski == null ? Math.abs(fark) : eski});
+    } else if (h.isNewHolding || eski === null) {
+      sonuc.yeni.push({code: kod, weight: yeni});
+    } else if (Math.abs(fark) >= 0.01) {
+      sonuc.degisen.push({code: kod, oldWeight: eski, weight: yeni, delta: fark});
+    }
+  });
+  return sonuc;
+}
+
+function renderPortfoyDegisimOzet(changes) {
+  var el = document.getElementById('portfoyDegisimOzet');
+  if (!el) return;
+  var list = (changes || []).filter(function(c) {
+    return c && ((c.yeni && c.yeni.length) || (c.degisen && c.degisen.length) || (c.cikan && c.cikan.length));
+  });
+
+  if (!list.length) {
+    el.classList.add('show');
+    el.innerHTML = '<div class="portfoy-degisim-baslik">AĞIRLIK GÜNCELLEME ÖZETİ</div>' +
+      '<div class="portfoy-degisim-empty">Güncelleme tamamlandı; hisse bazında yeni/çıkan/değişen kayıt bulunmadı.</div>';
+    return;
+  }
+
+  var html = '<div class="portfoy-degisim-baslik">AĞIRLIK GÜNCELLEME ÖZETİ</div>';
+  list.forEach(function(c) {
+    var chips = '';
+    (c.yeni || []).forEach(function(x) {
+      chips += '<span class="portfoy-degisim-chip new">+ ' + htmlEscapeDegisim(x.code) + ' ' + Number(x.weight || 0).toFixed(2) + '%</span>';
+    });
+    (c.degisen || []).forEach(function(x) {
+      var d = Number(x.delta || 0);
+      chips += '<span class="portfoy-degisim-chip changed">↕ ' + htmlEscapeDegisim(x.code) + ' ' +
+        Number(x.oldWeight || 0).toFixed(2) + '% → ' + Number(x.weight || 0).toFixed(2) + '% (' +
+        (d >= 0 ? '+' : '') + d.toFixed(2) + ')</span>';
+    });
+    (c.cikan || []).forEach(function(x) {
+      chips += '<span class="portfoy-degisim-chip removed">− ' + htmlEscapeDegisim(x.code) + ' çıktı' +
+        (x.oldWeight != null ? ' (' + Number(x.oldWeight || 0).toFixed(2) + '%)' : '') + '</span>';
+    });
+    html += '<div class="portfoy-degisim-fon"><span class="portfoy-degisim-kod">' + htmlEscapeDegisim(c.fon) + '</span><span>' + chips + '</span></div>';
+  });
+  el.classList.add('show');
+  el.innerHTML = html;
+}
+
 async function refreshAllPortfolios() {
   var takipFonlar = aktifTahminFonlari();
   var updated = 0;
   var failed = [];
+  var changes = [];
 
   for (var i = 0; i < takipFonlar.length; i++) {
     var fon = takipFonlar[i];
     if (!FUNDS[fon]) continue;
     var result = await loadFVTPortfolio(fon);
     if (result && result.holdings.length > 0) {
-      FUNDS[fon].holdings = fonPortfoyKarsilastirVeBirlestir(fon, result);
+      var birlesik = fonPortfoyKarsilastirVeBirlestir(fon, result);
+      changes.push(portfoyDegisimleriniCikar(fon, birlesik));
+      FUNDS[fon].holdings = birlesik;
       FUNDS[fon].aciklamaTarihi = result.aciklamaTarihi;
       FUNDS[fon].lastPortfolioUpdate = new Date().toISOString();
       updated++;
@@ -4759,7 +4857,7 @@ async function refreshAllPortfolios() {
   if (updated > 0 && typeof renderFunds === 'function') renderFunds();
   if (updated > 0) console.log('FVT portfoy guncellendi:', updated, 'fon');
   if (failed.length > 0) console.warn('FVT portfoy alinamayan fonlar:', failed.join(', '));
-  return {updated: updated, failed: failed};
+  return {updated: updated, failed: failed, changes: changes};
 }
 
 async function fetchAll() {
@@ -4781,6 +4879,7 @@ async function fetchAll() {
   // FVT'den guncel portfoy dagilimini al
   setStatus('loading', 'Fon portföy ağırlıkları FVT üzerinden güncelleniyor...');
   var pfSonuc = await refreshAllPortfolios();
+  if (pfSonuc && typeof renderPortfoyDegisimOzet === 'function') renderPortfoyDegisimOzet(pfSonuc.changes || []);
   if (pfSonuc && pfSonuc.updated > 0) {
     setStatus('loading', 'Portföy ağırlıkları güncellendi: ' + pfSonuc.updated + ' fon');
   }
@@ -5643,6 +5742,7 @@ async function portfoyAgirliklariniGuncelle() {
   try {
     setStatus('loading', 'Fon portföy ağırlıkları FVT üzerinden güncelleniyor...');
     var sonuc = await refreshAllPortfolios();
+    if (sonuc && typeof renderPortfoyDegisimOzet === 'function') renderPortfoyDegisimOzet(sonuc.changes || []);
     if (typeof updateUI === 'function') updateUI();
     var msg = 'Ağırlık güncelleme tamamlandı: ' + (sonuc ? sonuc.updated : 0) + ' fon';
     if (sonuc && sonuc.failed && sonuc.failed.length) msg += ' · alınamayan: ' + sonuc.failed.join(', ');
