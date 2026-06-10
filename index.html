@@ -1586,6 +1586,17 @@ tbody tr:hover{background:rgba(0,180,255,0.035);}
 .adaptif-value-chip.neu .val{color:#5a7499;}
 @media(max-width:768px){.adaptif-ofset-grid{grid-template-columns:1fr 1fr}.adaptif-btn.reset{grid-column:1/-1}.adaptif-ofset-col{padding:8px}.adaptif-btn{font-size:9px;padding:8px 6px}}
 
+
+/* FVT portföy ağırlık değişimi gösterimi */
+.weight-main{display:inline-block;min-width:48px;text-align:right;}
+.weight-delta{display:block;font-family:var(--mono);font-size:9px;line-height:1.25;margin-top:2px;}
+.weight-delta.pos{color:var(--green);}
+.weight-delta.neg{color:var(--red);}
+.weight-delta.neu{color:var(--muted);}
+.weight-date{display:block;font-family:var(--mono);font-size:9px;color:var(--muted);margin-top:2px;}
+.holding-new{box-shadow:inset 2px 0 0 rgba(46,213,115,.55);}
+.holding-removed{opacity:.48;}
+
 </style>
 <!-- Firebase SDK -->
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
@@ -1850,6 +1861,9 @@ _db.ref('fonmerkezi').on('value', function(snap) {
       </button>
       <button class="manual-btn" onclick="openFonEkleModal()" style="border-color:#2ed573;color:#2ed573;background:linear-gradient(135deg,#0a2010,#051508);">
         + FON EKLE
+      </button>
+      <button class="manual-btn" onclick="portfoyAgirliklariniGuncelle()" style="border-color:#00ffc8;color:#00ffc8;background:linear-gradient(135deg,#0a2520,#051815);">
+        ⟳ AĞIRLIK GÜNCELLE
       </button>
     </div>
   </div>
@@ -4368,19 +4382,31 @@ function renderFunds() {
       });
     const cashHoldings = fund.holdings.filter(h => h.type === 'cash' && h.weight !== 0 && !isRealFundCode(h));
 
+    function weightHtml(h) {
+      var w = Number(h.weight || 0);
+      var html = '<span class="weight-bar" style="width:' + Math.min(Math.abs(w) * 1.8, 50) + 'px"></span>' +
+                 '<span class="weight-main">%' + w.toFixed(2) + '</span>';
+      if (h.prevWeight !== undefined && h.prevWeight !== null && !isNaN(Number(h.prevWeight))) {
+        var d = Number(h.weightDelta || (w - Number(h.prevWeight)));
+        var cls = d > 0.0001 ? 'pos' : d < -0.0001 ? 'neg' : 'neu';
+        html += '<span class="weight-delta ' + cls + '">' + (d > 0 ? '+' : '') + d.toFixed(2) + ' puan</span>';
+      }
+      if (fund.aciklamaTarihi) {
+        html += '<span class="weight-date">FVT: ' + fund.aciklamaTarihi + '</span>';
+      }
+      return html;
+    }
+
     const activeRows = activeHoldings.map(h => `
-      <tr>
+      <tr class="${h.isNewHolding ? 'holding-new' : h.isRemovedHolding ? 'holding-removed' : ''}">
         <td class="td-code">
           ${h.code}
           <span class="type-badge ${h.type === 'bist' ? 'type-bist' : h.type === 'us' ? 'type-us' : 'type-fund'}">
             ${h.type === 'bist' ? 'BİST' : h.type === 'us' ? 'ABD' : 'FON'}
           </span>
         </td>
-        <td class="td-name" title="${h.name}">${h.name}</td>
-        <td class="td-weight">
-          <span class="weight-bar" style="width:${Math.min(Math.abs(h.weight) * 1.8, 50)}px"></span>
-          %${h.weight.toFixed(2)}
-        </td>
+        <td class="td-name" title="${h.name}">${h.name}${h.isNewHolding ? '<span style="color:var(--green);font-size:9px;margin-left:6px;">YENİ</span>' : h.isRemovedHolding ? '<span style="color:var(--red);font-size:9px;margin-left:6px;">ÇIKTI</span>' : ''}</td>
+        <td class="td-weight">${weightHtml(h)}</td>
         <td class="td-chg" id="chg-${id}-${h.code}"><span class="neu">—</span></td>
         <td class="td-contrib neu" id="contrib-${id}-${h.code}">—</td>
       </tr>
@@ -4401,7 +4427,7 @@ function renderFunds() {
           </td>
           <td class="td-name" title="${h.name}" style="color:#7a8fa8;">${h.name}</td>
           <td class="td-weight" style="color:var(--muted);">
-            %${h.weight.toFixed(2)}
+            ${weightHtml(h)}
           </td>
           <td class="td-chg" id="chg-${id}-${h.code}">
             ${hasFaiz
@@ -4625,63 +4651,115 @@ async function fetchTefasFon(fonKodu) {
 // FVT'den portföy dağılımını çek ve FUNDS objesini güncelle
 async function loadFVTPortfolio(fonKodu) {
   try {
-    var resp = await fetchWithTimeout(
-      '/api/fvt?fon=' + fonKodu, {}, 10000);
+    var resp = await fetchWithTimeout('/api/fvt?fon=' + encodeURIComponent(fonKodu), {}, 12000);
     if (!resp.ok) return null;
     var data = await resp.json();
     if (!data.holdings || data.holdings.length === 0) return null;
 
-    // holdings'i FUNDS formatina cevir — sunucudan gelen tip bilgisini kullan
     var newHoldings = data.holdings
-      .filter(function(h) { return h.agirlik > 0.1; })
+      .filter(function(h) { return Number(h.agirlik) >= 0; })
       .map(function(h) {
-        // sunucu 'tip' yolluyorsa kullan, yoksa tahmin et
         var type = h.tip || (h.etf ? 'etf' : h.yabanci ? 'us' : 'bist');
         return {
-          code: h.kod,
+          code: String(h.kod || '').trim().toUpperCase(),
           name: h.ad || h.kod,
-          weight: h.agirlik,
+          weight: Number(h.agirlik) || 0,
           type: type
         };
-      });
+      })
+      .filter(function(h){ return h.code && h.weight > 0.001; });
 
-    return {holdings: newHoldings, aciklamaTarihi: data.aciklamaTarihi};
+    return {holdings: newHoldings, aciklamaTarihi: data.aciklamaTarihi || data.tarih || ''};
   } catch(e) {
     console.warn('FVT portfoy yuklenemedi:', fonKodu, e.message);
     return null;
   }
 }
 
+function fonPortfoyKarsilastirVeBirlestir(fon, result) {
+  var mevcut = (FUNDS[fon] && Array.isArray(FUNDS[fon].holdings)) ? FUNDS[fon].holdings : [];
+  var eskiMap = {};
+  mevcut.forEach(function(h){ eskiMap[String(h.code || '').toUpperCase()] = h; });
+
+  var yeniKodlar = new Set(result.holdings.map(function(h){ return h.code; }));
+  var guncelHoldings = result.holdings.map(function(h){
+    var eski = eskiMap[h.code];
+    var prev = eski ? Number(eski.weight || 0) : null;
+    var yeni = Object.assign({}, h);
+    if (prev !== null && !isNaN(prev)) {
+      yeni.prevWeight = prev;
+      yeni.weightDelta = Number((Number(h.weight || 0) - prev).toFixed(4));
+    } else {
+      yeni.prevWeight = null;
+      yeni.weightDelta = Number(Number(h.weight || 0).toFixed(4));
+      yeni.isNewHolding = true;
+    }
+    return yeni;
+  });
+
+  // FVT nakit/ters repo gibi kalemleri eksik verirse eski nakit kalemlerini koru.
+  var korunacakNakit = mevcut.filter(function(h){
+    var kod = String(h.code || '').toUpperCase();
+    return h.type === 'cash' && !yeniKodlar.has(kod);
+  });
+
+  // Önceki portföyde olup FVT'de artık bulunmayan aktif hisse/fonları bilgi amaçlı 0 ağırlıkla göster.
+  var cikanlar = mevcut.filter(function(h){
+    var kod = String(h.code || '').toUpperCase();
+    return h.type !== 'cash' && !yeniKodlar.has(kod) && Number(h.weight || 0) > 0.001;
+  }).map(function(h){
+    return Object.assign({}, h, {
+      weight: 0,
+      prevWeight: Number(h.weight || 0),
+      weightDelta: -Number(h.weight || 0),
+      isRemovedHolding: true
+    });
+  });
+
+  return guncelHoldings.concat(cikanlar).concat(korunacakNakit);
+}
+
+function aktifTahminFonlari() {
+  if (!FUNDS || typeof FUNDS !== 'object') return [];
+  var silinen = (_fbData && _fbData.removedFunds) ? _fbData.removedFunds : {};
+  return Object.keys(FUNDS).filter(function(fon){
+    var safeF = fon.replace(/[.#$\/\[\]]/g, '_');
+    return FUNDS[fon] && !silinen[fon] && !silinen[safeF];
+  }).sort();
+}
+
 async function refreshAllPortfolios() {
-  // Sadece takip edilen fonlari guncelle (portfoyumuzde olan fonlar)
-  var takipFonlar = ['DFI','TLY','PHE','CPT','IJC','PBR'];
-  // Custom fonlari da ekle
-  if(_fbData && _fbData.customFunds){
-    Object.keys(_fbData.customFunds).forEach(function(f){ if(takipFonlar.indexOf(f)<0) takipFonlar.push(f); });
-  }
+  var takipFonlar = aktifTahminFonlari();
   var updated = 0;
+  var failed = [];
+
   for (var i = 0; i < takipFonlar.length; i++) {
     var fon = takipFonlar[i];
-    // Kaldirilmis fonlari atla
-    var safeF = fon.replace(/[.#$\/\[\]]/g, '_');
-    if(_fbData && _fbData.removedFunds && (_fbData.removedFunds[fon] || _fbData.removedFunds[safeF])) continue;
     if (!FUNDS[fon]) continue;
     var result = await loadFVTPortfolio(fon);
     if (result && result.holdings.length > 0) {
-      // Nakit kalemleri koru (TERS-REPO, MEVDUAT vb.) — FVT bunları vermiyor
-      // Ama FVT'den gelen kodlarla cakisan nakit kalemleri ekleme (duplicate onle)
-      var fvtKodlar = new Set(result.holdings.map(function(h){ return h.code; }));
-      var cashKalemleri = FUNDS[fon].holdings.filter(function(h){
-        return h.type === 'cash' && !fvtKodlar.has(h.code);
-      });
-      FUNDS[fon].holdings = result.holdings.concat(cashKalemleri);
+      FUNDS[fon].holdings = fonPortfoyKarsilastirVeBirlestir(fon, result);
       FUNDS[fon].aciklamaTarihi = result.aciklamaTarihi;
+      FUNDS[fon].lastPortfolioUpdate = new Date().toISOString();
       updated++;
+
+      // Sonradan eklenen fonların güncel ağırlıklarını Firebase'de de sakla.
+      if (_fbData && _fbData.customFunds && _fbData.customFunds[fon]) {
+        _fbData.customFunds[fon] = FUNDS[fon];
+      }
+    } else {
+      failed.push(fon);
     }
   }
-  if (updated > 0) {
-    console.log('FVT portfoy guncellendi:', updated, 'fon');
+
+  if (_fbData && _fbData.customFunds) {
+    try { fbSave('customFunds', _fbData.customFunds); } catch(e) { console.warn('customFunds portfoy kayit hatasi:', e); }
   }
+
+  if (updated > 0 && typeof renderFunds === 'function') renderFunds();
+  if (updated > 0) console.log('FVT portfoy guncellendi:', updated, 'fon');
+  if (failed.length > 0) console.warn('FVT portfoy alinamayan fonlar:', failed.join(', '));
+  return {updated: updated, failed: failed};
 }
 
 async function fetchAll() {
@@ -4701,7 +4779,11 @@ async function fetchAll() {
   setRefreshLoading(true);
 
   // FVT'den guncel portfoy dagilimini al
-  await refreshAllPortfolios();
+  setStatus('loading', 'Fon portföy ağırlıkları FVT üzerinden güncelleniyor...');
+  var pfSonuc = await refreshAllPortfolios();
+  if (pfSonuc && pfSonuc.updated > 0) {
+    setStatus('loading', 'Portföy ağırlıkları güncellendi: ' + pfSonuc.updated + ' fon');
+  }
 
   // Hisseleri ve fonları ayır
   var tickers = {};
@@ -5557,6 +5639,19 @@ function saveFaizValues() {
 
 // Tum scriptler yuklendikten sonra FVT portfoy guncelle
 // ═══════════════════════════════════════
+async function portfoyAgirliklariniGuncelle() {
+  try {
+    setStatus('loading', 'Fon portföy ağırlıkları FVT üzerinden güncelleniyor...');
+    var sonuc = await refreshAllPortfolios();
+    if (typeof updateUI === 'function') updateUI();
+    var msg = 'Ağırlık güncelleme tamamlandı: ' + (sonuc ? sonuc.updated : 0) + ' fon';
+    if (sonuc && sonuc.failed && sonuc.failed.length) msg += ' · alınamayan: ' + sonuc.failed.join(', ');
+    setStatus((sonuc && sonuc.updated > 0) ? 'live' : 'error', msg);
+  } catch(e) {
+    setStatus('error', 'Ağırlık güncelleme hatası: ' + (e.message || e));
+  }
+}
+
 // FON EKLE / SIL
 // ═══════════════════════════════════════
 function openFonEkleModal() {
@@ -5611,10 +5706,9 @@ async function fonEkle() {
   status.style.color = '#4e6a82';
 
   try {
-    var resp = await fetch('/api/fvt?fon=' + encodeURIComponent(kod));
-    var data = await resp.json();
+    var data = await loadFVTPortfolio(kod);
 
-    if (!data.holdings || data.holdings.length === 0) {
+    if (!data || !data.holdings || data.holdings.length === 0) {
       status.textContent = kod + ' icin portfoy bulunamadi. Fon kodu dogru mu?';
       status.style.color = '#ff4757';
       return;
@@ -5623,9 +5717,8 @@ async function fonEkle() {
     // FUNDS'a ekle
     var newFund = {
       name: kod + ' Fonu',
-      holdings: data.holdings.map(function(h){
-        return { code: h.kod, name: h.ad || h.kod, weight: h.agirlik, type: h.tip };
-      }),
+      color: '#' + Math.floor(Math.random()*0xffffff).toString(16).padStart(6,'0'),
+      holdings: data.holdings,
       aciklamaTarihi: data.aciklamaTarihi
     };
 
