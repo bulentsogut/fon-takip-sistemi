@@ -4905,14 +4905,41 @@ function gecmisTahminHesapla(fonId, gecmisFiyatlar) {
 }
 
 // Adaptif ofset sistemi aşağıdaki merkezi fonksiyonlarla yönetilir.
-const FON_OFSET = {
-  DFI: 0,
-  TLY: 0,
-  CPT: 0,
-  PHE: 0,
-  IJC: 0,
-  PBR: 0
-};
+const FON_OFSET = {};
+
+function adaptifFonKodlari() {
+  if (!FUNDS || typeof FUNDS !== 'object') return [];
+  return Object.keys(FUNDS).filter(function(fon) {
+    return FUNDS[fon] && Array.isArray(FUNDS[fon].holdings);
+  }).sort();
+}
+
+function senkronizeFonOfsetleri() {
+  var fonlar = adaptifFonKodlari();
+  fonlar.forEach(function(fon) {
+    if (FON_OFSET[fon] === undefined) FON_OFSET[fon] = 0;
+    if (typeof hesaplananOfset !== 'undefined' && hesaplananOfset[fon] === undefined) hesaplananOfset[fon] = 0;
+  });
+  Object.keys(FON_OFSET).forEach(function(fon) {
+    if (fonlar.indexOf(fon) === -1) delete FON_OFSET[fon];
+  });
+  if (typeof hesaplananOfset !== 'undefined') {
+    Object.keys(hesaplananOfset).forEach(function(fon) {
+      if (fonlar.indexOf(fon) === -1) delete hesaplananOfset[fon];
+    });
+  }
+  return fonlar;
+}
+
+function adaptifMinKayit(yontem) {
+  return yontem === 'uzun' ? 10 : yontem === 'ema' ? 2 : yontem === 'kisa' ? 3 : yontem === 'nihai' ? 3 : 1;
+}
+
+function adaptifYeterliMi(detay, yontem) {
+  var gun = detay && detay.gun ? detay.gun : 0;
+  return gun >= adaptifMinKayit(yontem);
+}
+
 var OFSET_AKTIF = false; // Varsayılan: ofset uygulanmaz
 var AKTIF_OFSET_MODU = storeGet('fon_aktif_ofset_modu') || 'none';
 var ADAPTIF_OFSETLER = storeGet('fon_adaptif_ofsetler') || {};
@@ -4929,9 +4956,12 @@ function ofsetModuUygula(mod) {
   AKTIF_OFSET_MODU = mod || 'none';
   OFSET_AKTIF = AKTIF_OFSET_MODU !== 'none';
 
-  Object.keys(FON_OFSET).forEach(function(fon) {
+  senkronizeFonOfsetleri().forEach(function(fon) {
     var v = 0;
-    if (OFSET_AKTIF && ADAPTIF_OFSETLER[fon]) v = ADAPTIF_OFSETLER[fon][AKTIF_OFSET_MODU] || 0;
+    var detay = ADAPTIF_OFSETLER[fon];
+    if (OFSET_AKTIF && detay && adaptifYeterliMi(detay, AKTIF_OFSET_MODU)) {
+      v = detay[AKTIF_OFSET_MODU] || 0;
+    }
     FON_OFSET[fon] = v;
     hesaplananOfset[fon] = v;
   });
@@ -5768,7 +5798,7 @@ function saveTahminSnapshots(data) {
 
 // Bugünün tahminini kaydet (saat 23:00 otomatiği veya manuel)
 function snapshotTahminler(manuel) {
-  var FON_KODLAR = ['DFI', 'TLY', 'PHE', 'CPT', 'IJC', 'PBR'];
+  var FON_KODLAR = adaptifFonKodlari();
   var bugun = new Date();
   var tarih = String(bugun.getDate()).padStart(2,'0') + '.' +
               String(bugun.getMonth()+1).padStart(2,'0') + '.' +
@@ -5815,10 +5845,6 @@ function baslat23Kontrol() {
 }
 
 // ── Kıyas Tablosu Render ──────────────────────────────────────────────────
-function adaptifFonKodlari() {
-  return ['DFI', 'TLY', 'PHE', 'CPT', 'IJC', 'PBR'].filter(function(f) { return FUNDS && FUNDS[f]; });
-}
-
 function adaptifHataKayitlari() {
   var snapshots = getTahminSnapshots();
   var rates = getTakipGercekRates();
@@ -5867,7 +5893,7 @@ function hesaplaOfsetSerisi(kayitlar) {
 
 function hesaplaTumAdaptifOfsetler() {
   var hatalar = adaptifHataKayitlari();
-  var fonlar = adaptifFonKodlari();
+  var fonlar = senkronizeFonOfsetleri();
   var sonuc = {};
   fonlar.forEach(function(fon) { sonuc[fon] = hesaplaOfsetSerisi(hatalar[fon]); });
   ADAPTIF_OFSETLER = sonuc;
@@ -5878,18 +5904,25 @@ function hesaplaTumAdaptifOfsetler() {
 function renderAdaptifDegerler(yontem) {
   var el = document.getElementById('adaptifOfsetValues');
   if (!el) return;
+  yontem = yontem || 'nihai';
   var data = ADAPTIF_OFSETLER || {};
   var fonlar = adaptifFonKodlari();
   var html = fonlar.map(function(fon) {
-    var d = data[fon] || {};
+    var d = data[fon] || { gun:0 };
     var v = d[yontem] || 0;
+    if (!adaptifYeterliMi(d, yontem)) {
+      return '<div class="adaptif-value-chip neu">'
+        + '<span class="fon">' + fon + '</span>'
+        + '<span class="val">Yetersiz (' + (d.gun || 0) + '/' + adaptifMinKayit(yontem) + ')</span>'
+        + '</div>';
+    }
     var cls = v > 0 ? 'pos' : v < 0 ? 'neg' : 'neu';
     return '<div class="adaptif-value-chip ' + cls + '">'
       + '<span class="fon">' + fon + '</span>'
       + '<span class="val">' + (v >= 0 ? '+' : '') + v.toFixed(3) + '%</span>'
       + '</div>';
   }).join('');
-  el.innerHTML = html || '<div style="font-family:var(--mono);font-size:10px;color:var(--muted);grid-column:1/-1">Hesaplanacak veri bulunamadı.</div>';
+  el.innerHTML = html || '<div style="font-family:var(--mono);font-size:10px;color:var(--muted);grid-column:1/-1">Hesaplanacak fon bulunamadı.</div>';
 }
 
 function hesaplaAdaptifOfset(yontem) {
@@ -5929,6 +5962,10 @@ function renderKiyasTablosu() {
 
   function fmt(v) { return (v >= 0 ? '+' : '') + v.toFixed(3) + '%'; }
   function cls(v) { return v > 0 ? 'color:#2ed573;font-weight:700' : v < 0 ? 'color:#ff4757;font-weight:700' : 'color:#5a7499'; }
+  function fmtOfset(d, yontem) {
+    if (!adaptifYeterliMi(d, yontem)) return '<span style="color:#5a7499">Yetersiz (' + ((d && d.gun) || 0) + '/' + adaptifMinKayit(yontem) + ')</span>';
+    return '<span style="' + cls(d[yontem] || 0) + '">' + fmt(d[yontem] || 0) + '</span>';
+  }
   var body = rows.map(function(r) {
     var d = ADAPTIF_OFSETLER[r.fon] || { kisa:0, uzun:0, ema:0, nihai:0 };
     return '<tr>'
@@ -5937,10 +5974,10 @@ function renderKiyasTablosu() {
       + '<td style="text-align:right;color:#7dd6ff">' + fmt(r.tahmin) + '</td>'
       + '<td style="text-align:right;color:#e8f4fd">' + fmt(r.gercek) + '</td>'
       + '<td style="text-align:right;' + cls(r.hata) + '">' + fmt(r.hata) + '</td>'
-      + '<td style="text-align:right;' + cls(d.kisa) + '">' + fmt(d.kisa || 0) + '</td>'
-      + '<td style="text-align:right;' + cls(d.uzun) + '">' + fmt(d.uzun || 0) + '</td>'
-      + '<td style="text-align:right;' + cls(d.ema) + '">' + fmt(d.ema || 0) + '</td>'
-      + '<td style="text-align:right;' + cls(d.nihai) + '">' + fmt(d.nihai || 0) + '</td>'
+      + '<td style="text-align:right">' + fmtOfset(d, 'kisa') + '</td>'
+      + '<td style="text-align:right">' + fmtOfset(d, 'uzun') + '</td>'
+      + '<td style="text-align:right">' + fmtOfset(d, 'ema') + '</td>'
+      + '<td style="text-align:right">' + fmtOfset(d, 'nihai') + '</td>'
       + '</tr>';
   }).join('');
 
@@ -5950,10 +5987,10 @@ function renderKiyasTablosu() {
       + '<td>ÖZET</td><td style="color:#00ffc8;font-weight:700">' + fon + '</td>'
       + '<td colspan="2" style="text-align:right;color:#5a7499">' + (d.gun || 0) + ' kayıt</td>'
       + '<td style="text-align:right;color:#5a7499">—</td>'
-      + '<td style="text-align:right;' + cls(d.kisa) + '">' + fmt(d.kisa || 0) + '</td>'
-      + '<td style="text-align:right;' + cls(d.uzun) + '">' + fmt(d.uzun || 0) + '</td>'
-      + '<td style="text-align:right;' + cls(d.ema) + '">' + fmt(d.ema || 0) + '</td>'
-      + '<td style="text-align:right;' + cls(d.nihai) + '">' + fmt(d.nihai || 0) + '</td>'
+      + '<td style="text-align:right">' + fmtOfset(d, 'kisa') + '</td>'
+      + '<td style="text-align:right">' + fmtOfset(d, 'uzun') + '</td>'
+      + '<td style="text-align:right">' + fmtOfset(d, 'ema') + '</td>'
+      + '<td style="text-align:right">' + fmtOfset(d, 'nihai') + '</td>'
       + '</tr>';
   }).join('');
 
