@@ -4637,6 +4637,13 @@ const FUNDS = {
 // STATE
 // ════════════════════════════════════════════════════════
 let priceCache = {};       // { code: changePercent }
+let manualOverrides = (() => {
+  try {
+    return JSON.parse(localStorage.getItem('manualOverrides') || '{}');
+  } catch(e) {
+    return {};
+  }
+})();
 let lastFetchTime = null;
 
 // ════════════════════════════════════════════════════════
