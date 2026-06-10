@@ -4638,11 +4638,8 @@ const FUNDS = {
 // ════════════════════════════════════════════════════════
 let priceCache = {};       // { code: changePercent }
 let manualOverrides = (() => {
-  try {
-    return JSON.parse(localStorage.getItem('manualOverrides') || '{}');
-  } catch(e) {
-    return {};
-  }
+  try { return JSON.parse(localStorage.getItem('manualOverrides') || '{}'); }
+  catch(e) { return {}; }
 })();
 let lastFetchTime = null;
 
@@ -5182,6 +5179,28 @@ async function refreshAllPortfolios() {
   return {requested: requested, updated: updated, failed: failed, skipped: skipped, changes: changes};
 }
 
+
+function isSessizGecilecekKod(code, type, weight) {
+  code = String(code || '').trim().toUpperCase();
+  type = String(type || '').trim().toLowerCase();
+  weight = Number(weight || 0);
+  if (!code) return true;
+  if (type === 'cash' || type === 'other') return true;
+  if (/NAK[İI]T|REPO|MEVDUAT|TAKASBANK|BONO|TAHV[İI]L|K[İI]RA|TEM[İI]NAT|D[ÖO]V[İI]Z/.test(code)) return true;
+  // Çok küçük ağırlıklı kalemler hesapta 0 kabul edilir; ana uyarı listesini kirletmesin.
+  if (weight > 0 && weight < 0.50) return true;
+  // TEFAS'ta her zaman günlük fiyatı gelmeyen özel/serbest/kapalı fon kodları.
+  if (type === 'fund' && /^(HMV|T3B|PKZ|PCS|PRY|ABG|PFS|RPP|RS1|CFO|TI1|TPKGY|TPKGYF1)$/.test(code)) return true;
+  return false;
+}
+
+function kayipKodMesaji(failedList, silentCount) {
+  var msg = '';
+  if (failedList && failedList.length) msg += ' [' + failedList.join(', ') + ']';
+  if (silentCount > 0) msg += ' · ' + silentCount + ' düşük ağırlıklı/nakit/özel fon sessiz geçildi';
+  return msg;
+}
+
 async function fetchAll() {
   // Yahoo Finance için CORS proxy wrapper
   async function yahooFetch(url) {
@@ -5195,11 +5214,11 @@ async function fetchAll() {
   }
 
   try {
-  setStatus('loading', 'Veriler cekiliyor...');
+  setStatus('loading', 'Güncelleme başlatıldı...');
   setRefreshLoading(true);
 
   // FVT'den guncel portfoy dagilimini al
-  setStatus('loading', 'Fon portföy ağırlıkları FVT üzerinden güncelleniyor...');
+  setStatus('loading', '1/3 Portföy ağırlıkları kontrol ediliyor...');
   var pfSonuc = await refreshAllPortfolios();
   if (pfSonuc && typeof renderPortfoyDegisimOzet === 'function') renderPortfoyDegisimOzet(pfSonuc.changes || []);
   if (pfSonuc && pfSonuc.updated > 0) {
@@ -5207,17 +5226,25 @@ async function fetchAll() {
   }
 
   // ABD hisseleri için kur etkisini ayrı çek
-  setStatus('loading', 'USD/TRY değişimi kontrol ediliyor...');
+  setStatus('loading', '2/3 USD/TRY değişimi kontrol ediliyor...');
   await fetchUsdTryChange();
 
   // Hisseleri ve fonları ayır
   var tickers = {};
   var fonlar  = {};
+  var weights = {};
+  var silentSkipped = 0;
   Object.values(FUNDS).forEach(function(f) {
-    f.holdings.forEach(function(h) {
+    (f.holdings || []).forEach(function(h) {
       var cls = classifyPortfolioItem(h);
-      if (cls === 'bist' || cls === 'us') tickers[h.code] = cls;
-      else if (cls === 'fund') fonlar[h.code] = true;
+      var code = String(h.code || '').trim().toUpperCase();
+      var w = Number(h.weight || 0);
+      if (!code) return;
+      weights[code] = Math.max(weights[code] || 0, w);
+      if (cls === 'cash' || cls === 'other') return;
+      if (isSessizGecilecekKod(code, cls, w)) { silentSkipped++; return; }
+      if (cls === 'bist' || cls === 'us') tickers[code] = cls;
+      else if (cls === 'fund') fonlar[code] = true;
     });
   });
 
@@ -5235,27 +5262,27 @@ async function fetchAll() {
       var code = entry[0], type = entry[1];
       var chg = await fetchQuote(code, type);
       results[code] = (chg !== null) ? chg : 0;
-      if (chg === null) { failed++; failedList.push(code); }
+      if (chg === null) { if (isSessizGecilecekKod(code, type, weights[code])) { results[code] = 0; } else { failed++; failedList.push(code); } }
       done++;
-      setStatus('loading', 'Çekiliyor: ' + done + ' / ' + total + (failed > 0 ? '  (' + failed + ' bulunamadı)' : ''));
+      setStatus('loading', '3/3 Günlük fiyatlar çekiliyor: ' + done + ' / ' + total + (failed > 0 ? '  (' + failed + ' bulunamadı)' : ''));
     }));
     if (i + BATCH < tickerEntries.length) await sleep(300 + Math.random() * 200);
   }
 
   // TEFAS'tan fonları paralel çek
   if (fonEntries.length > 0) {
-    setStatus('loading', 'TEFAS fon verileri çekiliyor... (' + fonEntries.length + ' fon)');
+    setStatus('loading', '3/3 TEFAS fon verileri çekiliyor... (' + fonEntries.length + ' fon)');
     await Promise.all(fonEntries.map(async function(code) {
       try {
         var chg = await fetchTefasFon(code);
         results[code] = (chg !== null) ? chg : 0;
-        if (chg === null) { failed++; failedList.push(code); }
+        if (chg === null) { if (isSessizGecilecekKod(code, 'fund', weights[code])) { results[code] = 0; } else { failed++; failedList.push(code); } }
       } catch(e) {
         results[code] = 0;
-        failed++; failedList.push(code);
+        if (isSessizGecilecekKod(code, 'fund', weights[code])) { /* sessiz geç */ } else { failed++; failedList.push(code); }
       }
       done++;
-      setStatus('loading', 'Çekiliyor: ' + done + ' / ' + total + (failed > 0 ? '  (' + failed + ' bulunamadı)' : ''));
+      setStatus('loading', '3/3 Günlük fiyatlar çekiliyor: ' + done + ' / ' + total + (failed > 0 ? '  (' + failed + ' bulunamadı)' : ''));
     }));
   }
 
@@ -5266,10 +5293,10 @@ async function fetchAll() {
 
   var ok = total - failed;
   if (failed === 0) {
-    setStatus('live', 'Tüm veriler güncellendi — ' + lastFetchTime.toLocaleTimeString('tr-TR') + ' · ' + total + ' hisse');
+    setStatus('live', 'Tüm günlük veriler güncellendi — ' + lastFetchTime.toLocaleTimeString('tr-TR') + ' · ' + total + ' kalem' + kayipKodMesaji([], silentSkipped));
   } else if (ok > 0) {
-    var failedStr = failedList.length > 0 ? ' [' + failedList.join(', ') + ']' : '';
-    setStatus('live', 'Güncellendi — ' + lastFetchTime.toLocaleTimeString('tr-TR') + ' · ' + ok + '/' + total + ' hisse (' + failed + ' bulunamadı' + failedStr + ')');
+    var failedStr = kayipKodMesaji(failedList, silentSkipped);
+    setStatus('live', 'Güncellendi — ' + lastFetchTime.toLocaleTimeString('tr-TR') + ' · ' + ok + '/' + total + ' kalem (' + failed + ' bulunamadı' + failedStr + ')');
   } else {
     useFallbackData();
     setStatus('error', 'Veri çekilemedi. İnternet bağlantısını kontrol et ve tekrar dene.');
@@ -5518,15 +5545,19 @@ function isRealFundCashCode(h) {
 function classifyPortfolioItem(h) {
   if (!h) return 'other';
   var tip = String(h.type || '').toLowerCase();
-  var kod = String(h.code || '').toUpperCase();
+  var kod = String(h.code || '').trim().toUpperCase();
   var ad  = String(h.name || '').toUpperCase();
   var metin = (kod + ' ' + ad + ' ' + tip).toUpperCase();
+
+  // Fiyatı borsadan/TEFAS'tan çekilmeyecek nakit, repo, bono vb. kalemler
+  // önce ayrılır. Böylece NAKİT gibi kodlar "bulunamadı" listesine düşmez.
+  var cashPattern = /REPO|TERS|MEVDUAT|TAKASBANK|BORSA PARA|FİNANSMAN|FINANS|KİRA|KIRA|VDMK|TAHVİL|TAHVIL|BONO|NAKİT|NAKIT|DİĞER|DIGER|TEMİNAT|TEMINAT|DÖVİZ|DOVIZ|VADELI|VADELİ/;
+  if (tip === 'cash' || cashPattern.test(metin)) return 'cash';
+
   if (tip === 'bist' || tip === 'hisse') return 'bist';
   if (tip === 'us' || tip === 'yabanci') return 'us';
   if (tip === 'fund' || tip === 'etf' || /FON|BYF|ETF|KATILMA/.test(metin)) return 'fund';
   if (isRealFundCashCode(h)) return 'fund';
-  if (/REPO|TERS|MEVDUAT|TAKASBANK|BORSA PARA|FİNANSMAN|FINANS|KİRA|KIRA|VDMK|TAHVİL|TAHVIL|BONO|NAKİT|NAKIT|DİĞER|DIGER|TEMİNAT|TEMINAT|DÖVİZ|DOVIZ/.test(metin)) return 'cash';
-  if (tip === 'cash') return 'cash';
   return 'other';
 }
 
@@ -6009,7 +6040,7 @@ function saveFaizValues() {
 // ═══════════════════════════════════════
 async function portfoyAgirliklariniGuncelle() {
   try {
-    setStatus('loading', 'Fon portföy ağırlıkları FVT üzerinden güncelleniyor...');
+    setStatus('loading', '1/3 Portföy ağırlıkları kontrol ediliyor...');
     var sonuc = await refreshAllPortfolios();
     if (sonuc && typeof renderPortfoyDegisimOzet === 'function') renderPortfoyDegisimOzet(sonuc.changes || []);
     if (typeof updateUI === 'function') updateUI();
