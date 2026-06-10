@@ -2602,6 +2602,31 @@ function storeSet(key, value){
     else localStorage.setItem(key, raw);
   }catch(e){}
 }
+
+
+// Tahmin paneli genel durum ve tarih yardımcıları — eksik fonksiyon uyumluluk katmanı
+function setStatus(type, message){
+  try{
+    var dot = document.getElementById('statusDot');
+    var txt = document.getElementById('statusText');
+    if(dot){
+      dot.className = 'status-dot';
+      if(type) dot.classList.add(type);
+    }
+    if(txt) txt.textContent = message || '';
+  }catch(e){}
+}
+
+function updateDate(){
+  try{
+    var el = document.getElementById('dateBadge');
+    if(!el) return;
+    var now = new Date();
+    var tarih = now.toLocaleDateString('tr-TR', { day:'2-digit', month:'long', year:'numeric' });
+    var saat = now.toLocaleTimeString('tr-TR', { hour:'2-digit', minute:'2-digit' });
+    el.textContent = tarih + ' ' + saat;
+  }catch(e){}
+}
 // Kullanıcının "Güncelle" ile eklediği ek işlemler (localStorage'dan yüklenir)
 var DEFAULT_TRX_EXTRA = (function(){
   try{
