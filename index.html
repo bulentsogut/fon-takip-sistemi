@@ -4916,12 +4916,39 @@ function fonPortfoyKarsilastirVeBirlestir(fon, result) {
 }
 
 function aktifTahminFonlari() {
-  if (!FUNDS || typeof FUNDS !== 'object') return [];
-  var silinen = (_fbData && _fbData.removedFunds) ? _fbData.removedFunds : {};
-  return Object.keys(FUNDS).filter(function(fon){
-    var safeF = fon.replace(/[.#$\/\[\]]/g, '_');
-    return FUNDS[fon] && !silinen[fon] && !silinen[safeF];
-  }).sort();
+  var seen = {};
+  var liste = [];
+
+  function ekle(fon) {
+    fon = String(fon || '').trim().toUpperCase();
+    if (!fon || seen[fon]) return;
+    if (!FUNDS || !FUNDS[fon]) return;
+    seen[fon] = true;
+    liste.push(fon);
+  }
+
+  // Öncelik: ekranda gerçekten görünen portföy özeti kartları.
+  // Böylece kullanıcı 5 fon görüyorsa ağırlık güncelleme sayacı da 5 fonu kontrol eder.
+  try {
+    var summaryLabels = document.querySelectorAll('#summaryRow .sc-label');
+    summaryLabels.forEach(function(el) { ekle(el.textContent); });
+  } catch(e) {}
+
+  // Ekran henüz render edilmediyse veya kart bulunamadıysa FUNDS içindeki tüm aktif fonlara dön.
+  if (!liste.length && FUNDS && typeof FUNDS === 'object') {
+    Object.keys(FUNDS).forEach(ekle);
+  }
+
+  // Firebase'den sonradan eklenen fonlar FUNDS'e henüz işlenmemişse burada bir kez daha ekle.
+  if (_fbData && _fbData.customFunds) {
+    Object.keys(_fbData.customFunds).forEach(function(fon) {
+      fon = String(fon || '').trim().toUpperCase();
+      if (!FUNDS[fon]) FUNDS[fon] = _fbData.customFunds[fon];
+      ekle(fon);
+    });
+  }
+
+  return liste.sort();
 }
 
 function htmlEscapeDegisim(v) {
