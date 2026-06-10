@@ -4997,15 +4997,20 @@ function renderPortfoyDegisimOzet(changes) {
 
 async function refreshAllPortfolios() {
   var takipFonlar = aktifTahminFonlari();
+  var requested = takipFonlar.length;
   var updated = 0;
   var failed = [];
+  var skipped = [];
   var changes = [];
 
   for (var i = 0; i < takipFonlar.length; i++) {
     var fon = takipFonlar[i];
-    if (!FUNDS[fon]) continue;
+    if (!FUNDS[fon]) {
+      skipped.push(fon);
+      continue;
+    }
     var result = await loadFVTPortfolio(fon);
-    if (result && result.holdings.length > 0) {
+    if (result && result.holdings && result.holdings.length > 0) {
       var birlesik = fonPortfoyKarsilastirVeBirlestir(fon, result);
       changes.push(portfoyDegisimleriniCikar(fon, birlesik));
       FUNDS[fon].holdings = birlesik;
@@ -5027,9 +5032,10 @@ async function refreshAllPortfolios() {
   }
 
   if (updated > 0 && typeof renderFunds === 'function') renderFunds();
-  if (updated > 0) console.log('FVT portfoy guncellendi:', updated, 'fon');
+  if (updated > 0) console.log('FVT portfoy guncellendi:', updated, '/', requested, 'fon');
   if (failed.length > 0) console.warn('FVT portfoy alinamayan fonlar:', failed.join(', '));
-  return {updated: updated, failed: failed, changes: changes};
+  if (skipped.length > 0) console.warn('Atlanan fonlar:', skipped.join(', '));
+  return {requested: requested, updated: updated, failed: failed, skipped: skipped, changes: changes};
 }
 
 async function fetchAll() {
@@ -5916,9 +5922,14 @@ async function portfoyAgirliklariniGuncelle() {
     var sonuc = await refreshAllPortfolios();
     if (sonuc && typeof renderPortfoyDegisimOzet === 'function') renderPortfoyDegisimOzet(sonuc.changes || []);
     if (typeof updateUI === 'function') updateUI();
-    var msg = 'Ağırlık güncelleme tamamlandı: ' + (sonuc ? sonuc.updated : 0) + ' fon';
-    if (sonuc && sonuc.failed && sonuc.failed.length) msg += ' · alınamayan: ' + sonuc.failed.join(', ');
-    setStatus((sonuc && sonuc.updated > 0) ? 'live' : 'error', msg);
+    var toplam = sonuc && typeof sonuc.requested === 'number' ? sonuc.requested : (sonuc ? ((sonuc.updated || 0) + ((sonuc.failed || []).length) + ((sonuc.skipped || []).length)) : 0);
+    var basarili = sonuc ? (sonuc.updated || 0) : 0;
+    var alinamayan = sonuc && sonuc.failed ? sonuc.failed : [];
+    var atlanan = sonuc && sonuc.skipped ? sonuc.skipped : [];
+    var msg = 'Ağırlık güncelleme tamamlandı: ' + toplam + ' fon kontrol edildi · ' + basarili + ' fon güncellendi';
+    if (alinamayan.length) msg += ' · FVT verisi alınamayan: ' + alinamayan.join(', ');
+    if (atlanan.length) msg += ' · atlanan: ' + atlanan.join(', ');
+    setStatus((basarili > 0 || toplam > 0) ? 'live' : 'error', msg);
   } catch(e) {
     setStatus('error', 'Ağırlık güncelleme hatası: ' + (e.message || e));
   }
