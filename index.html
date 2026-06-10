@@ -1554,6 +1554,38 @@ tbody tr:hover{background:rgba(0,180,255,0.035);}
     font-size: 9px;
   }
 }
+
+
+/* ════════════════════════════════
+   ADAPTİF OFSET PANELİ
+   ════════════════════════════════ */
+.adaptif-ofset-panel{
+  background:linear-gradient(135deg,rgba(13,21,40,.96),rgba(8,14,26,.96));
+  border:1px solid rgba(99,179,255,.20);
+  border-radius:14px;
+  padding:16px 18px;
+  margin:0 0 24px;
+}
+.adaptif-ofset-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px;}
+.adaptif-ofset-title{font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:#7dd6ff;}
+.adaptif-ofset-mode{font-family:var(--mono);font-size:10px;color:var(--muted);}
+.adaptif-ofset-mode strong{color:#00ffc8;}
+.adaptif-ofset-grid{display:grid;grid-template-columns:repeat(4,1fr) auto;gap:10px;align-items:stretch;}
+.adaptif-ofset-col{background:rgba(255,255,255,.025);border:1px solid rgba(99,179,255,.12);border-radius:10px;padding:10px;display:flex;flex-direction:column;gap:8px;}
+.adaptif-ofset-label{font-family:var(--mono);font-size:10px;color:var(--muted);letter-spacing:.10em;text-transform:uppercase;text-align:center;}
+.adaptif-btn{border:1px solid rgba(99,179,255,.28);background:rgba(79,163,255,.08);color:#7dd6ff;border-radius:8px;padding:9px 10px;font-family:var(--mono);font-size:10px;font-weight:700;cursor:pointer;transition:all .18s;white-space:nowrap;}
+.adaptif-btn:hover{border-color:#7dd6ff;background:rgba(79,163,255,.16);}
+.adaptif-btn.apply{border-color:rgba(46,213,115,.35);background:rgba(46,213,115,.07);color:#2ed573;}
+.adaptif-btn.apply.active{background:rgba(46,213,115,.18);box-shadow:0 0 12px rgba(46,213,115,.18);}
+.adaptif-btn.reset{height:100%;border-color:rgba(255,92,122,.35);background:rgba(255,92,122,.07);color:#ff5c7a;}
+.adaptif-values{margin-top:12px;display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;}
+.adaptif-value-chip{font-family:var(--mono);font-size:10px;border:1px solid rgba(99,179,255,.14);border-radius:7px;padding:7px 9px;background:rgba(255,255,255,.025);display:flex;justify-content:space-between;gap:8px;}
+.adaptif-value-chip .fon{color:#7dd6ff;font-weight:700;}
+.adaptif-value-chip.pos .val{color:#2ed573;font-weight:700;}
+.adaptif-value-chip.neg .val{color:#ff4757;font-weight:700;}
+.adaptif-value-chip.neu .val{color:#5a7499;}
+@media(max-width:768px){.adaptif-ofset-grid{grid-template-columns:1fr 1fr}.adaptif-btn.reset{grid-column:1/-1}.adaptif-ofset-col{padding:8px}.adaptif-btn{font-size:9px;padding:8px 6px}}
+
 </style>
 <!-- Firebase SDK -->
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
@@ -1751,39 +1783,46 @@ _db.ref('fonmerkezi').on('value', function(snap) {
 <!-- TAHMİN PANELİ -->
 <div class="tab-panel active" id="panel-tahmin">
 
-  <!-- Ofset Senkron Paneli — TAHMİN sekmesinde görünür -->
-  <div class="ofset-sync-panel" id="ofsetSyncPanel">
-    <div class="ofset-sync-left">
-      <div class="ofset-sync-title">
-        <span>⟳</span> OTOMATİK OFSET SENKRONU
-      </div>
-      <div class="ofset-sync-desc">
-        FON TAKİP sekmesindeki TEFAS gerçek kapanış verilerinden son 5 iş gününün
-        <strong style="color:#00ffc8">(gerçek − tahmin)</strong> farkının ortalaması hesaplanarak
-        her fona ait ofset otomatik güncellenir.
-      </div>
-      <div class="ofset-sync-chips" id="ofsetSyncChips">
-        <span style="font-size:10px;color:#4e6a82;font-family:DM Mono,monospace;">Henüz hesaplanmadı — "Ofseti Hesapla" butonuna bas</span>
-      </div>
-      <div class="ofset-gun-sayisi" id="ofsetGunSayisi"></div>
-    </div>
-    <div style="display:flex;flex-direction:column;gap:8px;align-self:center">
-      <button id="btnOtomatikOfset" class="btn-ofset-sync" onclick="otomatikOfsetHesapla()"
-        style="background:linear-gradient(135deg,rgba(0,255,200,0.18),rgba(0,180,255,0.12));border-color:rgba(0,255,200,0.5);color:#00ffc8;font-size:11px">
-        ⚡ Otomatik Ofset Hesapla
-      </button>
-      <button class="btn-ofset-sync" onclick="snapshotTahminler(true)"
-        style="background:linear-gradient(135deg,rgba(79,163,255,0.12),rgba(79,163,255,0.06));border-color:rgba(79,163,255,0.3);color:#4fa3ff;font-size:10px">
-        📸 Manuel Tahmini Kaydet
-      </button>
-      <button class="btn-ofset-sync" onclick="hesaplaVeUygulaOfset()"
-        style="background:rgba(78,106,130,0.1);border-color:rgba(78,106,130,0.3);color:#4e6a82;font-size:10px">
-        ✦ Kayıtlı Tahminle Hesapla
-      </button>
-    </div>
-  </div>
+  <!-- Adaptif Ofset Paneli — TAHMİN sekmesinde görünür -->
+  <div class="ofset-sync-panel" id="ofsetSyncPanel" style="display:none"></div>
 
   <div class="app">
+    <div class="adaptif-ofset-panel" id="adaptifOfsetPanel">
+      <div class="adaptif-ofset-head">
+        <div class="adaptif-ofset-title">⚙ Adaptif Ofset Seçimi</div>
+        <div class="adaptif-ofset-mode">Aktif Mod: <strong id="aktifOfsetModu">Ofsetsiz</strong></div>
+      </div>
+      <div class="adaptif-ofset-grid">
+        <div class="adaptif-ofset-col">
+          <div class="adaptif-ofset-label">Kısa</div>
+          <button class="adaptif-btn" onclick="hesaplaAdaptifOfset('kisa')">Kısa Hesapla</button>
+          <button class="adaptif-btn apply" id="btnApplyKisa" onclick="ofsetModuUygula('kisa')">Kısa Ofseti Ekle</button>
+        </div>
+        <div class="adaptif-ofset-col">
+          <div class="adaptif-ofset-label">Uzun</div>
+          <button class="adaptif-btn" onclick="hesaplaAdaptifOfset('uzun')">Uzun Hesapla</button>
+          <button class="adaptif-btn apply" id="btnApplyUzun" onclick="ofsetModuUygula('uzun')">Uzun Ofseti Ekle</button>
+        </div>
+        <div class="adaptif-ofset-col">
+          <div class="adaptif-ofset-label">EMA</div>
+          <button class="adaptif-btn" onclick="hesaplaAdaptifOfset('ema')">EMA Hesapla</button>
+          <button class="adaptif-btn apply" id="btnApplyEma" onclick="ofsetModuUygula('ema')">EMA Ofseti Ekle</button>
+        </div>
+        <div class="adaptif-ofset-col">
+          <div class="adaptif-ofset-label">Nihai</div>
+          <button class="adaptif-btn" onclick="hesaplaAdaptifOfset('nihai')">Nihai Hesapla</button>
+          <button class="adaptif-btn apply" id="btnApplyNihai" onclick="ofsetModuUygula('nihai')">Nihai Ofseti Ekle</button>
+        </div>
+        <button class="adaptif-btn reset" onclick="ofsetModuUygula('none')">Ofsetsiz Tahmine Dön</button>
+      </div>
+      <div class="adaptif-values" id="adaptifOfsetValues">
+        <div style="font-family:var(--mono);font-size:10px;color:var(--muted);grid-column:1/-1">Önce bir hesapla butonuna basın. Değerler burada görünecek.</div>
+      </div>
+      <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
+        <button class="adaptif-btn" onclick="snapshotTahminler(true)">📸 Manuel Tahmini Kaydet</button>
+      </div>
+    </div>
+
 <div class="app">
 
   <!-- Header -->
@@ -1840,39 +1879,14 @@ _db.ref('fonmerkezi').on('value', function(snap) {
   <div style="background:rgba(13,21,40,0.9);border:1px solid rgba(99,179,255,0.18);border-radius:14px;padding:20px 24px;margin-bottom:28px">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:10px">
       <div style="font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:#4fa3ff">
-        📊 Tahmin · Gerçek · Δ/2 · Ofset Etkinlik Analizi
+        📊 Adaptif Ofset Kıyas Tablosu
       </div>
       <div style="font-family:var(--mono);font-size:9px;color:var(--muted)">
-        Tahmin = model &nbsp;|&nbsp; Gerçek = TEFAS &nbsp;|&nbsp; Δ/2 = düzeltme &nbsp;|&nbsp; +Ofset = düzeltilmiş (yeşil = iyileşti)
+        Tahmin = model &nbsp;|&nbsp; Gerçek = TEFAS &nbsp;|&nbsp; Hata = gerçek − tahmin &nbsp;|&nbsp; Kısa / Uzun / EMA / Nihai = hesaplanan ofsetler
       </div>
     </div>
     <div id="kiyasTablosu">
       <div style="color:#4e6a82;font-size:11px;padding:8px;font-family:monospace">Yükleniyor...</div>
-    </div>
-  </div>
-
-<div class="section-label">GERÇEK DEĞER & DÜZELTME</div>
-  <div class="gercek-panel">
-    <div class="gercek-panel-title">
-      📊 Gün Sonu Gerçek Getiri Girişi
-    </div>
-    <div class="gercek-grid" id="gercekGrid">
-      <!-- JS ile doldurulur -->
-    </div>
-    <div class="ofset-ozet" id="ofsetOzet"></div>
-    <div class="gercek-actions">
-      <button class="btn-duzelt" onclick="duzeltmeUygula()">
-        ✦ Düzeltmeyi Bir Sonraki Güne Uygula
-      </button>
-      <button class="btn-duzelt-reset" onclick="ofsetSifirla()">
-        ✕ Ofsetleri Sıfırla
-      </button>
-      <div class="duzelt-info">
-        Gün sonunda TEFAS'tan açıklanan gerçek değeri girin → Farkı hesapla →
-        <strong style="color:var(--amber)">Düzeltme Uygula</strong> butonuna bas →
-        Yarın tahminlere otomatik düzeltme eklenir.
-        Geçmiş farkların <strong style="color:var(--accent)">ağırlıklı ortalaması</strong> kullanılır.
-      </div>
     </div>
   </div>
 
@@ -4890,158 +4904,7 @@ function gecmisTahminHesapla(fonId, gecmisFiyatlar) {
   return weightedReturn + mmContrib;
 }
 
-// Ana fonksiyon: geçmiş 15 iş günü Yahoo verisiyle tahmin hesapla,
-// TAKİP'teki gerçek TEFAS verileriyle karşılaştır, ofset üret
-async function otomatikOfsetHesapla() {
-  var btn = document.getElementById('btnOtomatikOfset');
-  if (btn) { btn.disabled = true; btn.textContent = '⟳ Hesaplanıyor...'; }
-
-  try {
-    // CORS kontrolü
-    try {
-      var test = await fetchWithTimeout(
-        'https://query1.finance.yahoo.com/v8/finance/chart/AAPL?interval=1d&range=1d', {}, 8000
-      );
-      if (!test.ok) throw new Error();
-    } catch(e) {
-      setStatus('error', 'Veri çekilemedi. İnternet bağlantısını kontrol et ve tekrar dene.');
-      if (btn) { btn.disabled = false; btn.textContent = '⚡ Otomatik Ofset Hesapla'; }
-      return;
-    }
-
-    // Tüm benzersiz hisseleri topla
-    var tickers = {};
-    Object.values(FUNDS).forEach(function(f) {
-      f.holdings.forEach(function(h) {
-        if (h.type === 'bist' || h.type === 'us') tickers[h.code] = h.type;
-      });
-    });
-
-    setStatus('loading', 'Geçmiş hisse verileri çekiliyor...');
-
-    // Her hisse için 15 günlük geçmiş çek
-    var gecmisVeriler = {}; // { CODE: { "DD.MM": changePercent } }
-    var tickerList = Object.entries(tickers);
-    var BATCH = 4;
-    for (var i = 0; i < tickerList.length; i += BATCH) {
-      var batch = tickerList.slice(i, i + BATCH);
-      await Promise.all(batch.map(async function(entry) {
-        var code = entry[0], type = entry[1];
-        gecmisVeriler[code] = await fetchGecmisKapanislar(code, type, 5);
-      }));
-      setStatus('loading', 'Geçmiş çekiliyor: ' + Math.min(i+BATCH, tickerList.length) + '/' + tickerList.length);
-      if (i + BATCH < tickerList.length) await sleep(200);
-    }
-
-    // TAKİP gerçek kapanışları al
-    var gercekRates = window._takipGetLiveRates ? window._takipGetLiveRates() : {};
-    var stored      = window._takipGetLoadR     ? window._takipGetLoadR()     : {};
-    var tumGercek   = {};
-    Object.keys(gercekRates).forEach(function(d) { tumGercek[d] = Object.assign({}, gercekRates[d]); });
-    Object.keys(stored).forEach(function(d) {
-      if (!tumGercek[d]) tumGercek[d] = {};
-      Object.assign(tumGercek[d], stored[d]);
-    });
-
-    // Son 5 iş günü bul (bugünden önce, TAKİP'te gerçek verisi olan)
-    var today = new Date(); today.setHours(0,0,0,0);
-    var FON_KODLAR = ['DFI', 'TLY', 'PHE', 'CPT', 'IJC', 'PBR'];
-
-    // Tüm tarihleri bul — gecmisVeriler'deki herhangi bir hissede olan tarihler
-    var tarihSet = {};
-    Object.values(gecmisVeriler).forEach(function(gunler) {
-      Object.keys(gunler).forEach(function(d) { tarihSet[d] = true; });
-    });
-    // Bugünden önce, iş günü, sırala
-    var tarihler = Object.keys(tarihSet).filter(function(d) {
-      var p = d.split('.'); var dt = new Date(2026, parseInt(p[1])-1, parseInt(p[0]));
-      dt.setHours(0,0,0,0);
-      var dow = dt.getDay();
-      return dt < today && dow !== 0 && dow !== 6;
-    }).sort(function(a, b) {
-      var pa = a.split('.'), pb = b.split('.');
-      return new Date(2026, parseInt(pb[1])-1, parseInt(pb[0])) -
-             new Date(2026, parseInt(pa[1])-1, parseInt(pa[0]));
-    }).slice(0, 15);
-
-    setStatus('loading', tarihler.length + ' iş günü bulundu, ofset hesaplanıyor...');
-
-    // Her fon için ofset hesapla
-    var yeniOfsetler = {};
-    var detaylar     = {};
-    var hesapTablosu = []; // kıyas tablosu için
-
-    FON_KODLAR.forEach(function(fon) {
-      var fonKey   = fon.toLowerCase();
-      var toplam   = 0, sayac = 0;
-      var gunDetay = [];
-
-      tarihler.forEach(function(tarih) {
-        // O günkü geçmiş fiyatlarla fon tahmini hesapla
-        var gunFiyatlar = {};
-        Object.keys(gecmisVeriler).forEach(function(code) {
-          if (gecmisVeriler[code][tarih] !== undefined)
-            gunFiyatlar[code] = gecmisVeriler[code][tarih];
-        });
-        var tahmin = gecmisTahminHesapla(fon, gunFiyatlar);
-
-        // O günkü gerçek TEFAS kapanışı
-        var gercek = (tumGercek[tarih] || {})[fonKey];
-
-        if (tahmin === null || gercek === undefined || gercek === null) return;
-
-        var duzeltme = (gercek - tahmin) / 2;
-        toplam += duzeltme;
-        sayac++;
-        gunDetay.push({ tarih: tarih, tahmin: tahmin, gercek: gercek, duzeltme: duzeltme });
-      });
-
-      yeniOfsetler[fon] = sayac > 0 ? parseFloat((toplam / sayac).toFixed(4)) : 0;
-      detaylar[fon] = { ofset: yeniOfsetler[fon], gunler: sayac, yontem: 'yahoo_gecmis', gunDetay: gunDetay };
-    });
-
-    // Ofsetleri uygula
-    FON_KODLAR.forEach(function(fon) {
-      if (FON_OFSET.hasOwnProperty(fon)) FON_OFSET[fon] = yeniOfsetler[fon] || 0;
-    });
-    try { localStorage.setItem('fon_hesaplanan_ofset', JSON.stringify(yeniOfsetler)); } catch(e) {}
-
-    // Snapshot tablosuna da yaz (kıyas tablosu güncellensin)
-    var snapshots = {};
-    tarihler.forEach(function(tarih) {
-      var snap = {};
-      FON_KODLAR.forEach(function(fon) {
-        var d = detaylar[fon];
-        var gd = d.gunDetay.find(function(x){ return x.tarih === tarih; });
-        if (gd) snap[fon] = parseFloat(gd.tahmin.toFixed(4));
-      });
-      if (Object.keys(snap).length > 0) {
-        var p = tarih.split('.');
-        snapshots[p[0]+'.'+p[1]+'.2026'] = snap;
-      }
-    });
-    try { localStorage.setItem('fon_tahmin_snapshot', JSON.stringify(snapshots)); } catch(e) {}
-
-    // UI güncelle
-    updateUI();
-    if (typeof renderGercekPanel  === 'function') renderGercekPanel();
-    if (typeof renderOfsetOzet    === 'function') renderOfsetOzet();
-    if (typeof renderKiyasTablosu === 'function') renderKiyasTablosu();
-    if (typeof renderNavOfsetStatus === 'function') renderNavOfsetStatus(true);
-
-    // Sekme scriptine bildir
-    if (typeof renderOfsetSyncPanel === 'function') renderOfsetSyncPanel(detaylar, tarihler);
-    if (typeof setNavSync === 'function')
-      setNavSync('synced', '✓ Otomatik ofset — ' + tarihler.length + ' gün · Yahoo geçmiş');
-
-    setStatus('live', '✓ Otomatik ofset hesaplandı — ' + tarihler.length + ' iş günü kullanıldı');
-
-  } catch(err) {
-    setStatus('error', 'Ofset hesaplanamadı: ' + err.message);
-  }
-
-  if (btn) { btn.disabled = false; btn.textContent = '⚡ Otomatik Ofset Hesapla'; }
-}
+// Adaptif ofset sistemi aşağıdaki merkezi fonksiyonlarla yönetilir.
 const FON_OFSET = {
   DFI: 0,
   TLY: 0,
@@ -5050,6 +4913,54 @@ const FON_OFSET = {
   IJC: 0,
   PBR: 0
 };
+var OFSET_AKTIF = false; // Varsayılan: ofset uygulanmaz
+var AKTIF_OFSET_MODU = storeGet('fon_aktif_ofset_modu') || 'none';
+var ADAPTIF_OFSETLER = storeGet('fon_adaptif_ofsetler') || {};
+
+function ofsetModuEtiket(mod) {
+  return mod === 'kisa' ? 'Kısa Ofset'
+       : mod === 'uzun' ? 'Uzun Ofset'
+       : mod === 'ema' ? 'EMA Ofset'
+       : mod === 'nihai' ? 'Nihai Ofset'
+       : 'Ofsetsiz';
+}
+
+function ofsetModuUygula(mod) {
+  AKTIF_OFSET_MODU = mod || 'none';
+  OFSET_AKTIF = AKTIF_OFSET_MODU !== 'none';
+
+  Object.keys(FON_OFSET).forEach(function(fon) {
+    var v = 0;
+    if (OFSET_AKTIF && ADAPTIF_OFSETLER[fon]) v = ADAPTIF_OFSETLER[fon][AKTIF_OFSET_MODU] || 0;
+    FON_OFSET[fon] = v;
+    hesaplananOfset[fon] = v;
+  });
+
+  storeSet('fon_aktif_ofset_modu', AKTIF_OFSET_MODU);
+  storeSet('fon_hesaplanan_ofset', hesaplananOfset);
+
+  var modeEl = document.getElementById('aktifOfsetModu');
+  if (modeEl) modeEl.textContent = ofsetModuEtiket(AKTIF_OFSET_MODU);
+
+  ['Kisa','Uzun','Ema','Nihai'].forEach(function(k) {
+    var b = document.getElementById('btnApply' + k);
+    if (b) b.classList.remove('active');
+  });
+  var activeId = AKTIF_OFSET_MODU === 'kisa' ? 'btnApplyKisa'
+               : AKTIF_OFSET_MODU === 'uzun' ? 'btnApplyUzun'
+               : AKTIF_OFSET_MODU === 'ema' ? 'btnApplyEma'
+               : AKTIF_OFSET_MODU === 'nihai' ? 'btnApplyNihai' : null;
+  if (activeId && document.getElementById(activeId)) document.getElementById(activeId).classList.add('active');
+
+  if (typeof updateUI === 'function') updateUI();
+  if (typeof renderKiyasTablosu === 'function') renderKiyasTablosu();
+  if (typeof renderNavOfsetStatus === 'function') renderNavOfsetStatus();
+  setStatus('live', 'Aktif tahmin modu: ' + ofsetModuEtiket(AKTIF_OFSET_MODU));
+}
+
+function toggleOfset() {
+  ofsetModuUygula(OFSET_AKTIF ? 'none' : 'nihai');
+}
 
 // ════════════════════════════════════════════════════════
 // UPDATE UI
@@ -5121,8 +5032,8 @@ function updateUI() {
       }
     });
 
-    // Ofset uygula + para piyasası katkısını ekle
-    const ofset = FON_OFSET[id] || 0;
+    // Ofset uygula (sadece OFSET_AKTIF=true ise)
+    const ofset = OFSET_AKTIF ? (FON_OFSET[id] || 0) : 0;
     const totalReturn = weightedReturn + mmContrib + ofset;
 
     // Display return
@@ -5873,8 +5784,7 @@ function snapshotTahminler(manuel) {
     if (typeof hesaplananTahmin === 'function') {
       var hamTahmin = hesaplananTahmin(fon);
       if (hamTahmin !== null && !isNaN(hamTahmin)) {
-        var ofsetVal = (typeof FON_OFSET !== 'undefined' && FON_OFSET[fon]) ? FON_OFSET[fon] : 0;
-        bugunSnap[fon] = parseFloat((hamTahmin + ofsetVal).toFixed(4));
+        bugunSnap[fon] = parseFloat(hamTahmin.toFixed(4));
         herhangiVar = true;
       }
     }
@@ -5905,168 +5815,164 @@ function baslat23Kontrol() {
 }
 
 // ── Kıyas Tablosu Render ──────────────────────────────────────────────────
+function adaptifFonKodlari() {
+  return ['DFI', 'TLY', 'PHE', 'CPT', 'IJC', 'PBR'].filter(function(f) { return FUNDS && FUNDS[f]; });
+}
+
+function adaptifHataKayitlari() {
+  var snapshots = getTahminSnapshots();
+  var rates = getTakipGercekRates();
+  var fonlar = adaptifFonKodlari();
+  var tarihler = Object.keys(snapshots).sort(function(a, b) { return parseTarih(a) - parseTarih(b); });
+  var sonuc = {};
+  fonlar.forEach(function(fon) { sonuc[fon] = []; });
+
+  tarihler.forEach(function(tarih) {
+    var snap = snapshots[tarih] || {};
+    var gercekler = rates[tarih.substring(0,5)] || {};
+    fonlar.forEach(function(fon) {
+      var tahmin = snap[fon];
+      var gercek = gercekler[fon.toLowerCase()];
+      if (tahmin === undefined || tahmin === null || gercek === undefined || gercek === null) return;
+      var hata = gercek - tahmin;
+      sonuc[fon].push({ tarih: tarih, tahmin: tahmin, gercek: gercek, hata: hata });
+    });
+  });
+  return sonuc;
+}
+
+function hesaplaOfsetSerisi(kayitlar) {
+  if (!kayitlar || kayitlar.length === 0) return { kisa:0, uzun:0, ema:0, nihai:0, gun:0 };
+
+  var son3 = kayitlar.slice(-3);
+  var agirlikToplam = 0, agirlikli = 0;
+  son3.forEach(function(r, idx) {
+    var agirlik = idx + 1; // eski=1, yeni=3
+    agirlikli += r.hata * agirlik;
+    agirlikToplam += agirlik;
+  });
+  var kisa = agirlikToplam ? agirlikli / agirlikToplam : 0;
+
+  var son10 = kayitlar.slice(-10);
+  var uzun = son10.reduce(function(s, r) { return s + r.hata; }, 0) / son10.length;
+
+  var alpha = 0.30;
+  var ema = kayitlar[0].hata;
+  kayitlar.slice(1).forEach(function(r) { ema = (alpha * r.hata) + ((1 - alpha) * ema); });
+
+  var nihai = (0.50 * ema) + (0.30 * kisa) + (0.20 * uzun);
+  function yuvarla(v) { return parseFloat((v || 0).toFixed(4)); }
+  return { kisa:yuvarla(kisa), uzun:yuvarla(uzun), ema:yuvarla(ema), nihai:yuvarla(nihai), gun:kayitlar.length };
+}
+
+function hesaplaTumAdaptifOfsetler() {
+  var hatalar = adaptifHataKayitlari();
+  var fonlar = adaptifFonKodlari();
+  var sonuc = {};
+  fonlar.forEach(function(fon) { sonuc[fon] = hesaplaOfsetSerisi(hatalar[fon]); });
+  ADAPTIF_OFSETLER = sonuc;
+  storeSet('fon_adaptif_ofsetler', ADAPTIF_OFSETLER);
+  return sonuc;
+}
+
+function renderAdaptifDegerler(yontem) {
+  var el = document.getElementById('adaptifOfsetValues');
+  if (!el) return;
+  var data = ADAPTIF_OFSETLER || {};
+  var fonlar = adaptifFonKodlari();
+  var html = fonlar.map(function(fon) {
+    var d = data[fon] || {};
+    var v = d[yontem] || 0;
+    var cls = v > 0 ? 'pos' : v < 0 ? 'neg' : 'neu';
+    return '<div class="adaptif-value-chip ' + cls + '">'
+      + '<span class="fon">' + fon + '</span>'
+      + '<span class="val">' + (v >= 0 ? '+' : '') + v.toFixed(3) + '%</span>'
+      + '</div>';
+  }).join('');
+  el.innerHTML = html || '<div style="font-family:var(--mono);font-size:10px;color:var(--muted);grid-column:1/-1">Hesaplanacak veri bulunamadı.</div>';
+}
+
+function hesaplaAdaptifOfset(yontem) {
+  var sonuc = hesaplaTumAdaptifOfsetler();
+  renderAdaptifDegerler(yontem || 'nihai');
+  renderKiyasTablosu();
+  renderNavOfsetStatus(true);
+  var fonSayisi = Object.keys(sonuc).length;
+  setNavSync('synced', '✓ ' + ofsetModuEtiket(yontem) + ' hesaplandı — ' + fonSayisi + ' fon');
+  setStatus('live', ofsetModuEtiket(yontem) + ' hesaplandı. Uygulamak için altındaki Ofseti Ekle butonuna basın.');
+}
+
 function renderKiyasTablosu() {
   var el = document.getElementById('kiyasTablosu');
   if (!el) return;
 
-  var snapshots  = getTahminSnapshots();
-  var rates      = getTakipGercekRates();
-  var ofsetler   = {};
-  try { ofsetler = JSON.parse(localStorage.getItem('fon_hesaplanan_ofset')) || {}; } catch(e) {}
+  if (!ADAPTIF_OFSETLER || Object.keys(ADAPTIF_OFSETLER).length === 0) {
+    try { ADAPTIF_OFSETLER = JSON.parse(localStorage.getItem('fon_adaptif_ofsetler')) || {}; } catch(e) {}
+  }
+  if (!ADAPTIF_OFSETLER || Object.keys(ADAPTIF_OFSETLER).length === 0) hesaplaTumAdaptifOfsetler();
 
-  var FON_KODLAR = ['DFI', 'TLY', 'PHE', 'CPT', 'IJC', 'PBR'];
-
-  var tarihler = Object.keys(snapshots).sort(function(a, b) {
-    return parseTarih(b) - parseTarih(a);
+  var hatalar = adaptifHataKayitlari();
+  var fonlar = adaptifFonKodlari();
+  var rows = [];
+  fonlar.forEach(function(fon) {
+    (hatalar[fon] || []).slice(-10).forEach(function(r) {
+      rows.push(Object.assign({ fon: fon }, r));
+    });
   });
+  rows.sort(function(a,b) { return parseTarih(b.tarih) - parseTarih(a.tarih) || a.fon.localeCompare(b.fon); });
 
-  if (tarihler.length === 0) {
+  if (rows.length === 0) {
     el.innerHTML = '<div style="color:#4e6a82;font-size:11px;padding:16px;font-family:monospace">'
-      + '⚡ "Otomatik Ofset Hesapla" butonuna bas — Yahoo\'dan geçmiş veriler çekilir ve tablo dolar.</div>';
+      + 'Kıyas için kayıtlı tahmin ve TEFAS gerçek verisi eşleşmesi bulunamadı. Önce “Manuel Tahmini Kaydet” ile tahmin kaydı oluşturun; gerçek değerler Fon Takip tarafında oluşunca hesaplama yapılır.</div>';
     return;
   }
 
-  // ── TABLO BAŞLIĞI ──────────────────────────────────────────────────────────
-  var th = '<colgroup>'
-    + '<col style="width:88px">';  // Tarih
+  function fmt(v) { return (v >= 0 ? '+' : '') + v.toFixed(3) + '%'; }
+  function cls(v) { return v > 0 ? 'color:#2ed573;font-weight:700' : v < 0 ? 'color:#ff4757;font-weight:700' : 'color:#5a7499'; }
+  var body = rows.map(function(r) {
+    var d = ADAPTIF_OFSETLER[r.fon] || { kisa:0, uzun:0, ema:0, nihai:0 };
+    return '<tr>'
+      + '<td>' + r.tarih + '</td>'
+      + '<td style="color:#7dd6ff;font-weight:700">' + r.fon + '</td>'
+      + '<td style="text-align:right;color:#7dd6ff">' + fmt(r.tahmin) + '</td>'
+      + '<td style="text-align:right;color:#e8f4fd">' + fmt(r.gercek) + '</td>'
+      + '<td style="text-align:right;' + cls(r.hata) + '">' + fmt(r.hata) + '</td>'
+      + '<td style="text-align:right;' + cls(d.kisa) + '">' + fmt(d.kisa || 0) + '</td>'
+      + '<td style="text-align:right;' + cls(d.uzun) + '">' + fmt(d.uzun || 0) + '</td>'
+      + '<td style="text-align:right;' + cls(d.ema) + '">' + fmt(d.ema || 0) + '</td>'
+      + '<td style="text-align:right;' + cls(d.nihai) + '">' + fmt(d.nihai || 0) + '</td>'
+      + '</tr>';
+  }).join('');
 
-  FON_KODLAR.forEach(function() {
-    th += '<col style="width:62px">'   // Tahmin
-        + '<col style="width:62px">'   // Gerçek
-        + '<col style="width:58px">'   // Δ/2
-        + '<col style="width:64px">'; // +Ofset
-  });
-  th += '</colgroup>';
+  var ozet = fonlar.map(function(fon) {
+    var d = ADAPTIF_OFSETLER[fon] || { kisa:0, uzun:0, ema:0, nihai:0, gun:0 };
+    return '<tr style="background:rgba(0,180,255,0.05);border-top:1px solid rgba(0,180,255,0.16)">'
+      + '<td>ÖZET</td><td style="color:#00ffc8;font-weight:700">' + fon + '</td>'
+      + '<td colspan="2" style="text-align:right;color:#5a7499">' + (d.gun || 0) + ' kayıt</td>'
+      + '<td style="text-align:right;color:#5a7499">—</td>'
+      + '<td style="text-align:right;' + cls(d.kisa) + '">' + fmt(d.kisa || 0) + '</td>'
+      + '<td style="text-align:right;' + cls(d.uzun) + '">' + fmt(d.uzun || 0) + '</td>'
+      + '<td style="text-align:right;' + cls(d.ema) + '">' + fmt(d.ema || 0) + '</td>'
+      + '<td style="text-align:right;' + cls(d.nihai) + '">' + fmt(d.nihai || 0) + '</td>'
+      + '</tr>';
+  }).join('');
 
-  // Fon başlıkları — 4 sütun span
-  var header1 = '<tr>'
-    + '<th rowspan="2" style="text-align:left;padding:8px 10px;color:#4e6a82;'
-    + 'border-bottom:1px solid rgba(0,180,255,0.15);vertical-align:bottom;font-size:10px">TARİH</th>';
-  FON_KODLAR.forEach(function(fon) {
-    var renk = fon === 'TLY' ? '#4fa3ff'
-             : fon === 'DFI' ? '#00b4ff'
-             : fon === 'PHE' ? '#00ffc8'
-             : fon === 'CPT' ? '#ffd166'
-             : fon === 'IJC' ? '#ff6b6b'
-             : '#a78bfa';
-    header1 += '<th colspan="4" style="text-align:center;padding:6px 4px;color:' + renk + ';'
-      + 'border-bottom:1px solid rgba(255,255,255,0.06);border-left:1px solid rgba(255,255,255,0.04);'
-      + 'font-size:11px;font-weight:800;letter-spacing:1px">' + fon + '</th>';
-  });
-  header1 += '</tr>';
-
-  // Alt başlıklar — T / G / Δ/2 / +Ofset
-  var header2 = '<tr>';
-  FON_KODLAR.forEach(function() {
-    var colStyle = 'padding:4px 3px;font-size:9px;color:#4e6a82;text-align:right;'
-      + 'border-bottom:2px solid rgba(0,180,255,0.12);border-left:1px solid rgba(255,255,255,0.04);'
-      + 'white-space:nowrap';
-    header2 += '<th style="' + colStyle + ';color:#7dd6ff">Tahmin</th>'
-      + '<th style="' + colStyle + ';color:#e8f4fd">Gerçek</th>'
-      + '<th style="' + colStyle + ';color:#ffd166">Δ/2</th>'
-      + '<th style="' + colStyle + ';color:#2ed573">+Ofset</th>';
-  });
-  header2 += '</tr>';
-
-  // ── VERİ SATIRLARI ──────────────────────────────────────────────────────────
-  var bodyRows = '';
-  tarihler.forEach(function(tarih, rowIdx) {
-    var snap      = snapshots[tarih] || {};
-    var tarihKisa = tarih.substring(0, 5); // DD.MM
-    var gercekler = rates[tarihKisa] || {};
-    var bgRow     = rowIdx % 2 === 0 ? 'rgba(0,180,255,0.018)' : 'transparent';
-
-    var row = '<tr style="background:' + bgRow + ';border-bottom:1px solid rgba(255,255,255,0.03)">'
-      + '<td style="padding:6px 10px;color:#7a9fc0;font-size:10px;white-space:nowrap">' + tarih + '</td>';
-
-    FON_KODLAR.forEach(function(fon) {
-      var tahmin  = snap[fon];
-      var gercek  = gercekler[fon.toLowerCase()];
-      var ofset   = ofsetler[fon] || 0;
-
-      var hasTahmin = tahmin !== undefined && tahmin !== null;
-      var hasGercek = gercek  !== undefined && gercek  !== null;
-
-      var cellBase = 'padding:5px 4px;text-align:right;font-size:10.5px;'
-        + 'border-left:1px solid rgba(255,255,255,0.04);white-space:nowrap;';
-
-      if (!hasTahmin) {
-        row += '<td colspan="4" style="' + cellBase + 'color:#4e6a82;text-align:center">—</td>';
-        return;
-      }
-
-      // Tahmin
-      var tStr  = (tahmin >= 0 ? '+' : '') + tahmin.toFixed(3) + '%';
-      // Gerçek
-      var gStr  = hasGercek ? (gercek >= 0 ? '+' : '') + gercek.toFixed(3) + '%' : '?';
-      var gCls  = !hasGercek ? 'color:#4e6a82' : gercek >= 0 ? 'color:#e8f4fd' : 'color:#ff5c7a';
-
-      // Δ/2 = (gerçek − tahmin) / 2
-      var delta = hasGercek ? (gercek - tahmin) / 2 : null;
-      var dStr  = delta !== null ? (delta >= 0 ? '+' : '') + delta.toFixed(3) + '%' : '?';
-      var dCls  = delta === null ? 'color:#4e6a82'
-                : Math.abs(delta) < 0.03 ? 'color:#ffd166'
-                : delta > 0 ? 'color:#2ed573' : 'color:#ff4757';
-
-      // Tahmin + Ofset = düzeltilmiş tahmin
-      var duzeltilmis = tahmin + ofset;
-      var dzStr = (duzeltilmis >= 0 ? '+' : '') + duzeltilmis.toFixed(3) + '%';
-      // Düzeltilmiş tahmin gerçeğe ne kadar yaklaştı?
-      var dzCls = 'color:#a0c4a0'; // nötr
-      if (hasGercek) {
-        var eskiFark = Math.abs(gercek - tahmin);
-        var yeniFark = Math.abs(gercek - duzeltilmis);
-        dzCls = yeniFark < eskiFark ? 'color:#2ed573;font-weight:700'  // iyileşti
-              : yeniFark > eskiFark ? 'color:#ff4757'                   // kötüleşti
-              : 'color:#ffd166';                                         // aynı
-      }
-
-      row += '<td style="' + cellBase + 'color:#7dd6ff">'  + tStr  + '</td>'
-           + '<td style="' + cellBase + dCls + '">'         + gStr  + '</td>'
-           + '<td style="' + cellBase + dCls.replace('color','font-size:10.5px;color') + '">' + dStr + '</td>'
-           + '<td style="' + cellBase + dzCls + '">'        + dzStr + '</td>';
-    });
-    row += '</tr>';
-    bodyRows += row;
-  });
-
-  // ── ÖZET SATIRI: Ortalama ofset ──────────────────────────────────────────
-  var ozet = '<tr style="background:rgba(0,180,255,0.05);border-top:2px solid rgba(0,180,255,0.2)">'
-    + '<td style="padding:7px 10px;color:#00ffc8;font-size:10px;font-weight:700;white-space:nowrap">OFSET</td>';
-
-  FON_KODLAR.forEach(function(fon) {
-    var ofset = ofsetler[fon];
-    var cellBase = 'padding:5px 4px;text-align:right;font-size:10.5px;'
-      + 'border-left:1px solid rgba(255,255,255,0.04);white-space:nowrap;';
-
-    if (ofset === undefined || ofset === null) {
-      ozet += '<td colspan="4" style="' + cellBase + 'color:#4e6a82;text-align:center">—</td>';
-      return;
-    }
-    var oStr = (ofset >= 0 ? '+' : '') + ofset.toFixed(4) + '%';
-    var oCls = Math.abs(ofset) < 0.01 ? 'color:#4e6a82'
-             : ofset > 0 ? 'color:#00ffc8;font-weight:700' : 'color:#ff4757;font-weight:700';
-    // Ofset satırında: boş / boş / Δ ort / Ofset değeri
-    ozet += '<td style="' + cellBase + 'color:#4e6a82">—</td>'
-          + '<td style="' + cellBase + 'color:#4e6a82">—</td>'
-          + '<td style="' + cellBase + 'color:#4e6a82">—</td>'
-          + '<td style="' + cellBase + oCls + '">' + oStr + '</td>';
-  });
-  ozet += '</tr>';
-
-  var html = '<div style="overflow-x:auto">'
-    + '<table style="border-collapse:collapse;font-family:monospace;width:100%">'
-    + th + '<thead>' + header1 + header2 + '</thead>'
-    + '<tbody>' + bodyRows + ozet + '</tbody>'
-    + '</table>'
-    + '<div style="margin-top:10px;display:flex;gap:20px;flex-wrap:wrap;font-family:monospace;font-size:9.5px;color:#4e6a82">'
-    + '<span><span style="color:#7dd6ff">■</span> Tahmin = model çıktısı (ofset öncesi)</span>'
-    + '<span><span style="color:#e8f4fd">■</span> Gerçek = TEFAS kapanış</span>'
-    + '<span><span style="color:#ffd166">■</span> Δ/2 = (Gerçek−Tahmin)/2</span>'
-    + '<span><span style="color:#2ed573;font-weight:700">■</span> +Ofset = Tahmin+Ofset (yeşil=gerçeğe yaklaştı)</span>'
+  el.innerHTML = '<div style="overflow-x:auto">'
+    + '<table style="border-collapse:collapse;font-family:monospace;width:100%;font-size:10.5px">'
+    + '<thead><tr style="background:rgba(0,0,0,.25)">'
+    + '<th style="text-align:left;padding:7px 8px;color:#5a7499">Tarih</th>'
+    + '<th style="text-align:left;padding:7px 8px;color:#5a7499">Fon</th>'
+    + '<th style="text-align:right;padding:7px 8px;color:#7dd6ff">Tahmin</th>'
+    + '<th style="text-align:right;padding:7px 8px;color:#e8f4fd">Gerçek</th>'
+    + '<th style="text-align:right;padding:7px 8px;color:#ffd166">Hata</th>'
+    + '<th style="text-align:right;padding:7px 8px;color:#7dd6ff">Kısa</th>'
+    + '<th style="text-align:right;padding:7px 8px;color:#7dd6ff">Uzun</th>'
+    + '<th style="text-align:right;padding:7px 8px;color:#7dd6ff">EMA</th>'
+    + '<th style="text-align:right;padding:7px 8px;color:#00ffc8">Nihai</th>'
+    + '</tr></thead><tbody>' + body + ozet + '</tbody></table>'
+    + '<div style="margin-top:10px;font-family:monospace;font-size:9.5px;color:#5a7499;line-height:1.7">'
+    + 'Kısa = son 3 kayıt ağırlıklı · Uzun = son 10 kayıt ortalama · EMA = adaptif hata ortalaması · Nihai = %50 EMA + %30 Kısa + %20 Uzun. Negatif ofsetler kırmızı gösterilir.'
     + '</div></div>';
-
-  el.innerHTML = html;
 }
 
 // Tarih string "DD.MM.YYYY" → Date
@@ -6075,149 +5981,22 @@ function parseTarih(str) {
   return new Date(parseInt(p[2]||2026), parseInt(p[1])-1, parseInt(p[0]));
 }
 
-// ── YENİ OFSET HESAPLAMA ─────────────────────────────────────────────────────
 function hesaplaVeUygulaOfset() {
-  var snapshots = getTahminSnapshots();
-  var rates     = getTakipGercekRates();
-  var FON_KODLAR = ['DFI', 'TLY', 'PHE', 'CPT', 'IJC', 'PBR'];
-
-  // Tahmin kaydı olan tarihleri bul, bugünden önceki son 5 günü al
-  var today = new Date(); today.setHours(0,0,0,0);
-  var tarihler = Object.keys(snapshots)
-    .filter(function(t) { return parseTarih(t) < today; })
-    .sort(function(a,b) { return parseTarih(b) - parseTarih(a); })
-    .slice(0, 5);  // Son 5 günün ortalaması
-
-  if (tarihler.length === 0) {
-    alert('Hesaplama için yeterli tahmin kaydı yok.\n\nHer gün saat 23:00\'da otomatik kaydedilir veya "Tahmini Kaydet" butonuna basabilirsiniz.');
-    return;
-  }
-
-  var yeniOfsetler = {};
-  var detaylar = {};
-
-  FON_KODLAR.forEach(function(fon) {
-    var fonKey   = fon.toLowerCase();
-    var toplam   = 0;
-    var sayac    = 0;
-    var gunDetay = [];
-
-    tarihler.forEach(function(tarih) {
-      var tahmin  = snapshots[tarih] && snapshots[tarih][fon];
-      var tarihK  = tarih.substring(0, 5); // DD.MM
-      var gercek  = (rates[tarihK] || {})[fonKey];
-
-      if (tahmin === undefined || tahmin === null) return;
-      if (gercek  === undefined || gercek  === null) return;
-
-      // Günlük düzeltme = (gerçek − tahmin) / 2
-      var duzeltme = (gercek - tahmin) / 2;
-      toplam += duzeltme;
-      sayac++;
-      gunDetay.push({ tarih: tarih, tahmin: tahmin, gercek: gercek, duzeltme: duzeltme });
-    });
-
-    if (sayac > 0) {
-      yeniOfsetler[fon] = parseFloat((toplam / sayac).toFixed(4));
-    } else {
-      yeniOfsetler[fon] = 0;
-    }
-    detaylar[fon] = {
-      ofset:  yeniOfsetler[fon],
-      gunler: sayac,
-      yontem: sayac > 0 ? 'hesaplandi' : 'veri_yok',
-      gunDetay: gunDetay
-    };
-  });
-
-  // TAHMİN modülüne uygula
-  FON_KODLAR.forEach(function(fon) {
-    if (typeof FON_OFSET !== 'undefined' && FON_OFSET.hasOwnProperty(fon)) {
-      FON_OFSET[fon] = yeniOfsetler[fon] || 0;
-    }
-    if (typeof hesaplananOfset !== 'undefined') {
-      hesaplananOfset[fon] = yeniOfsetler[fon] || 0;
-    }
-  });
-
-  try { localStorage.setItem('fon_hesaplanan_ofset', JSON.stringify(yeniOfsetler)); } catch(e) {}
-
-  if (typeof updateUI           === 'function') updateUI();
-  if (typeof renderGercekPanel  === 'function') renderGercekPanel();
-  if (typeof renderOfsetOzet    === 'function') renderOfsetOzet();
-
-  renderOfsetSyncPanel(detaylar, tarihler);
-  renderNavOfsetStatus(true);
-  setNavSync('synced', '✓ Ofset güncellendi — ' + tarihler.length + ' günden hesaplandı');
+  hesaplaAdaptifOfset('nihai');
+  ofsetModuUygula('nihai');
 }
+
+function otomatikOfsetHesapla() {
+  hesaplaAdaptifOfset('nihai');
+}
+
 function renderOfsetSyncPanel(detaylar, tarihler) {
-  var chipsEl = document.getElementById('ofsetSyncChips');
-  var gunEl   = document.getElementById('ofsetGunSayisi');
-
-  if (chipsEl) {
-    if (!detaylar) {
-      // sadece refresh
-      var snaps = getTahminSnapshots();
-      var snapSayisi = Object.keys(snaps).length;
-      chipsEl.innerHTML = '<span style="font-size:10px;color:#4e6a82;font-family:monospace">'
-        + snapSayisi + ' gün tahmini kaydedildi'
-        + (snapSayisi === 0 ? ' — Tahmini Kaydet butonuna bas' : '')
-        + '</span>';
-      return;
-    }
-
-    var html = '';
-    Object.keys(detaylar).forEach(function(fon) {
-      var d = detaylar[fon];
-      if (d.gunler === 0) return;
-      var cls = d.ofset > 0.02 ? 'pos' : d.ofset < -0.02 ? 'neg' : 'neu';
-      var sgn = d.ofset >= 0 ? '+' : '';
-      html += '<span class="ofset-chip-new ' + cls + '" '
-        + 'title="' + d.gunler + ' günlük ortalama: (gerçek−tahmin)/2">'
-        + fon + ': ' + sgn + d.ofset.toFixed(3) + '%'
-        + ' <span style="opacity:0.55;font-size:9px">(' + d.gunler + 'g)</span>'
-        + '</span>';
-    });
-    if (!html) html = '<span style="font-size:10px;color:#4e6a82;font-family:monospace">Eşleşen veri bulunamadı</span>';
-    chipsEl.innerHTML = html;
-  }
-
-  if (gunEl && tarihler) {
-    gunEl.innerHTML = '<span style="color:#4e6a82">Kullanılan tarihler: </span>'
-      + '<strong>' + tarihler.join(', ') + '</strong><br>'
-      + '<span style="opacity:0.5;font-size:9px">Formül: ofset = Σ[(gerçek−tahmin)/2] / gün_sayısı</span>';
-  }
+  renderAdaptifDegerler(AKTIF_OFSET_MODU === 'none' ? 'nihai' : AKTIF_OFSET_MODU);
 }
-function renderNavOfsetStatus(synced) {
-  var dot  = document.getElementById('navSyncDot');
-  var text = document.getElementById('navSyncText');
-  if (!dot || !text) return;
-  try {
-    var ofset = JSON.parse(localStorage.getItem('fon_hesaplanan_ofset')) || {};
-    var aktifFonlar = Object.keys(ofset).filter(function(f) { return ofset[f] !== 0; });
-    if (synced || aktifFonlar.length > 0) {
-      dot.className = 'ofset-sync-dot synced';
-      text.textContent = aktifFonlar.length + ' fon için ofset aktif';
-    } else {
-      dot.className = 'ofset-sync-dot pending';
-      text.textContent = 'Ofset henüz uygulanmadı';
-    }
-  } catch(e) {
-    dot.className = 'ofset-sync-dot';
-    text.textContent = 'Ofset senkronu bekleniyor';
-  }
-}
-
-function setNavSync(state, text) {
-  var dot = document.getElementById('navSyncDot');
-  var txt = document.getElementById('navSyncText');
-  if (dot) dot.className = 'ofset-sync-dot ' + state;
-  if (txt) txt.textContent = text;
-}
-
-
 // Sayfa yüklenince ofset durumunu kontrol et
 setTimeout(function() {
+  if (typeof hesaplaTumAdaptifOfsetler === 'function') hesaplaTumAdaptifOfsetler();
+  if (typeof ofsetModuUygula === 'function') ofsetModuUygula(AKTIF_OFSET_MODU || 'none');
   renderNavOfsetStatus();
   if (typeof renderKiyasTablosu === 'function') renderKiyasTablosu();
   if (typeof baslat23Kontrol   === 'function') baslat23Kontrol();
