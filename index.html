@@ -764,6 +764,22 @@ tbody tr:hover{background:rgba(0,180,255,0.035);}
   letter-spacing: 0.04em;
 }
 
+.sc-raw {
+  position: absolute;
+  right: 12px;
+  bottom: 8px;
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--muted);
+  opacity: 0.78;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+.sc-raw span { font-weight: 700; }
+@media (max-width: 768px) {
+  .sc-raw { right: 10px; bottom: 6px; font-size: 8px; }
+}
+
 /* ── Fon cards ── */
 .funds-grid {
   display: grid;
@@ -4685,6 +4701,7 @@ function renderFunds() {
         + '</div>'
         + '<div class="sc-value" id="sum-' + id.toLowerCase() + '" style="--val-color:#fff">—</div>'
         + '<div class="sc-sub">' + (fund.name || id) + '</div>'
+        + '<div class="sc-raw" id="raw-sum-' + id.toLowerCase() + '">Ham: —</div>'
         + '</div>';
     }).join('');
   }
@@ -5754,6 +5771,7 @@ function updateUI() {
     const retEl = document.getElementById(`ret-${id}`);
     const barEl = document.getElementById(`bar-${id}`);
     const sumEl = document.getElementById(`sum-${id.toLowerCase()}`);
+    const rawSumEl = document.getElementById(`raw-sum-${id.toLowerCase()}`);
 
     if (retEl) {
       const cls = totalReturn > 0 ? 'pos' : totalReturn < 0 ? 'neg' : 'neu';
@@ -5764,6 +5782,11 @@ function updateUI() {
     if (sumEl) {
       sumEl.style.setProperty('--val-color', totalReturn > 0 ? 'var(--green)' : totalReturn < 0 ? 'var(--red)' : '#fff');
       sumEl.textContent = `${totalReturn > 0 ? '+' : ''}${totalReturn.toFixed(3)}%`;
+    }
+
+    if (rawSumEl) {
+      const rawCls = rawReturn > 0 ? 'pos' : rawReturn < 0 ? 'neg' : 'neu';
+      rawSumEl.innerHTML = `Ham: <span class="${rawCls}">${rawReturn > 0 ? '+' : ''}${rawReturn.toFixed(3)}%</span>`;
     }
 
     if (barEl) {
