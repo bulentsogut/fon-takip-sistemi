@@ -1666,7 +1666,25 @@ tbody tr:hover{background:rgba(0,180,255,0.035);}
 .tahmin-analiz-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px;}
 .tahmin-analiz-title{font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:#00ffc8;}
 .tahmin-analiz-sub{font-family:var(--mono);font-size:10px;color:var(--muted);}
+.tahmin-analiz-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+.tahmin-analiz-toggle{
+  background:rgba(0,255,200,.08);
+  border:1px solid rgba(0,255,200,.28);
+  color:#00ffc8;
+  font-family:var(--mono);
+  font-size:10px;
+  font-weight:700;
+  letter-spacing:.08em;
+  text-transform:uppercase;
+  padding:8px 12px;
+  border-radius:7px;
+  cursor:pointer;
+  transition:all .18s;
+}
+.tahmin-analiz-toggle:hover{background:rgba(0,255,200,.14);border-color:rgba(0,255,200,.45);transform:translateY(-1px);}
+.tahmin-analiz-toggle.is-hidden{background:rgba(255,209,102,.08);border-color:rgba(255,209,102,.28);color:#ffd166;}
 .tahmin-analiz-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;}
+.tahmin-analiz-grid.veriler-gizli{display:none;}
 .tahmin-analiz-card{background:rgba(255,255,255,.025);border:1px solid rgba(99,179,255,.12);border-radius:10px;padding:12px;}
 .tahmin-analiz-card-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px;}
 .tahmin-analiz-fon{font-family:var(--sans);font-size:17px;font-weight:800;letter-spacing:.06em;color:#7dd6ff;}
@@ -2052,8 +2070,13 @@ _db.ref('fonmerkezi').on('value', function(snap) {
 
     <div class="tahmin-analiz-panel" id="tahminAnalizPanel">
       <div class="tahmin-analiz-head">
-        <div class="tahmin-analiz-title">📈 Tahmin Kalite Paneli</div>
-        <div class="tahmin-analiz-sub">Son 7/30 kayıt · yöntem başarı kıyaslaması · güven puanı</div>
+        <div>
+          <div class="tahmin-analiz-title">📈 Tahmin Kalite Paneli</div>
+          <div class="tahmin-analiz-sub">Son 7/30 kayıt · yöntem başarı kıyaslaması · güven puanı</div>
+        </div>
+        <div class="tahmin-analiz-actions">
+          <button type="button" class="tahmin-analiz-toggle" id="btnTahminAnalizToggle" onclick="toggleTahminAnalizVerileri()">Verileri Gizle</button>
+        </div>
       </div>
       <div class="tahmin-analiz-grid" id="tahminAnalizGrid">
         <div class="tahmin-analiz-empty">Analiz için kayıtlar hazırlanıyor. Tahmin ve gerçek kapanış eşleşmeleri oluştukça bu alan otomatik dolacak.</div>
@@ -6625,6 +6648,28 @@ function hesaplaTahminAnalizPerformansi() {
   return sonuc;
 }
 
+function tahminAnalizVerileriGizliMi() {
+  try { return localStorage.getItem('tahminAnalizVerileriGizli') === '1'; } catch(e) { return false; }
+}
+
+function uygulaTahminAnalizGizlilik() {
+  var grid = document.getElementById('tahminAnalizGrid');
+  var btn = document.getElementById('btnTahminAnalizToggle');
+  var gizli = tahminAnalizVerileriGizliMi();
+  if (grid) grid.classList.toggle('veriler-gizli', gizli);
+  if (btn) {
+    btn.textContent = gizli ? 'Verileri Göster' : 'Verileri Gizle';
+    btn.classList.toggle('is-hidden', gizli);
+    btn.setAttribute('aria-expanded', gizli ? 'false' : 'true');
+  }
+}
+
+function toggleTahminAnalizVerileri() {
+  var yeniDurum = !tahminAnalizVerileriGizliMi();
+  try { localStorage.setItem('tahminAnalizVerileriGizli', yeniDurum ? '1' : '0'); } catch(e) {}
+  uygulaTahminAnalizGizlilik();
+}
+
 function renderTahminAnalizPanel() {
   var grid = document.getElementById('tahminAnalizGrid');
   if (!grid) return;
@@ -6632,6 +6677,7 @@ function renderTahminAnalizPanel() {
   var fonlar = Object.keys(data).sort();
   if (!fonlar.length) {
     grid.innerHTML = '<div class="tahmin-analiz-empty">Analiz edilecek fon bulunamadı.</div>';
+    uygulaTahminAnalizGizlilik();
     return;
   }
   function fmtMae(v) { return v === null || v === undefined || isNaN(v) ? '—' : v.toFixed(3) + '%'; }
@@ -6661,6 +6707,7 @@ function renderTahminAnalizPanel() {
       + '</div>';
   }).join('');
   grid.innerHTML = html;
+  uygulaTahminAnalizGizlilik();
 }
 
 // Sayfa yüklenince ofset durumunu kontrol et
