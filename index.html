@@ -2584,6 +2584,24 @@ function _lsDel(key){
   if(_useMemory){ delete _memStore[key]; return; }
   try{ localStorage.removeItem(key); }catch(e){ _useMemory=true; delete _memStore[key]; }
 }
+
+// JSON tabanlı ortak kayıt yardımcıları — adaptif/ofset modülleri için uyumluluk katmanı
+function storeGet(key, fallback){
+  try{
+    var raw = (typeof _lsGet === 'function') ? _lsGet(key) : localStorage.getItem(key);
+    if(raw === null || raw === undefined || raw === '') return fallback;
+    return JSON.parse(raw);
+  }catch(e){
+    return fallback;
+  }
+}
+function storeSet(key, value){
+  try{
+    var raw = JSON.stringify(value);
+    if(typeof _lsSet === 'function') _lsSet(key, raw);
+    else localStorage.setItem(key, raw);
+  }catch(e){}
+}
 // Kullanıcının "Güncelle" ile eklediği ek işlemler (localStorage'dan yüklenir)
 var DEFAULT_TRX_EXTRA = (function(){
   try{
