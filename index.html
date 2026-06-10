@@ -1620,6 +1620,39 @@ tbody tr:hover{background:rgba(0,180,255,0.035);}
 .portfoy-degisim-chip.removed{background:rgba(255,92,122,.10);border-color:rgba(255,92,122,.35);color:#ff5c7a;}
 .portfoy-degisim-empty{color:var(--muted);}
 
+
+
+/* ════════════════════════════════
+   FAZ-1 TAHMİN ANALİZ PANELİ
+   ════════════════════════════════ */
+.tahmin-analiz-panel{
+  background:linear-gradient(135deg,rgba(13,21,40,.96),rgba(6,12,24,.96));
+  border:1px solid rgba(0,255,200,.16);
+  border-radius:14px;
+  padding:16px 18px;
+  margin:0 0 24px;
+}
+.tahmin-analiz-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px;}
+.tahmin-analiz-title{font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:#00ffc8;}
+.tahmin-analiz-sub{font-family:var(--mono);font-size:10px;color:var(--muted);}
+.tahmin-analiz-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;}
+.tahmin-analiz-card{background:rgba(255,255,255,.025);border:1px solid rgba(99,179,255,.12);border-radius:10px;padding:12px;}
+.tahmin-analiz-card-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px;}
+.tahmin-analiz-fon{font-family:var(--sans);font-size:17px;font-weight:800;letter-spacing:.06em;color:#7dd6ff;}
+.tahmin-guven{font-family:var(--mono);font-size:10px;font-weight:700;padding:4px 7px;border-radius:5px;border:1px solid rgba(99,179,255,.16);}
+.tahmin-guven.yuksek{color:#2ed573;background:rgba(46,213,115,.08);border-color:rgba(46,213,115,.24);}
+.tahmin-guven.orta{color:#ffd166;background:rgba(255,209,102,.08);border-color:rgba(255,209,102,.24);}
+.tahmin-guven.dusuk{color:#ff5c7a;background:rgba(255,92,122,.08);border-color:rgba(255,92,122,.24);}
+.tahmin-bar-bg{height:5px;background:rgba(255,255,255,.06);border-radius:4px;overflow:hidden;margin:8px 0 10px;}
+.tahmin-bar-fill{height:100%;border-radius:4px;background:linear-gradient(90deg,#ff5c7a,#ffd166,#2ed573);}
+.tahmin-analiz-metrics{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px;}
+.tahmin-metric{background:rgba(0,0,0,.14);border:1px solid rgba(255,255,255,.05);border-radius:7px;padding:7px 8px;font-family:var(--mono);}
+.tahmin-metric .lbl{font-size:9px;color:var(--muted);display:block;margin-bottom:3px;}
+.tahmin-metric .val{font-size:11px;color:#e8f4fd;font-weight:700;}
+.tahmin-metric.best .val{color:#00ffc8;}
+.tahmin-analiz-empty{font-family:var(--mono);font-size:10px;color:var(--muted);line-height:1.7;padding:10px;border:1px dashed rgba(99,179,255,.16);border-radius:8px;}
+@media(max-width:768px){.tahmin-analiz-grid{grid-template-columns:1fr}.tahmin-analiz-metrics{grid-template-columns:1fr 1fr}}
+
 </style>
 <!-- Firebase SDK -->
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
@@ -1854,6 +1887,16 @@ _db.ref('fonmerkezi').on('value', function(snap) {
       </div>
       <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
         <button class="adaptif-btn" onclick="snapshotTahminler(true)">📸 Manuel Tahmini Kaydet</button>
+      </div>
+    </div>
+
+    <div class="tahmin-analiz-panel" id="tahminAnalizPanel">
+      <div class="tahmin-analiz-head">
+        <div class="tahmin-analiz-title">📈 Tahmin Kalite Paneli</div>
+        <div class="tahmin-analiz-sub">Son 7/30 kayıt · yöntem başarı kıyaslaması · güven puanı</div>
+      </div>
+      <div class="tahmin-analiz-grid" id="tahminAnalizGrid">
+        <div class="tahmin-analiz-empty">Analiz için kayıtlar hazırlanıyor. Tahmin ve gerçek kapanış eşleşmeleri oluştukça bu alan otomatik dolacak.</div>
       </div>
     </div>
 
@@ -6021,6 +6064,7 @@ function snapshotTahminler(manuel) {
   snapshots[tarih] = bugunSnap;
   saveTahminSnapshots(snapshots);
   renderKiyasTablosu();
+  if (typeof renderTahminAnalizPanel === 'function') renderTahminAnalizPanel();
   renderOfsetSyncPanel(null, null); // refresh
   if (manuel) setNavSync('synced', '✓ Bugünün tahmini kaydedildi — ' + tarih);
 }
@@ -6122,6 +6166,7 @@ function hesaplaAdaptifOfset(yontem) {
   var sonuc = hesaplaTumAdaptifOfsetler();
   renderAdaptifDegerler(yontem || 'nihai');
   renderKiyasTablosu();
+  if (typeof renderTahminAnalizPanel === 'function') renderTahminAnalizPanel();
   renderNavOfsetStatus(true);
   var fonSayisi = Object.keys(sonuc).length;
   setNavSync('synced', '✓ ' + ofsetModuEtiket(yontem) + ' hesaplandı — ' + fonSayisi + ' fon');
@@ -6223,12 +6268,121 @@ function otomatikOfsetHesapla() {
 function renderOfsetSyncPanel(detaylar, tarihler) {
   renderAdaptifDegerler(AKTIF_OFSET_MODU === 'none' ? 'nihai' : AKTIF_OFSET_MODU);
 }
+
+
+// ── Faz-1: Tahmin Kalite Paneli ───────────────────────────────────────────
+function tahminAnalizOrtalama(arr) {
+  if (!arr || !arr.length) return null;
+  return arr.reduce(function(s, v) { return s + v; }, 0) / arr.length;
+}
+
+function tahminAnalizGuvenPuani(mae, adet) {
+  if (mae === null || mae === undefined || isNaN(mae) || !adet) return { puan:0, seviye:'dusuk', etiket:'Yetersiz' };
+  var puan;
+  if (mae <= 0.05) puan = 95;
+  else if (mae <= 0.10) puan = 90;
+  else if (mae <= 0.20) puan = 80;
+  else if (mae <= 0.35) puan = 65;
+  else puan = Math.max(35, Math.round(65 - ((mae - 0.35) * 55)));
+  var veriCarpani = adet >= 10 ? 1 : adet >= 5 ? 0.88 : 0.72;
+  puan = Math.round(puan * veriCarpani);
+  var seviye = puan >= 80 ? 'yuksek' : puan >= 60 ? 'orta' : 'dusuk';
+  var etiket = puan >= 80 ? 'Yüksek' : puan >= 60 ? 'Orta' : 'Düşük';
+  return { puan: puan, seviye: seviye, etiket: etiket };
+}
+
+function hesaplaTahminAnalizPerformansi() {
+  var hatalar = adaptifHataKayitlari();
+  var fonlar = adaptifFonKodlari();
+  var yontemler = ['kisa','uzun','ema','nihai'];
+  var sonuc = {};
+
+  fonlar.forEach(function(fon) {
+    var kayitlar = (hatalar[fon] || []).slice().sort(function(a,b){ return parseTarih(a.tarih) - parseTarih(b.tarih); });
+    var perf = { fon:fon, adet:kayitlar.length, yontemler:{}, ham:[] };
+    yontemler.forEach(function(y) { perf.yontemler[y] = []; });
+
+    for (var i = 0; i < kayitlar.length; i++) {
+      var r = kayitlar[i];
+      perf.ham.push(Math.abs(r.gercek - r.tahmin));
+      var onceki = kayitlar.slice(0, i);
+      var d = hesaplaOfsetSerisi(onceki);
+      yontemler.forEach(function(y) {
+        if (!adaptifYeterliMi(d, y)) return;
+        var ofset = d[y] || 0;
+        perf.yontemler[y].push(Math.abs(r.gercek - (r.tahmin + ofset)));
+      });
+    }
+
+    var enIyi = null;
+    var enIyiMae = null;
+    yontemler.forEach(function(y) {
+      var seri = perf.yontemler[y];
+      var mae30 = tahminAnalizOrtalama(seri.slice(-30));
+      var mae7  = tahminAnalizOrtalama(seri.slice(-7));
+      perf.yontemler[y] = { seri:seri, mae7:mae7, mae30:mae30, adet:seri.length };
+      var karsilastirma = mae30 !== null ? mae30 : mae7;
+      if (karsilastirma !== null && (enIyiMae === null || karsilastirma < enIyiMae)) {
+        enIyiMae = karsilastirma;
+        enIyi = y;
+      }
+    });
+
+    perf.hamMae7 = tahminAnalizOrtalama(perf.ham.slice(-7));
+    perf.hamMae30 = tahminAnalizOrtalama(perf.ham.slice(-30));
+    perf.enIyi = enIyi;
+    perf.enIyiMae = enIyiMae;
+    perf.guven = tahminAnalizGuvenPuani(enIyiMae, enIyi ? perf.yontemler[enIyi].adet : 0);
+    sonuc[fon] = perf;
+  });
+  return sonuc;
+}
+
+function renderTahminAnalizPanel() {
+  var grid = document.getElementById('tahminAnalizGrid');
+  if (!grid) return;
+  var data = hesaplaTahminAnalizPerformansi();
+  var fonlar = Object.keys(data).sort();
+  if (!fonlar.length) {
+    grid.innerHTML = '<div class="tahmin-analiz-empty">Analiz edilecek fon bulunamadı.</div>';
+    return;
+  }
+  function fmtMae(v) { return v === null || v === undefined || isNaN(v) ? '—' : v.toFixed(3) + '%'; }
+  function yEtiket(y) { return y === 'kisa' ? 'Kısa' : y === 'uzun' ? 'Uzun' : y === 'ema' ? 'EMA' : y === 'nihai' ? 'Nihai' : '—'; }
+  var html = fonlar.map(function(fon) {
+    var p = data[fon];
+    var g = p.guven || { puan:0, seviye:'dusuk', etiket:'Yetersiz' };
+    var best = p.enIyi ? yEtiket(p.enIyi) : 'Yetersiz';
+    var bestMae = p.enIyiMae;
+    var m = p.yontemler || {};
+    return '<div class="tahmin-analiz-card">'
+      + '<div class="tahmin-analiz-card-head">'
+      + '<div class="tahmin-analiz-fon">' + fon + '</div>'
+      + '<div class="tahmin-guven ' + g.seviye + '">' + g.etiket + ' · %' + g.puan + '</div>'
+      + '</div>'
+      + '<div class="tahmin-bar-bg"><div class="tahmin-bar-fill" style="width:' + Math.max(0, Math.min(100, g.puan)) + '%"></div></div>'
+      + '<div class="tahmin-analiz-metrics">'
+      + '<div class="tahmin-metric best"><span class="lbl">Önerilen</span><span class="val">' + best + '</span></div>'
+      + '<div class="tahmin-metric"><span class="lbl">En iyi hata</span><span class="val">' + fmtMae(bestMae) + '</span></div>'
+      + '<div class="tahmin-metric"><span class="lbl">Kısa 7/30</span><span class="val">' + fmtMae(m.kisa && m.kisa.mae7) + ' / ' + fmtMae(m.kisa && m.kisa.mae30) + '</span></div>'
+      + '<div class="tahmin-metric"><span class="lbl">Uzun 7/30</span><span class="val">' + fmtMae(m.uzun && m.uzun.mae7) + ' / ' + fmtMae(m.uzun && m.uzun.mae30) + '</span></div>'
+      + '<div class="tahmin-metric"><span class="lbl">EMA 7/30</span><span class="val">' + fmtMae(m.ema && m.ema.mae7) + ' / ' + fmtMae(m.ema && m.ema.mae30) + '</span></div>'
+      + '<div class="tahmin-metric"><span class="lbl">Nihai 7/30</span><span class="val">' + fmtMae(m.nihai && m.nihai.mae7) + ' / ' + fmtMae(m.nihai && m.nihai.mae30) + '</span></div>'
+      + '<div class="tahmin-metric"><span class="lbl">Ham hata 7/30</span><span class="val">' + fmtMae(p.hamMae7) + ' / ' + fmtMae(p.hamMae30) + '</span></div>'
+      + '<div class="tahmin-metric"><span class="lbl">Kayıt</span><span class="val">' + p.adet + ' gün</span></div>'
+      + '</div>'
+      + '</div>';
+  }).join('');
+  grid.innerHTML = html;
+}
+
 // Sayfa yüklenince ofset durumunu kontrol et
 setTimeout(function() {
   if (typeof hesaplaTumAdaptifOfsetler === 'function') hesaplaTumAdaptifOfsetler();
   if (typeof ofsetModuUygula === 'function') ofsetModuUygula(AKTIF_OFSET_MODU || 'none');
   renderNavOfsetStatus();
   if (typeof renderKiyasTablosu === 'function') renderKiyasTablosu();
+  if (typeof renderTahminAnalizPanel === 'function') renderTahminAnalizPanel();
   if (typeof baslat23Kontrol   === 'function') baslat23Kontrol();
 }, 300);
 
