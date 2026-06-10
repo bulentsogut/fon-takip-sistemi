@@ -414,6 +414,37 @@ tbody tr:hover{background:rgba(0,180,255,0.035);}
 .ficode{font-size:0.7rem;color:var(--accent2);background:rgba(0,255,200,0.05);border-radius:5px;padding:6px 8px;margin-bottom:5px;}
 .fidesc{font-size:0.67rem;color:var(--muted);line-height:1.5;}
 #panel-takip footer{text-align:center;padding-top:20px;border-top:1px solid var(--border);font-size:0.65rem;color:var(--muted);letter-spacing:1px;}
+/* HİSSE PANELİ — Fon Takip ile aynı stiller */
+#panel-hisse .wrap{background:var(--bg);color:var(--text);font-family:DM Mono,monospace;font-size:13px;}
+#panel-hisse header{display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:32px;padding-bottom:20px;border-bottom:1px solid var(--border);flex-wrap:wrap;gap:12px;}
+#panel-hisse h1{font-family:Syne,sans-serif;font-size:2.2rem;font-weight:800;letter-spacing:-1px;background:linear-gradient(120deg,#ff9f43,#a78bfa 55%,#ffd166);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;}
+#panel-hisse .sub{font-size:0.75rem;color:var(--muted);margin-top:4px;}
+#panel-hisse table{width:100%;border-collapse:collapse;}
+#panel-hisse thead th{padding:4px 3px;font-size:0.58rem;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);text-align:right;background:rgba(0,0,0,0.25);font-weight:400;white-space:nowrap;}
+#panel-hisse thead th:first-child{text-align:left;}
+#panel-hisse tbody tr{border-top:1px solid rgba(255,255,255,0.03);}
+#panel-hisse tbody tr:hover{background:rgba(255,159,67,0.03);}
+#panel-hisse tbody tr.wrow{background:rgba(0,0,0,0.3);border-top:1px solid rgba(255,159,67,0.1);}
+#panel-hisse td{padding:6px 4px;text-align:right;white-space:nowrap;font-size:10.5px;}
+#panel-hisse td:first-child{text-align:left;color:var(--muted);padding:6px 8px;font-size:9.5px;white-space:nowrap;}
+#panel-hisse td.fon-sep,#panel-hisse th.fon-sep{border-left:2px solid rgba(255,255,255,0.1);padding-left:10px !important;}
+#panel-hisse .stitle{font-family:Syne,sans-serif;font-size:0.65rem;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin:24px 0 10px;border-bottom:1px solid var(--border);padding-bottom:6px;}
+#panel-hisse .mocard{background:var(--surf);border:1px solid var(--border);border-radius:10px;padding:14px;cursor:pointer;transition:transform 0.15s;}
+#panel-hisse .mocard:hover{transform:translateY(-2px);}
+#panel-hisse .mocard.cur{border-color:rgba(255,159,67,0.4);background:rgba(255,159,67,0.05);}
+#panel-hisse .moname{font-size:0.7rem;color:var(--muted);margin-bottom:6px;}
+#panel-hisse .mo-hint{font-size:0.58rem;color:var(--muted);margin-top:4px;}
+#panel-hisse .drill-panel{background:var(--surf);border:1px solid var(--border);border-radius:14px;margin-bottom:22px;overflow:hidden;}
+#panel-hisse .drill-hdr{display:flex;align-items:center;justify-content:space-between;padding:14px 20px;border-bottom:1px solid var(--border);}
+#panel-hisse .drill-title{font-family:Syne,sans-serif;font-weight:700;font-size:0.9rem;}
+#panel-hisse .drill-close{background:rgba(255,71,87,0.1);border:1px solid rgba(255,71,87,0.3);color:#ff4757;padding:5px 12px;border-radius:6px;cursor:pointer;font-size:0.75rem;}
+#panel-hisse .drill-sum{padding:12px 20px;border-bottom:1px solid var(--border);}
+#panel-hisse .drill-tscroll{overflow-x:auto;}
+#panel-hisse .dtbl{width:100%;border-collapse:collapse;}
+#panel-hisse .dtbl th{padding:4px 8px;font-size:0.58rem;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);text-align:right;background:rgba(0,0,0,0.25);white-space:nowrap;}
+#panel-hisse .dtbl th:first-child{text-align:left;}
+#panel-hisse .dtbl td{padding:5px 8px;text-align:right;border-top:1px solid rgba(255,255,255,0.03);font-size:10.5px;white-space:nowrap;}
+#panel-hisse .dtbl td:first-child{text-align:left;color:var(--muted);}
 @media(max-width:900px){.hero-row,.fund-row,.tefas-grid{grid-template-columns:1fr 1fr;}.mo-row{grid-template-columns:repeat(3,1fr);}.drill-sum{grid-template-columns:1fr 1fr;}}
 @media(max-width:600px){.hero-row,.fund-row,.tefas-grid{grid-template-columns:1fr;}.mo-row{grid-template-columns:1fr 1fr;}.drill-sum{grid-template-columns:1fr 1fr;}.fgrid{grid-template-columns:1fr 1fr;}h1{font-size:1.6rem;}}
 
@@ -1718,12 +1749,17 @@ _db.ref('fonmerkezi').on('value', function(snap) {
 <!-- Ana Navigasyon -->
 <nav class="main-nav">
   <div class="nav-logo">📊 FON MERKEZİ</div>
-  <button class="nav-tab" id="tab-takip">
+  <button class="nav-tab" id="tab-takip" onclick="switchTab('takip')">
     <div class="nav-dot"></div>
     FON TAKİP
     <span class="nav-badge">CANLI</span>
   </button>
-  <button class="nav-tab tahmin-tab active" id="tab-tahmin">
+  <button class="nav-tab" id="tab-hisse" onclick="switchTab('hisse')" style="color:#ff9f43;">
+    <div class="nav-dot" style="background:#ff9f43;"></div>
+    HİSSE TAKİP
+    <span class="nav-badge" style="background:rgba(255,159,67,0.15);color:#ff9f43;border-color:rgba(255,159,67,0.4);">CANLI</span>
+  </button>
+  <button class="nav-tab tahmin-tab active" id="tab-tahmin" onclick="switchTab('tahmin')">
     <div class="nav-dot"></div>
     GETİRİ TAHMİN
   </button>
@@ -1848,6 +1884,87 @@ _db.ref('fonmerkezi').on('value', function(snap) {
 </div>
 
 <!-- TAHMİN PANELİ -->
+<div class="tab-panel" id="panel-hisse">
+<div class="wrap">
+<header>
+  <div><h1>HİSSE TAKİP</h1><div class="sub">Hisse Senedi Portföy Yönetim Paneli</div></div>
+  <div id="hisse-hdate"></div>
+</header>
+
+<div class="status-bar">
+  <div class="status-item">Kaynak: <span>Yahoo Finance</span></div>
+  <div class="status-item" id="hisse-last-update">Son güncelleme: <span>—</span></div>
+  <div class="bar-acts">
+    <button class="abtn save" onclick="hisseVerileriKaydet()">💾 Kaydet</button>
+    <button class="abtn bkp" onclick="hisseYedekle()">⬇ Yedekle</button>
+    <label class="abtn rst" style="cursor:pointer;">⬆ Geri Yükle<input type="file" accept=".json" style="display:none" onchange="hisseGeriYukle(this)"></label>
+    <button class="abtn" onclick="tumHisseleriGuncelle()">⟳ Güncelle</button>
+    <button class="abtn save" onclick="openHisseManualUpdate()">✎ El ile Güncelle</button>
+    <button class="abtn rst" onclick="openHissePortfoyModal()">⚙ Portföy</button>
+  </div>
+</div>
+
+<!-- Hero kartlar -->
+<div class="hero-row" id="hisse-hero-row">
+  <div class="hcard main">
+    <div class="hlabel">Toplam Hisse Portföyü</div>
+    <div class="hval" id="hisse-h-total">—</div>
+    <div class="hsub" id="hisse-h-baslangic">Başlangıç: —</div>
+    <div class="badge" id="hisse-h-kz">—</div>
+  </div>
+  <div class="hcard"><div class="hlabel">ASELS K/Z</div><div class="hval" style="font-size:1.5rem;" id="hisse-h-asels-kz">—</div><div class="badge" id="hisse-h-asels-pct">—</div></div>
+  <div class="hcard"><div class="hlabel">ISKPL K/Z</div><div class="hval" style="font-size:1.5rem;" id="hisse-h-iskpl-kz">—</div><div class="badge" id="hisse-h-iskpl-pct">—</div></div>
+</div>
+
+<!-- Hisse kartları -->
+<p class="stitle">Hisseler</p>
+<div class="fund-row" id="hisse-card-row"></div>
+
+<!-- Hisse Grafikleri -->
+<p class="stitle">Fiyat Grafikleri <span style="font-size:0.6rem;font-family:DM Mono,monospace;font-weight:400;color:var(--muted)">· son 2 hafta</span></p>
+<div id="hisse-grafikler" style="display:grid;grid-template-columns:repeat(2,1fr);gap:14px;margin-bottom:22px;"></div>
+
+<!-- Aylık özet -->
+<p class="stitle">Aylık Özet <span style="font-size:0.6rem;font-family:DM Mono,monospace;font-weight:400;color:var(--muted)">· aya tıkla → detay</span></p>
+<div class="mo-row" style="margin-bottom:14px;" id="hisse-mo-row"></div>
+
+<!-- Drilldown -->
+<div id="hisse-drill">
+  <div class="drill-panel">
+    <div class="drill-hdr">
+      <div class="drill-title" id="hisse-drill-title"></div>
+      <div style="display:flex;align-items:center;gap:12px;">
+        <button class="drill-close" onclick="hisseDrillKapat()">✕ Kapat</button>
+      </div>
+    </div>
+    <div class="drill-sum" id="hisse-drill-sum"></div>
+    <div class="drill-tscroll">
+      <table class="dtbl">
+        <thead><tr id="hisse-drill-thead"></tr></thead>
+        <tbody id="hisse-drill-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Günlük detay tablosu -->
+<p class="stitle">Günlük Detay</p>
+<div class="tbox">
+  <div class="tscroll">
+    <table>
+      <thead>
+        <tr id="hisse-thead">
+          <th style="text-align:left;">Tarih</th>
+          <!-- JS tarafından dinamik doldurulur -->
+        </tr>
+      </thead>
+      <tbody id="hisse-tbody"></tbody>
+    </table>
+  </div>
+</div>
+</div>
+</div>
+
 <div class="tab-panel active" id="panel-tahmin">
 
   <!-- Adaptif Ofset Paneli — TAHMİN sekmesinde görünür -->
@@ -1993,6 +2110,16 @@ function doSwitchTab(tab) {
   tabs.forEach(function(t){ t.classList.remove('active'); });
   var activeTab = document.getElementById('tab-' + tab);
   if(activeTab) activeTab.classList.add('active');
+  if(tab === 'hisse') {
+    setTimeout(function(){
+      if (typeof hisseIlkGiris !== 'undefined' && hisseIlkGiris) {
+        hisseIlkGiris = false;
+        if (typeof tumHisseleriGuncelle === 'function') tumHisseleriGuncelle();
+      } else if (typeof renderHissePanel === 'function') {
+        renderHissePanel();
+      }
+    }, 80);
+  }
   if(tab === 'tahmin' && typeof renderNavOfsetStatus === 'function') renderNavOfsetStatus();
 }
 
@@ -2016,6 +2143,7 @@ function sifreKontrol(){
 document.addEventListener('DOMContentLoaded', function(){
   var btnTakip = document.getElementById('tab-takip');
   var btnTahmin = document.getElementById('tab-tahmin');
+  var btnHisse = document.getElementById('tab-hisse');
   if(btnTakip) btnTakip.addEventListener('click', function(){
     if(!_takipUnlocked){
       var modal = document.createElement('div');
@@ -2041,6 +2169,7 @@ document.addEventListener('DOMContentLoaded', function(){
       doSwitchTab('takip');
     }
   });
+  if(btnHisse) btnHisse.addEventListener('click', function(){ doSwitchTab('hisse'); });
   if(btnTahmin) btnTahmin.addEventListener('click', function(){ doSwitchTab('tahmin'); });
 });
 
@@ -6086,17 +6215,42 @@ function adaptifHataKayitlari() {
   var snapshots = getTahminSnapshots();
   var rates = getTakipGercekRates();
   var fonlar = adaptifFonKodlari();
-  var tarihler = Object.keys(snapshots).sort(function(a, b) { return parseTarih(a) - parseTarih(b); });
+  var tarihSet = {};
+
+  Object.keys(snapshots || {}).forEach(function(t) { tarihSet[t] = true; });
+  Object.keys(rates || {}).forEach(function(t) {
+    tarihSet[t && t.length === 5 ? (t + '.2026') : t] = true;
+  });
+
+  var tarihler = Object.keys(tarihSet).filter(Boolean).sort(function(a, b) { return parseTarih(a) - parseTarih(b); });
   var sonuc = {};
   fonlar.forEach(function(fon) { sonuc[fon] = []; });
 
+  function okuGercek(gercekler, fon) {
+    if (!gercekler) return null;
+    var keys = [fon, fon.toLowerCase(), fon.toUpperCase()];
+    for (var i = 0; i < keys.length; i++) {
+      var v = gercekler[keys[i]];
+      if (v !== undefined && v !== null && v !== '' && !isNaN(parseFloat(v))) return parseFloat(v);
+    }
+    return null;
+  }
+
   tarihler.forEach(function(tarih) {
     var snap = snapshots[tarih] || {};
-    var gercekler = rates[tarih.substring(0,5)] || {};
+    var kisaTarih = tarih.substring(0,5);
+    var gercekler = rates[kisaTarih] || rates[tarih] || {};
+
     fonlar.forEach(function(fon) {
+      var gercek = okuGercek(gercekler, fon);
+      if (gercek === null) return;
+
       var tahmin = snap[fon];
-      var gercek = gercekler[fon.toLowerCase()];
-      if (tahmin === undefined || tahmin === null || gercek === undefined || gercek === null) return;
+      if (tahmin === undefined || tahmin === null || tahmin === '' || isNaN(parseFloat(tahmin))) {
+        tahmin = 0;
+      } else {
+        tahmin = parseFloat(tahmin);
+      }
       var hata = gercek - tahmin;
       sonuc[fon].push({ tarih: tarih, tahmin: tahmin, gercek: gercek, hata: hata });
     });
@@ -6427,6 +6581,728 @@ function migrateFromBackup(input) {
   }
 })();
 
+
+// HİSSE TAKİP MODÜLÜ (geri eklendi)
+var HISSE_PORTFOY = {
+  ASELS: { ad: 'Aselsan Elektronik',   adet: 500,  ortMaliyet: 401.24, ticker: 'ASELS.IS', renk: '#ff9f43' },
+  ISKPL: { ad: 'Isik Plastik San.',     adet: 5458, ortMaliyet: 22.97,  ticker: 'ISKPL.IS', renk: '#a78bfa' }
+};
+
+var hisseGunlukFiyat = {};
+var hisseBugunkuFiyat = {};
+var hisseIlkGiris = true;
+// Sayfa açılışında kayıtlı hisse portföyünü yükle
+hissePortfoyuYukle();
+// Kaydedilmiş geçmiş verileri yükle
+try {
+  var _hgv = JSON.parse(localStorage.getItem('hisse_gunluk_v1'));
+  if (_hgv) Object.assign(hisseGunlukFiyat, _hgv);
+  var _hbv = JSON.parse(localStorage.getItem('hisse_bugun_v1'));
+  if (_hbv) Object.assign(hisseBugunkuFiyat, _hbv);
+} catch(e) {}
+
+async function fetchHisseGecmis(kod) {
+  var ticker = HISSE_PORTFOY[kod].ticker;
+  var urls = [
+    'https://query1.finance.yahoo.com/v8/finance/chart/' + ticker + '?interval=1d&range=1mo',
+    'https://query2.finance.yahoo.com/v8/finance/chart/' + ticker + '?interval=1d&range=1mo'
+  ];
+  for (var u = 0; u < urls.length; u++) {
+    try {
+      var resp = await fetchWithTimeout(urls[u], {headers:{'Accept':'application/json'}}, 8000);
+      if (!resp.ok) continue;
+      var data = await resp.json();
+      var result = data && data.chart && data.chart.result && data.chart.result[0];
+      if (!result) continue;
+      var meta = result.meta;
+      var timestamps = result.timestamp || [];
+      var closes = result.indicators && result.indicators.adjclose &&
+                   result.indicators.adjclose[0] && result.indicators.adjclose[0].adjclose || [];
+      for (var i = 0; i < timestamps.length; i++) {
+        if (!closes[i]) continue;
+        var dt = new Date(timestamps[i] * 1000);
+        var key = String(dt.getDate()).padStart(2,'0') + '.' + String(dt.getMonth()+1).padStart(2,'0');
+        if (!hisseGunlukFiyat[key]) hisseGunlukFiyat[key] = {};
+        hisseGunlukFiyat[key][kod] = closes[i];
+      }
+      var bugunFiyat = meta.regularMarketPrice;
+      var gunlukDeg = meta.regularMarketChangePercent;
+      if (gunlukDeg == null || gunlukDeg === 0) {
+        // regularMarketChangePercent yoksa fiyat farkından hesapla
+        var prev = meta.previousClose || meta.chartPreviousClose;
+        if (prev && prev > 0) {
+          var hesap = (bugunFiyat - prev) / prev * 100;
+          gunlukDeg = Math.abs(hesap) <= 25 ? hesap : 0;
+        } else {
+          gunlukDeg = 0;
+        }
+      }
+      // ±25% aşırı değer filtresi
+      if (Math.abs(gunlukDeg) > 25) gunlukDeg = 0;
+      hisseBugunkuFiyat[kod] = { fiyat: bugunFiyat, degisim: parseFloat(gunlukDeg.toFixed(4)) };
+      return true;
+    } catch(e) {}
+  }
+  return false;
+}
+
+async function tumHisseleriGuncelle() {
+  await Promise.all(Object.keys(HISSE_PORTFOY).map(fetchHisseGecmis));
+  hisseVerileriKaydet();
+  var el = document.getElementById('hisse-last-update');
+  if (el) el.innerHTML = 'Son güncelleme: <span>' + new Date().toLocaleTimeString('tr-TR') + '</span>';
+  renderHissePanel();
+}
+
+function renderHissePanel() {
+  renderHisseKartlar();
+  renderHisseGrafikleri();
+  renderHisseAylik();
+  renderHisseDetayTablo();
+  var el = document.getElementById('hisse-hdate');
+  if (el) el.textContent = new Date().toLocaleDateString('tr-TR', {weekday:'long',year:'numeric',month:'long',day:'numeric'});
+}
+
+function renderHisseGrafikleri() {
+  var container = document.getElementById('hisse-grafikler');
+  if (!container) return;
+
+  // getHisseGunler() eski→yeni sıralı döndürür
+  var tumGunler = getHisseGunler(); // zaten eski→yeni
+  var son14 = tumGunler.slice(-14); // son 14 gun (en yeni 14 tanesini al)
+  if (son14.length < 2) { container.innerHTML = ''; return; }
+
+  var html = '';
+  Object.entries(HISSE_PORTFOY).forEach(function(entry) {
+    var kod = entry[0], h = entry[1];
+    var renk = h.renk || '#ff9f43';
+    var bugunKey = String(new Date().getDate()).padStart(2,'0') + '.' + String(new Date().getMonth()+1).padStart(2,'0');
+
+    // Fiyat noktalarını topla
+    var noktalar = [];
+    son14.forEach(function(tarih) {
+      var fiyat = tarih === bugunKey && hisseBugunkuFiyat[kod]
+        ? hisseBugunkuFiyat[kod].fiyat
+        : (hisseGunlukFiyat[tarih] && hisseGunlukFiyat[tarih][kod]);
+      if (fiyat) noktalar.push({ tarih: tarih, fiyat: fiyat });
+    });
+
+    if (noktalar.length < 2) return;
+
+    var W = 900, H = 90, px = 40, py = 12;
+    var minF = Math.min.apply(null, noktalar.map(function(n){ return n.fiyat; }));
+    var maxF = Math.max.apply(null, noktalar.map(function(n){ return n.fiyat; }));
+    var range = maxF - minF || 1;
+    minF = minF - range * 0.1;
+    maxF = maxF + range * 0.1;
+    range = maxF - minF;
+
+    var pts = noktalar.map(function(n, i) {
+      return {
+        x: px + (i / (noktalar.length - 1)) * (W - px * 2),
+        y: py + (1 - (n.fiyat - minF) / range) * (H - py * 2),
+        fiyat: n.fiyat,
+        tarih: n.tarih
+      };
+    });
+
+    var ilkFiyat = noktalar[0].fiyat;
+    var sonFiyat = noktalar[noktalar.length - 1].fiyat;
+    var toplamDeg = (sonFiyat - ilkFiyat) / ilkFiyat * 100;
+    var gradId = 'hgr-' + kod.toLowerCase();
+    var lineColor = toplamDeg >= 0 ? renk : '#ff4757';
+
+    // SVG path
+    var pathD = 'M' + pts.map(function(p){ return p.x + ',' + p.y; }).join('L');
+    var areaD = 'M' + pts[0].x + ',' + (H - py) + ' ' + pts.map(function(p){ return 'L' + p.x + ',' + p.y; }).join(' ') + ' L' + pts[pts.length-1].x + ',' + (H - py) + ' Z';
+
+    // Grid çizgileri
+    var gridLines = '';
+    [0, 0.5, 1].forEach(function(t) {
+      var y = py + t * (H - py * 2);
+      var val = maxF - t * range;
+      gridLines += '<line x1="' + px + '" x2="' + (W-px) + '" y1="' + y + '" y2="' + y + '" stroke="rgba(255,255,255,0.05)" stroke-width="1"/>';
+      gridLines += '<text x="' + (px-6) + '" y="' + (y+4) + '" text-anchor="end" fill="#4e6a82" font-size="9" font-family="DM Mono,monospace">' + val.toFixed(2) + '</text>';
+    });
+
+    // Etiketler (her 2. nokta)
+    var labels = '';
+    pts.forEach(function(p, i) {
+      if (i % 3 !== 0 && i !== pts.length - 1) return;
+      labels += '<text x="' + p.x + '" y="' + (H + 4) + '" text-anchor="middle" fill="#4e6a82" font-size="9" font-family="DM Mono,monospace">' + p.tarih + '</text>';
+    });
+
+    // Son nokta etiketi
+    var lastPt = pts[pts.length - 1];
+    var lastLabel = '<circle cx="' + lastPt.x + '" cy="' + lastPt.y + '" r="4" fill="' + lineColor + '" stroke="#060c14" stroke-width="2"/>'
+      + '<text x="' + lastPt.x + '" y="' + (lastPt.y - 8) + '" text-anchor="middle" fill="' + lineColor + '" font-size="9" font-family="DM Mono,monospace">' + sonFiyat.toFixed(2) + '</text>';
+
+    var svg = '<svg class="chart" viewBox="0 0 ' + W + ' ' + (H + 16) + '" style="width:100%;overflow:visible;max-height:90px;">'
+      + '<defs><linearGradient id="' + gradId + '" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="' + lineColor + '" stop-opacity="0.3"/><stop offset="100%" stop-color="' + lineColor + '" stop-opacity="0"/></linearGradient></defs>'
+      + gridLines
+      + '<path d="' + areaD + '" fill="url(#' + gradId + ')"/>'
+      + '<path d="' + pathD + '" fill="none" stroke="' + lineColor + '" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>'
+      + lastLabel
+      + labels
+      + '</svg>';
+
+    html += '<div class="chart-box" style="margin-bottom:0;">'
+      + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">'
+        + '<p class="stitle" style="margin:0;border:none;">' + kod + ' — ' + h.ad + '</p>'
+        + '<span style="font-family:DM Mono,monospace;font-size:0.8rem;color:' + lineColor + ';font-weight:700;">'
+          + (toplamDeg >= 0 ? '+' : '') + toplamDeg.toFixed(2) + '% <span style="font-size:0.65rem;color:var(--muted);">(2 hafta)</span>'
+        + '</span>'
+      + '</div>'
+      + svg
+      + '</div>';
+  });
+
+  container.innerHTML = html;
+}
+
+function renderHisseKartlar() {
+  var row = document.getElementById('hisse-card-row');
+  if (!row) return;
+  var html = '';
+  Object.entries(HISSE_PORTFOY).forEach(function(entry) {
+    var kod = entry[0], h = entry[1];
+    var veri  = hisseBugunkuFiyat[kod] || {};
+    var fiyat = veri.fiyat || 0;
+    // Tablodaki hesapla aynı: dünkü kapanıştan bugünkü fiyata değişim
+    var gunler   = getHisseGunler();
+    var bugunKey = String(new Date().getDate()).padStart(2,'0') + '.' + String(new Date().getMonth()+1).padStart(2,'0');
+    var bugunIdx = gunler.indexOf(bugunKey);
+    var prevFiyat = null;
+    if (bugunIdx > 0) {
+      var prevGun = gunler[bugunIdx - 1];
+      prevFiyat = hisseGunlukFiyat[prevGun] && hisseGunlukFiyat[prevGun][kod];
+    }
+    var deg = 0;
+    if (fiyat && prevFiyat && prevFiyat > 0) {
+      var hesap = (fiyat - prevFiyat) / prevFiyat * 100;
+      deg = Math.abs(hesap) <= 25 ? hesap : 0;
+    }
+    var toplamPct = fiyat > 0 ? (fiyat - h.ortMaliyet) / h.ortMaliyet * 100 : 0;
+    var kz        = (fiyat - h.ortMaliyet) * h.adet;
+    var gunlukTL  = deg / 100 * h.adet * (fiyat || h.ortMaliyet);
+    var cc = function(v){ return v > 0 ? 'var(--green)' : v < 0 ? 'var(--red)' : 'var(--muted)'; };
+    var fmtP = function(v){ return (v>=0?'+':'') + v.toFixed(2) + '%'; };
+    var fmtT = function(v){ return (v>=0?'+':'') + Math.round(v).toLocaleString('tr-TR') + ' ₺'; };
+
+    html += '<div class="fcard" style="border-bottom-color:' + h.renk + ';">'
+      + '<div class="fname" style="color:' + h.renk + ';">' + kod + '</div>'
+      + '<div class="hlabel" style="margin-top:4px">' + h.ad + '</div>'
+      + '<div class="ftotal" style="color:' + cc(deg) + ';">' + (fiyat > 0 ? fiyat.toLocaleString('tr-TR',{minimumFractionDigits:2,maximumFractionDigits:2}) + ' ₺' : '—') + '</div>'
+      + '<div class="fret" style="color:' + cc(deg) + ';">' + (fiyat > 0 ? fmtP(deg) + ' bugün' : '—') + '</div>'
+      + '<div class="fprice-row">'
+        + '<div><div class="fprice-label">Ort. Maliyet</div><div class="fprice-val" style="color:' + h.renk + ';">' + h.ortMaliyet.toLocaleString('tr-TR',{minimumFractionDigits:2}) + ' ₺</div></div>'
+        + '<div><div class="fprice-label">Toplam K/Z</div><div class="fday-ret" style="color:' + cc(kz) + ';">' + (fiyat > 0 ? fmtT(kz) : '—') + '</div></div>'
+      + '</div>'
+      + '<div class="fprice-row" style="margin-top:4px;">'
+        + '<div><div class="fprice-label">Toplam %</div><div class="fday-ret" style="color:' + cc(toplamPct) + ';">' + (fiyat > 0 ? fmtP(toplamPct) : '—') + '</div></div>'
+        + '<div><div class="fprice-label">Günlük TL</div><div class="fday-ret" style="color:' + cc(gunlukTL) + ';">' + (fiyat > 0 ? fmtT(gunlukTL) : '—') + '</div></div>'
+      + '</div>'
+      + '</div>';
+  });
+  row.innerHTML = html;
+
+  // Hero kartları güncelle
+  var toplamKZ = 0, toplamPortfoy = 0, toplamBaslangic = 0;
+  Object.entries(HISSE_PORTFOY).forEach(function(entry){
+    var kod = entry[0], h = entry[1];
+    var fiyat = (hisseBugunkuFiyat[kod] || {}).fiyat || 0;
+    toplamKZ       += (fiyat - h.ortMaliyet) * h.adet;
+    toplamPortfoy  += fiyat > 0 ? fiyat * h.adet : h.ortMaliyet * h.adet;
+    toplamBaslangic += h.ortMaliyet * h.adet;
+  });
+  var totalEl = document.getElementById('hisse-h-total');
+  if (totalEl) totalEl.textContent = Math.round(toplamPortfoy).toLocaleString('tr-TR') + ' ₺';
+  var basEl = document.getElementById('hisse-h-baslangic');
+  if (basEl) basEl.textContent = 'Başlangıç: ' + Math.round(toplamBaslangic).toLocaleString('tr-TR') + ' ₺';
+  var kzEl = document.getElementById('hisse-h-kz');
+  if (kzEl) {
+    kzEl.textContent = (toplamKZ >= 0 ? '+' : '') + Math.round(toplamKZ).toLocaleString('tr-TR') + ' ₺';
+    kzEl.className = 'badge ' + (toplamKZ >= 0 ? 'pos' : 'neg');
+  }
+
+  // Hisse bazlı hero
+  Object.entries(HISSE_PORTFOY).forEach(function(entry){
+    var kod = entry[0], h = entry[1];
+    var fiyat = (hisseBugunkuFiyat[kod] || {}).fiyat || 0;
+    var kz = (fiyat - h.ortMaliyet) * h.adet;
+    var pct = fiyat > 0 ? (fiyat - h.ortMaliyet) / h.ortMaliyet * 100 : 0;
+    var kzEl2 = document.getElementById('hisse-h-' + kod.toLowerCase() + '-kz');
+    var pctEl = document.getElementById('hisse-h-' + kod.toLowerCase() + '-pct');
+    if (kzEl2) { kzEl2.textContent = (kz>=0?'+':'') + Math.round(kz).toLocaleString('tr-TR') + ' ₺'; kzEl2.style.color = kz >= 0 ? 'var(--green)' : 'var(--red)'; }
+    if (pctEl) { pctEl.textContent = (pct>=0?'▲ +':'▼ ') + pct.toFixed(2) + '%'; pctEl.className = 'badge ' + (pct>=0?'pos':'neg'); }
+  });
+}
+
+function getHisseGunler() {
+  var tarihSet = new Set(Object.keys(hisseGunlukFiyat));
+  var bugun = new Date();
+  tarihSet.add(String(bugun.getDate()).padStart(2,'0') + '.' + String(bugun.getMonth()+1).padStart(2,'0'));
+  return Array.from(tarihSet).sort(function(a,b){
+    // DD.MM formatini 2026 yili baz alarak karsilastir
+    var pa = a.split('.'), pb = b.split('.');
+    var da = new Date(2026, parseInt(pa[1])-1, parseInt(pa[0]));
+    var db = new Date(2026, parseInt(pb[1])-1, parseInt(pb[0]));
+    return da - db; // eski → yeni
+  });
+}
+
+function renderHisseAylik() {
+  var row = document.getElementById('hisse-mo-row');
+  if (!row) return;
+  var ayAdlar = {'01':'Ocak','02':'Subat','03':'Mart','04':'Nisan','05':'Mayis','06':'Haziran','07':'Temmuz','08':'Agustos','09':'Eylul','10':'Ekim','11':'Kasim','12':'Aralik'};
+  var ayKodMap = {'01':'OCA','02':'SUB','03':'MAR','04':'NIS','05':'MAY','06':'HAZ','07':'TEM','08':'AGU','09':'EYL','10':'EKI','11':'KAS','12':'ARA'};
+  var ayGrup = {};
+  var prevFiyatlar = {};
+  getHisseGunler().forEach(function(tarih) {
+    var mm = tarih.split('.')[1];
+    var ay = ayKodMap[mm] || mm;
+    if (!ayGrup[ay]) ayGrup[ay] = { toplam: 0, mm: mm };
+    Object.keys(HISSE_PORTFOY).forEach(function(kod) {
+      var h = HISSE_PORTFOY[kod];
+      var fiyat = hisseGunlukFiyat[tarih] && hisseGunlukFiyat[tarih][kod];
+      var prev = prevFiyatlar[kod];
+      if (fiyat && prev) { ayGrup[ay].toplam += (fiyat - prev) / prev * 100 / 100 * h.adet * prev; }
+      if (fiyat) prevFiyatlar[kod] = fiyat;
+    });
+  });
+  var bugunMM = String(new Date().getMonth()+1).padStart(2,'0');
+  var html = '';
+  Object.entries(ayGrup).forEach(function(e) {
+    var ay = e[0], data = e[1];
+    var isCur = data.mm === bugunMM;
+    var cls = data.toplam >= 0 ? 'gp' : 'gn';
+    html += '<div class="mocard' + (isCur ? ' cur' : '') + '" onclick="hisseDrillAc(\'' + data.mm + '\')">'
+      + '<div class="moname">' + (ayAdlar[data.mm] || ay) + (isCur ? ' ✦' : '') + '</div>'
+      + '<div class="mokar ' + cls + '">' + (data.toplam >= 0 ? '+' : '') + Math.round(data.toplam).toLocaleString('tr-TR') + ' ₺</div>'
+      + '<div class="mo-hint">↓ detay</div>'
+      + '</div>';
+  });
+  row.innerHTML = html || '<div style="color:var(--muted);padding:12px;">Veri yok</div>';
+}
+
+function renderHisseDetayTablo() {
+  var tbody = document.getElementById('hisse-tbody');
+  if (!tbody) return;
+
+  // Başlığı dinamik oluştur
+  var theadTr = document.getElementById('hisse-thead');
+  if (theadTr) {
+    var thHtml = '<th style="text-align:left;">Tarih</th>';
+    Object.entries(HISSE_PORTFOY).forEach(function(entry) {
+      var kod = entry[0], renk = entry[1].renk || '#ff9f43';
+      thHtml += '<th class="fon-sep" style="color:' + renk + ';text-align:center;">' + kod + ' %</th>';
+      thHtml += '<th style="color:' + renk + ';">' + kod + ' TL</th>';
+      thHtml += '<th style="color:' + renk + ';">' + kod + ' Toplam</th>';
+    });
+    thHtml += '<th class="fon-sep">Günlük K/Z</th>';
+    thHtml += '<th>Portföy Toplam</th>';
+    theadTr.innerHTML = thHtml;
+  }
+
+  var prevFiyatlar = {};
+  var portfoyToplam = {};
+  Object.keys(HISSE_PORTFOY).forEach(function(kod){
+    portfoyToplam[kod] = HISSE_PORTFOY[kod].adet * HISSE_PORTFOY[kod].ortMaliyet;
+  });
+
+  var cc   = function(v){ return v > 0 ? 'pos' : v < 0 ? 'neg' : 'neu'; };
+  var fmtP = function(v){ return (v>=0?'+':'') + v.toFixed(2) + '%'; };
+  var fmtT = function(v){ return (v>=0?'+':'') + Math.round(v).toLocaleString('tr-TR') + ' ₺'; };
+  var fmtV = function(v){ return Math.round(v).toLocaleString('tr-TR') + ' ₺'; };
+
+  var html = '';
+  var bugunKey = String(new Date().getDate()).padStart(2,'0') + '.' + String(new Date().getMonth()+1).padStart(2,'0');
+
+  getHisseGunler().forEach(function(tarih) {
+    var gunKZ  = 0;
+    var hasData = false;
+
+    // Her hisse icin ayri hesapla
+    var hisseCols = '';
+    Object.keys(HISSE_PORTFOY).forEach(function(kod) {
+      var h = HISSE_PORTFOY[kod];
+      var fiyat = (tarih === bugunKey && hisseBugunkuFiyat[kod])
+        ? hisseBugunkuFiyat[kod].fiyat
+        : (hisseGunlukFiyat[tarih] && hisseGunlukFiyat[tarih][kod]);
+      var prev = prevFiyatlar[kod];
+
+      if (fiyat && prev) {
+        var deg = (fiyat - prev) / prev * 100;
+        if (Math.abs(deg) > 25) deg = 0;
+        var tl      = deg / 100 * h.adet * prev;
+        var toplam  = h.adet * fiyat;
+        portfoyToplam[kod] = toplam;
+        gunKZ  += tl;
+        hasData = true;
+        // 3 sutun: %, TL degisim, toplam deger
+        hisseCols += '<td class="fon-sep ' + cc(deg) + '" style="text-align:center;">' + fmtP(deg) + '</td>';
+        hisseCols += '<td class="' + cc(tl) + '">' + fmtT(tl) + '</td>';
+        hisseCols += '<td class="tcol" style="color:' + h.renk + ';">' + fmtV(toplam) + '</td>';
+      } else {
+        hisseCols += '<td class="fon-sep neu">—</td><td class="neu">—</td><td class="neu">—</td>';
+      }
+      if (fiyat) prevFiyatlar[kod] = fiyat;
+    });
+
+    var portDeger = Object.values(portfoyToplam).reduce(function(s,v){return s+v;},0);
+
+    var row = '<td>' + tarih + '.2026</td>'
+      + hisseCols
+      + '<td class="fon-sep ' + cc(gunKZ) + '">' + (hasData ? fmtT(gunKZ) : '—') + '</td>'
+      + '<td class="tcol">' + fmtV(portDeger) + '</td>';
+
+    html += '<tr style="' + (!hasData ? 'opacity:0.45;' : '') + '">' + row + '</tr>';
+  });
+
+  // En yeni tarih üstte olsun
+  var satirlar = html.match(/<tr[^>]*>[\s\S]*?<\/tr>/g) || [];
+  tbody.innerHTML = satirlar.reverse().join('') || '<tr><td colspan="9" style="text-align:center;color:var(--muted);padding:12px;">Veri yok</td></tr>';
+}
+
+function hisseDrillAc(ayMM) {
+  var drill = document.getElementById('hisse-drill');
+  if (!drill) return;
+  drill.style.display = 'block';
+  var ayAdlar = {'01':'Ocak','02':'Subat','03':'Mart','04':'Nisan','05':'Mayis','06':'Haziran','07':'Temmuz','08':'Agustos','09':'Eylul','10':'Ekim','11':'Kasim','12':'Aralik'};
+  document.getElementById('hisse-drill-title').textContent = (ayAdlar[ayMM] || ayMM) + ' Detayi';
+  var gunler = getHisseGunler().filter(function(t){ return t.split('.')[1] === ayMM; });
+  var prevFiyatlar = {};
+  var tumGunler = getHisseGunler();
+  var ayIdx = tumGunler.findIndex(function(t){ return t.split('.')[1] === ayMM; });
+  if (ayIdx > 0) {
+    var pg = tumGunler[ayIdx - 1];
+    Object.keys(HISSE_PORTFOY).forEach(function(kod){ if (hisseGunlukFiyat[pg] && hisseGunlukFiyat[pg][kod]) prevFiyatlar[kod] = hisseGunlukFiyat[pg][kod]; });
+  }
+  var thead = document.getElementById('hisse-drill-thead');
+  if (thead) {
+    var thHtml = '<th style="text-align:left;padding:4px 6px;font-size:0.6rem;color:var(--muted);">Tarih</th>';
+    Object.keys(HISSE_PORTFOY).forEach(function(kod){
+      thHtml += '<th style="padding:4px 6px;font-size:0.6rem;color:' + HISSE_PORTFOY[kod].renk + ';">' + kod + ' %</th>';
+      thHtml += '<th style="padding:4px 6px;font-size:0.6rem;color:' + HISSE_PORTFOY[kod].renk + ';">' + kod + ' TL</th>';
+    });
+    thHtml += '<th style="padding:4px 6px;font-size:0.6rem;color:var(--muted);">Toplam</th>';
+    thead.innerHTML = thHtml;
+  }
+  var ayToplam = 0;
+  var html = '';
+  var bugunKey = String(new Date().getDate()).padStart(2,'0') + '.' + String(new Date().getMonth()+1).padStart(2,'0');
+  gunler.forEach(function(tarih) {
+    var gunToplam = 0, hasData = false;
+    var satirHtml = '<td style="font-size:10px;color:var(--muted);">' + tarih + '</td>';
+    Object.keys(HISSE_PORTFOY).forEach(function(kod){
+      var h = HISSE_PORTFOY[kod];
+      var fiyat = tarih === bugunKey && hisseBugunkuFiyat[kod] ? hisseBugunkuFiyat[kod].fiyat : (hisseGunlukFiyat[tarih] && hisseGunlukFiyat[tarih][kod]);
+      var prev = prevFiyatlar[kod];
+      if (fiyat && prev) {
+        var deg = (fiyat - prev) / prev * 100;
+        var tl  = deg / 100 * h.adet * prev;
+        gunToplam += tl; hasData = true;
+        var c = deg > 0 ? 'var(--green)' : deg < 0 ? 'var(--red)' : 'var(--muted)';
+        satirHtml += '<td style="font-size:10px;color:' + c + ';">' + (deg>=0?'+':'') + deg.toFixed(2) + '%</td>'
+                   + '<td style="font-size:10px;color:' + c + ';">' + (tl>=0?'+':'') + Math.round(tl).toLocaleString('tr-TR') + ' ₺</td>';
+      } else { satirHtml += '<td style="color:var(--muted)">—</td><td style="color:var(--muted)">—</td>'; }
+      if (fiyat) prevFiyatlar[kod] = fiyat;
+    });
+    ayToplam += gunToplam;
+    var c2 = gunToplam > 0 ? 'var(--green)' : gunToplam < 0 ? 'var(--red)' : 'var(--muted)';
+    satirHtml += '<td style="font-size:10px;color:' + c2 + ';">' + (hasData ? (gunToplam>=0?'+':'') + Math.round(gunToplam).toLocaleString('tr-TR') + ' ₺' : '—') + '</td>';
+    html += '<tr style="border-top:1px solid rgba(255,255,255,0.03);">' + satirHtml + '</tr>';
+  });
+  var tbodyEl = document.getElementById('hisse-drill-tbody');
+  if (tbodyEl) tbodyEl.innerHTML = html;
+  var sumEl = document.getElementById('hisse-drill-sum');
+  if (sumEl) {
+    var c3 = ayToplam >= 0 ? 'var(--green)' : 'var(--red)';
+    sumEl.innerHTML = '<div style="padding:10px 0;"><span style="color:var(--muted);font-size:0.7rem;">' + (ayAdlar[ayMM]||ayMM) + ' Toplam: </span><span style="color:' + c3 + ';font-weight:700;font-size:1rem;">' + (ayToplam>=0?'+':'') + Math.round(ayToplam).toLocaleString('tr-TR') + ' ₺</span></div>';
+  }
+  drill.scrollIntoView({behavior:'smooth'});
+}
+
+function hisseDrillKapat() {
+  var el = document.getElementById('hisse-drill');
+  if (el) el.style.display = 'none';
+}
+
+// ═══════════════════════════════════════════════════════
+// HİSSE PORTFÖY MODAL
+// ═══════════════════════════════════════════════════════
+
+var HISSE_LS_KEY = 'hisse_portfoy_v1';
+
+function hissePortfoyuKaydet() {
+  try { localStorage.setItem(HISSE_LS_KEY, JSON.stringify(HISSE_PORTFOY)); } catch(e) {}
+}
+
+function hissePortfoyuYukle() {
+  try {
+    var saved = JSON.parse(localStorage.getItem(HISSE_LS_KEY));
+    if (saved && typeof saved === 'object') {
+      Object.keys(saved).forEach(function(kod) {
+        HISSE_PORTFOY[kod] = saved[kod];
+      });
+    }
+  } catch(e) {}
+}
+
+function openHisseManualUpdate() {
+  var today = new Date();
+  var dd = String(today.getDate()).padStart(2,'0');
+  var mm = String(today.getMonth()+1).padStart(2,'0');
+  var key = dd + '.' + mm;
+
+  var html = '<div style="position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:9999;display:flex;align-items:center;justify-content:center;">';
+  html += '<div style="background:#0d1520;border:1px solid rgba(255,159,67,0.3);border-radius:16px;padding:32px;min-width:380px;max-width:480px;">';
+  html += '<div style="font-family:Syne,sans-serif;font-size:1.3rem;font-weight:800;color:#ff9f43;margin-bottom:6px;">El ile Güncelle</div>';
+  html += '<div style="font-size:0.7rem;color:#4e6a82;margin-bottom:24px;">Bugün (' + dd + '.' + mm + ') için hisse günlük fiyatlarını girin.</div>';
+
+  Object.entries(HISSE_PORTFOY).forEach(function(entry) {
+    var kod = entry[0], h = entry[1];
+    var mevcutFiyat = (hisseBugunkuFiyat[kod] && hisseBugunkuFiyat[kod].fiyat) || h.ortMaliyet;
+    html += '<div style="margin-bottom:14px;">';
+    html += '<label style="font-size:0.75rem;color:#e8f4fd;display:flex;justify-content:space-between;margin-bottom:4px;">';
+    html += '<span style="color:' + (h.renk||'#ff9f43') + ';font-weight:700;">' + kod + '</span>';
+    html += '<span style="color:#4e6a82;">' + h.ad + '</span>';
+    html += '</label>';
+    html += '<input id="hm-' + kod + '" type="number" step="0.01" value="' + mevcutFiyat.toFixed(2) + '" ';
+    html += 'style="width:100%;background:#060c14;border:1px solid rgba(255,159,67,0.2);border-radius:8px;padding:8px 12px;color:#e8f4fd;font-family:DM Mono,monospace;font-size:0.9rem;" placeholder="Güncel fiyat (₺)">';
+    html += '</div>';
+  });
+
+  html += '<div style="display:flex;gap:10px;margin-top:20px;">';
+  html += '<button id="hm-kaydet" style="flex:1;background:rgba(46,213,115,0.15);border:1px solid rgba(46,213,115,0.4);color:#2ed573;font-family:DM Mono,monospace;font-size:0.8rem;padding:10px;border-radius:8px;cursor:pointer;font-weight:700;">✓ Kaydet</button>';
+  html += '<button id="hm-iptal" style="flex:1;background:rgba(255,71,87,0.1);border:1px solid rgba(255,71,87,0.3);color:#ff4757;font-family:DM Mono,monospace;font-size:0.8rem;padding:10px;border-radius:8px;cursor:pointer;">✕ İptal</button>';
+  html += '</div></div></div>';
+
+  var modal = document.createElement('div');
+  modal.id = 'hisse-manual-modal';
+  modal.innerHTML = html;
+  document.body.appendChild(modal);
+
+  document.getElementById('hm-kaydet').addEventListener('click', function(){ saveHisseManualUpdate(key); });
+  document.getElementById('hm-iptal').addEventListener('click', function(){ modal.remove(); });
+}
+
+function saveHisseManualUpdate(key) {
+  Object.keys(HISSE_PORTFOY).forEach(function(kod) {
+    var el = document.getElementById('hm-' + kod);
+    if (!el) return;
+    var yeniFiyat = parseFloat(el.value);
+    if (isNaN(yeniFiyat) || yeniFiyat <= 0) return;
+    // Günlük fiyata kaydet
+    if (!hisseGunlukFiyat[key]) hisseGunlukFiyat[key] = {};
+    hisseGunlukFiyat[key][kod] = yeniFiyat;
+    // Bugünkü fiyatı güncelle
+    var eskiFiyat = hisseBugunkuFiyat[kod] && hisseBugunkuFiyat[kod].fiyat;
+    var degisim = 0;
+    if (eskiFiyat && eskiFiyat > 0) {
+      var d = (yeniFiyat - eskiFiyat) / eskiFiyat * 100;
+      degisim = Math.abs(d) <= 25 ? d : 0;
+    }
+    hisseBugunkuFiyat[kod] = { fiyat: yeniFiyat, degisim: degisim };
+  });
+  hisseVerileriKaydet();
+  var el = document.getElementById('hisse-last-update');
+  if (el) el.innerHTML = 'Son güncelleme: <span style="color:var(--green)">' + new Date().toLocaleTimeString('tr-TR') + ' (manuel)</span>';
+  document.getElementById('hisse-manual-modal').remove();
+  renderHissePanel();
+  toast('Hisse verileri kaydedildi.', 'ok');
+}
+
+function hisseVerileriKaydet() {
+  try {
+    localStorage.setItem('hisse_gunluk_v1', JSON.stringify(hisseGunlukFiyat));
+    localStorage.setItem('hisse_bugun_v1', JSON.stringify(hisseBugunkuFiyat));
+    toast('Hisse verileri kaydedildi.', 'ok');
+  } catch(e) { toast('Kayıt hatası: ' + e.message, 'err'); }
+}
+
+function hisseYedekle() {
+  hisseVerileriKaydet();
+  var data = {
+    v: 1,
+    at: new Date().toISOString(),
+    portfoy: HISSE_PORTFOY,
+    gunluk: hisseGunlukFiyat,
+    bugun: hisseBugunkuFiyat
+  };
+  var blob = new Blob([JSON.stringify(data, null, 2)], {type: 'application/json'});
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'hisse_yedek_' + new Date().toISOString().slice(0,10) + '.json';
+  a.click();
+  toast('Hisse yedeği indirildi.', 'ok');
+}
+
+function hisseGeriYukle(input) {
+  var f = input.files[0];
+  if (!f) return;
+  var r = new FileReader();
+  r.onload = function(e) {
+    try {
+      var d = JSON.parse(e.target.result);
+      if (!d.portfoy && !d.gunluk) { toast('Geçersiz yedek dosyası.', 'err'); return; }
+      if (d.portfoy) {
+        Object.assign(HISSE_PORTFOY, d.portfoy);
+        hissePortfoyuKaydet();
+      }
+      if (d.gunluk) {
+        Object.assign(hisseGunlukFiyat, d.gunluk);
+        localStorage.setItem('hisse_gunluk_v1', JSON.stringify(hisseGunlukFiyat));
+      }
+      if (d.bugun) {
+        Object.assign(hisseBugunkuFiyat, d.bugun);
+        localStorage.setItem('hisse_bugun_v1', JSON.stringify(hisseBugunkuFiyat));
+      }
+      renderHissePanel();
+      toast('Hisse verileri geri yüklendi.', 'ok');
+    } catch(ex) { toast('Hata: ' + ex.message, 'err'); }
+    input.value = '';
+  };
+  r.readAsText(f);
+}
+
+function openHissePortfoyModal() {
+  var existing = document.getElementById('hisse-portfoy-modal');
+  if (existing) existing.remove();
+
+  var html = '<div style="position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:9999;display:flex;align-items:center;justify-content:center;">';
+  html += '<div style="background:#0d1520;border:1px solid rgba(255,159,67,0.3);border-radius:16px;padding:32px;min-width:480px;max-width:580px;max-height:90vh;overflow-y:auto;">';
+  html += '<div style="font-family:Syne,sans-serif;font-size:1.3rem;font-weight:800;color:#ff9f43;margin-bottom:6px;">Hisse Portföy Yönetimi</div>';
+  html += '<div style="font-size:0.7rem;color:#4e6a82;margin-bottom:20px;line-height:1.7">Hisse adet ve ortalama maliyetini güncelleyebilir, yeni hisse ekleyebilir veya portföyden çıkarabilirsiniz.</div>';
+
+  // Mevcut hisseler
+  html += '<div style="font-size:0.7rem;color:#4e6a82;text-transform:uppercase;letter-spacing:2px;margin-bottom:10px;">Mevcut Hisseler</div>';
+  Object.entries(HISSE_PORTFOY).forEach(function(entry) {
+    var kod = entry[0], h = entry[1];
+    var renk = h.renk || '#ff9f43';
+    html += '<div style="margin-bottom:12px;padding:12px;background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.06);border-radius:8px;">'
+      + '<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">'
+        + '<div style="font-family:Syne,sans-serif;font-weight:800;color:' + renk + ';width:60px;">' + kod + '</div>'
+        + '<div style="flex:1;font-size:0.7rem;color:#4e6a82;">' + (h.ad || '') + '</div>'
+        + '<button data-kod="' + kod + '" class="hisse-sil-btn" style="background:rgba(255,71,87,0.18);border:1px solid rgba(255,71,87,0.5);color:#ff4757;font-family:DM Mono,monospace;font-size:0.65rem;padding:5px 10px;border-radius:6px;cursor:pointer;font-weight:700;">Sil</button>'
+      + '</div>'
+      + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">'
+        + '<div>'
+          + '<div style="font-size:0.6rem;color:#4e6a82;margin-bottom:4px;">ADET</div>'
+          + '<input id="hpm-adet-' + kod + '" type="number" step="1" value="' + h.adet + '" style="width:100%;background:#060c14;border:1px solid rgba(255,159,67,0.2);border-radius:6px;padding:6px 10px;color:#e8f4fd;font-family:DM Mono,monospace;font-size:0.82rem;">'
+        + '</div>'
+        + '<div>'
+          + '<div style="font-size:0.6rem;color:#4e6a82;margin-bottom:4px;">ORT. MALİYET (₺)</div>'
+          + '<input id="hpm-maliyet-' + kod + '" type="number" step="0.01" value="' + h.ortMaliyet + '" style="width:100%;background:#060c14;border:1px solid rgba(255,159,67,0.2);border-radius:6px;padding:6px 10px;color:#e8f4fd;font-family:DM Mono,monospace;font-size:0.82rem;">'
+        + '</div>'
+      + '</div>'
+      + '<div style="margin-top:8px;text-align:right;">'
+        + '<button data-kod="' + kod + '" class="hisse-guncelle-btn" style="background:rgba(46,213,115,0.12);border:1px solid rgba(46,213,115,0.4);color:#2ed573;font-family:DM Mono,monospace;font-size:0.65rem;padding:5px 12px;border-radius:6px;cursor:pointer;font-weight:700;">✓ Güncelle</button>'
+      + '</div>'
+      + '</div>';
+  });
+
+  // Yeni hisse ekle
+  html += '<div style="font-size:0.7rem;color:#4e6a82;text-transform:uppercase;letter-spacing:2px;margin:16px 0 10px;">Yeni Hisse Ekle</div>';
+  html += '<div style="display:grid;grid-template-columns:80px 1fr 1fr;gap:8px;margin-bottom:8px;">'
+    + '<input id="hpm-yeni-kod" type="text" placeholder="KOD" maxlength="8" style="background:#060c14;border:1px solid rgba(255,159,67,0.2);border-radius:6px;padding:6px 10px;color:#e8f4fd;font-family:DM Mono,monospace;font-size:0.82rem;text-transform:uppercase;">'
+    + '<input id="hpm-yeni-adet" type="number" step="1" placeholder="Adet" style="background:#060c14;border:1px solid rgba(255,159,67,0.2);border-radius:6px;padding:6px 10px;color:#e8f4fd;font-family:DM Mono,monospace;font-size:0.82rem;">'
+    + '<input id="hpm-yeni-maliyet" type="number" step="0.01" placeholder="Ort. Maliyet ₺" style="background:#060c14;border:1px solid rgba(255,159,67,0.2);border-radius:6px;padding:6px 10px;color:#e8f4fd;font-family:DM Mono,monospace;font-size:0.82rem;">'
+    + '</div>';
+  html += '<div style="display:grid;grid-template-columns:1fr;gap:8px;margin-bottom:16px;">'
+    + '<input id="hpm-yeni-ad" type="text" placeholder="Şirket Adı (opsiyonel)" style="background:#060c14;border:1px solid rgba(255,159,67,0.2);border-radius:6px;padding:6px 10px;color:#e8f4fd;font-family:DM Mono,monospace;font-size:0.82rem;">'
+    + '</div>';
+  html += '<button onclick="yeniHisseEkle()" style="width:100%;background:rgba(46,213,115,0.1);border:1px solid rgba(46,213,115,0.3);color:#2ed573;font-family:DM Mono,monospace;font-size:0.75rem;padding:8px;border-radius:6px;cursor:pointer;margin-bottom:16px;">+ Hisse Ekle</button>';
+
+  html += '<button id="hisse-modal-kapat" style="width:100%;background:rgba(255,71,87,0.1);border:1px solid rgba(255,71,87,0.3);color:#ff4757;font-family:DM Mono,monospace;font-size:0.8rem;padding:10px;border-radius:8px;cursor:pointer;">✕ Kapat</button>';
+  html += '</div></div>';
+
+  var modal = document.createElement('div');
+  modal.id = 'hisse-portfoy-modal';
+  modal.innerHTML = html;
+  document.body.appendChild(modal);
+  // Event listenerlar
+  modal.querySelectorAll('.hisse-sil-btn').forEach(function(btn){
+    btn.addEventListener('click', function(){ hisseSil(this.dataset.kod); });
+  });
+  modal.querySelectorAll('.hisse-guncelle-btn').forEach(function(btn){
+    btn.addEventListener('click', function(){ hisseGuncelle(this.dataset.kod); });
+  });
+  var kapatBtn = document.getElementById('hisse-modal-kapat');
+  if (kapatBtn) kapatBtn.addEventListener('click', function(){ modal.remove(); });
+}
+
+function hisseGuncelle(kod) {
+  var adetEl    = document.getElementById('hpm-adet-' + kod);
+  var maliyetEl = document.getElementById('hpm-maliyet-' + kod);
+  if (!adetEl || !maliyetEl) return;
+  var adet    = parseInt(adetEl.value);
+  var maliyet = parseFloat(maliyetEl.value);
+  if (isNaN(adet) || adet <= 0 || isNaN(maliyet) || maliyet <= 0) {
+    alert('Geçerli adet ve maliyet girin.');
+    return;
+  }
+  HISSE_PORTFOY[kod].adet       = adet;
+  HISSE_PORTFOY[kod].ortMaliyet = maliyet;
+  hissePortfoyuKaydet();
+  document.getElementById('hisse-portfoy-modal').remove();
+  renderHissePanel();
+  toast(kod + ' guncellendi.', 'ok');
+}
+
+function hisseSil(kod) {
+  if (!confirm(kod + ' hissesini portfoyden cikarmak istediginizden emin misiniz?')) return;
+  delete HISSE_PORTFOY[kod];
+  delete hisseBugunkuFiyat[kod];
+  Object.keys(hisseGunlukFiyat).forEach(function(t){ delete hisseGunlukFiyat[t][kod]; });
+  hissePortfoyuKaydet();
+  document.getElementById('hisse-portfoy-modal').remove();
+  renderHissePanel();
+  toast(kod + ' portfoyden cikarildi.', 'ok');
+}
+
+function yeniHisseEkle() {
+  var kodEl     = document.getElementById('hpm-yeni-kod');
+  var adetEl    = document.getElementById('hpm-yeni-adet');
+  var maliyetEl = document.getElementById('hpm-yeni-maliyet');
+  var adEl      = document.getElementById('hpm-yeni-ad');
+  var kod     = (kodEl.value || '').trim().toUpperCase();
+  var adet    = parseInt(adetEl.value);
+  var maliyet = parseFloat(maliyetEl.value);
+  var ad      = (adEl.value || '').trim();
+  if (!kod || isNaN(adet) || adet <= 0 || isNaN(maliyet) || maliyet <= 0) {
+    alert('Kod, adet ve maliyet zorunlu.');
+    return;
+  }
+  if (HISSE_PORTFOY[kod]) { alert(kod + ' zaten mevcut.'); return; }
+  // Renk ata
+  var renkler = ['#ff9f43','#a78bfa','#2ed573','#ff6b6b','#4fa3ff','#ffd166','#ff5c7a','#48dbfb'];
+  var renk = renkler[Object.keys(HISSE_PORTFOY).length % renkler.length];
+  HISSE_PORTFOY[kod] = { ad: ad || kod, adet: adet, ortMaliyet: maliyet, ticker: kod + '.IS', renk: renk };
+  hissePortfoyuKaydet();
+  document.getElementById('hisse-portfoy-modal').remove();
+  tumHisseleriGuncelle();
+  toast(kod + ' eklendi.', 'ok');
+}
+
+// İlk açılışta localStorage kontrolü
+(function checkMigration() {
+  try {
+    var saved = JSON.parse(localStorage.getItem('fon_v5'));
+    // Eğer sadece PREFILLED'daki 5 günden fazlası yoksa göster
+    var keys = saved ? Object.keys(saved) : [];
+    if (keys.length < 6) {
+      // 800ms bekle — sayfa renderlansin
+      setTimeout(function() {
+        
+      }, 800);
+    }
+  } catch(e) {
+    setTimeout(function() {
+      
+    }, 800);
+  }
+})();
 </script>
 
 
