@@ -1684,6 +1684,49 @@ tbody tr:hover{background:rgba(0,180,255,0.035);}
 .tahmin-analiz-empty{font-family:var(--mono);font-size:10px;color:var(--muted);line-height:1.7;padding:10px;border:1px dashed rgba(99,179,255,.16);border-radius:8px;}
 @media(max-width:768px){.tahmin-analiz-grid{grid-template-columns:1fr}.tahmin-analiz-metrics{grid-template-columns:1fr 1fr}}
 
+
+
+/* ════════════════════════════════
+   TAHMİN MATEMATİK KONTROL KATMANI
+   ════════════════════════════════ */
+.fund-math-check{
+  margin-top:8px;
+  display:flex;
+  flex-wrap:wrap;
+  gap:6px;
+  font-family:var(--mono);
+  font-size:9.5px;
+  color:var(--muted);
+}
+.math-chip{
+  display:inline-flex;
+  align-items:center;
+  gap:4px;
+  padding:3px 7px;
+  border-radius:5px;
+  border:1px solid rgba(99,179,255,.16);
+  background:rgba(99,179,255,.045);
+}
+.math-chip.ok{border-color:rgba(62,245,160,.25);color:var(--green);background:rgba(62,245,160,.055);}
+.math-chip.warn{border-color:rgba(255,204,68,.35);color:var(--amber);background:rgba(255,204,68,.07);}
+.math-chip.bad{border-color:rgba(255,92,122,.35);color:var(--red);background:rgba(255,92,122,.07);}
+.fund-return-breakdown{
+  margin-top:5px;
+  font-family:var(--mono);
+  font-size:9.5px;
+  color:var(--muted);
+  line-height:1.45;
+}
+.suspect-row td{
+  background:rgba(255,204,68,.035)!important;
+}
+.suspect-note{
+  display:inline-block;
+  margin-left:4px;
+  color:var(--amber);
+  font-size:9px;
+}
+
 </style>
 <!-- Firebase SDK -->
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
@@ -4649,8 +4692,10 @@ function renderFunds() {
           <div class="fund-return-badge">
             <div class="fund-return-pct neu" id="ret-${id}">—</div>
             <div class="fund-return-label">Tahmini Getiri</div>
+            <div class="fund-return-breakdown" id="split-${id}">Ham: — · Ofsetli: —</div>
           </div>
         </div>
+        <div class="fund-math-check" id="mathcheck-${id}"></div>
         <div class="return-bar-wrap">
           <div class="return-bar-bg">
             <div class="return-bar-fill" id="bar-${id}" style="width:0%;background:${fund.color}"></div>
@@ -4855,12 +4900,20 @@ async function loadFVTPortfolio(fonKodu) {
     var newHoldings = data.holdings
       .filter(function(h) { return Number(h.agirlik) >= 0; })
       .map(function(h) {
-        var type = h.tip || (h.etf ? 'etf' : h.yabanci ? 'us' : 'bist');
+        var rawTip = String(h.tip || h.tur || h.varlikTipi || '').toLowerCase();
+        var kod = String(h.kod || '').trim().toUpperCase();
+        var ad  = String(h.ad || h.kod || '').trim();
+        var metin = (rawTip + ' ' + kod + ' ' + ad).toUpperCase();
+        var type = 'bist';
+        if (h.yabanci || /YABANCI|ABD|US|NASDAQ|NYSE/.test(metin)) type = 'us';
+        else if (h.etf || /FON|BYF|ETF|KATILMA/.test(metin)) type = 'fund';
+        else if (/REPO|TERS|MEVDUAT|TAKASBANK|BORSA PARA|FİNANSMAN|FINANS|KİRA|KIRA|VDMK|TAHVİL|TAHVIL|BONO|NAKİT|NAKIT|DİĞER|DIGER|TEMİNAT|TEMINAT|DÖVİZ|DOVIZ/.test(metin)) type = 'cash';
         return {
-          code: String(h.kod || '').trim().toUpperCase(),
-          name: h.ad || h.kod,
+          code: kod,
+          name: ad || kod,
           weight: Number(h.agirlik) || 0,
-          type: type
+          type: type,
+          rawType: rawTip
         };
       })
       .filter(function(h){ return h.code && h.weight > 0.001; });
@@ -5089,17 +5142,18 @@ async function fetchAll() {
     setStatus('loading', 'Portföy ağırlıkları güncellendi: ' + pfSonuc.updated + ' fon');
   }
 
+  // ABD hisseleri için kur etkisini ayrı çek
+  setStatus('loading', 'USD/TRY değişimi kontrol ediliyor...');
+  await fetchUsdTryChange();
+
   // Hisseleri ve fonları ayır
   var tickers = {};
   var fonlar  = {};
   Object.values(FUNDS).forEach(function(f) {
     f.holdings.forEach(function(h) {
-      if (h.type === 'bist' || h.type === 'us') tickers[h.code] = h.type;
-      else if (h.type === 'fund') fonlar[h.code] = true;
-      // cash tipinde ama gercek fon kodu olanlari da ekle (TPKGYF1 gibi)
-      else if (h.type === 'cash' && !h.code.includes('-') && !['REPO','MEVDUAT','TAKASBANK','TERS-REPO','FIN-BONO','VADELI-TEM','KIRA-SERT'].includes(h.code)) {
-        fonlar[h.code] = true;
-      }
+      var cls = classifyPortfolioItem(h);
+      if (cls === 'bist' || cls === 'us') tickers[h.code] = cls;
+      else if (cls === 'fund') fonlar[h.code] = true;
     });
   });
 
@@ -5278,14 +5332,16 @@ function gecmisTahminHesapla(fonId, gecmisFiyatlar) {
   var weightedReturn = 0;
   var mmContrib      = 0;
   fund.holdings.forEach(function(h) {
-    if (h.type === 'cash') {
+    var cls = classifyPortfolioItem(h);
+    if (cls === 'cash' || cls === 'other') {
       var dr = getDailyRate(h.code);
       if (dr > 0 && h.weight > 0) mmContrib += (h.weight / 100) * dr;
       return;
     }
     var chg = gecmisFiyatlar[h.code];
     if (chg === undefined || chg === null) return;
-    weightedReturn += (h.weight / 100) * chg;
+    if (Math.abs(Number(chg)) > SUSPECT_CHANGE_LIMIT) return;
+    weightedReturn += (h.weight / 100) * Number(chg);
   });
   return weightedReturn + mmContrib;
 }
@@ -5378,81 +5434,205 @@ function toggleOfset() {
   ofsetModuUygula(OFSET_AKTIF ? 'none' : 'nihai');
 }
 
+
+// ════════════════════════════════════════════════════════
+// TAHMİN MATEMATİK KONTROL KATMANI
+// ════════════════════════════════════════════════════════
+var SUSPECT_CHANGE_LIMIT = 15;      // ±15 üstü günlük değişim tahmine dahil edilmez
+var USDTRY_DAILY_CHANGE = 0;        // ABD hisselerinde TL etkisi için kullanılır
+
+function getParaPiyasasiKodlari() {
+  return ['REPO','TERS-REPO','MEVDUAT','TAKASBANK','BORSA-PP','FIN-BONO','KIRA-SERT','VDMK','OZEL-TAHVIL','VADELI-TEM','DOVIZ-KAMU','DIGER'];
+}
+
+function isRealFundCashCode(h) {
+  if (!h) return false;
+  var kod = String(h.code || '').toUpperCase();
+  return h.type === 'cash' && kod && !kod.includes('-') && getParaPiyasasiKodlari().indexOf(kod) === -1;
+}
+
+function classifyPortfolioItem(h) {
+  if (!h) return 'other';
+  var tip = String(h.type || '').toLowerCase();
+  var kod = String(h.code || '').toUpperCase();
+  var ad  = String(h.name || '').toUpperCase();
+  var metin = (kod + ' ' + ad + ' ' + tip).toUpperCase();
+  if (tip === 'bist' || tip === 'hisse') return 'bist';
+  if (tip === 'us' || tip === 'yabanci') return 'us';
+  if (tip === 'fund' || tip === 'etf' || /FON|BYF|ETF|KATILMA/.test(metin)) return 'fund';
+  if (isRealFundCashCode(h)) return 'fund';
+  if (/REPO|TERS|MEVDUAT|TAKASBANK|BORSA PARA|FİNANSMAN|FINANS|KİRA|KIRA|VDMK|TAHVİL|TAHVIL|BONO|NAKİT|NAKIT|DİĞER|DIGER|TEMİNAT|TEMINAT|DÖVİZ|DOVIZ/.test(metin)) return 'cash';
+  if (tip === 'cash') return 'cash';
+  return 'other';
+}
+
+function toplamAgirlikBilgisi(fund) {
+  var out = {total:0, bist:0, us:0, fund:0, cash:0, other:0, active:0};
+  (fund && fund.holdings || []).forEach(function(h) {
+    var w = Number(h.weight || 0);
+    var cls = classifyPortfolioItem(h);
+    out.total += w;
+    out[cls] = (out[cls] || 0) + w;
+    if (cls === 'bist' || cls === 'us' || cls === 'fund') out.active += w;
+  });
+  Object.keys(out).forEach(function(k){ out[k] = Number(out[k].toFixed(2)); });
+  return out;
+}
+
+function renderMathChip(cls, txt) {
+  return '<span class="math-chip ' + cls + '">' + txt + '</span>';
+}
+
+function updateFundMathCheck(id, info) {
+  var el = document.getElementById('mathcheck-' + id);
+  if (!el || !info) return;
+  var clsTotal = info.total > 100.5 ? 'bad' : info.total > 98 ? 'ok' : 'warn';
+  var html = '';
+  html += renderMathChip(clsTotal, 'Toplam: %' + info.total.toFixed(2));
+  html += renderMathChip('neu', 'Aktif: %' + info.active.toFixed(2));
+  if (info.cash > 0) html += renderMathChip('warn', 'Nakit/Repo: %' + info.cash.toFixed(2));
+  if (info.other > 0) html += renderMathChip('warn', 'Diğer: %' + info.other.toFixed(2));
+  if (info.suspectCount > 0) html += renderMathChip('bad', 'Şüpheli dışlandı: ' + info.suspectCount);
+  if (info.total > 100.5) html += renderMathChip('bad', 'Ağırlık 100 üstü');
+  el.innerHTML = html;
+  var split = document.getElementById('split-' + id);
+  if (split) {
+    split.innerHTML = 'Ham: <span class="' + (info.raw >= 0 ? 'pos' : 'neg') + '">' + (info.raw >= 0 ? '+' : '') + info.raw.toFixed(3) + '%</span>' +
+      ' · Ofset: <span class="' + (info.ofset >= 0 ? 'pos' : 'neg') + '">' + (info.ofset >= 0 ? '+' : '') + info.ofset.toFixed(3) + '%</span>' +
+      ' · Ofsetli: <span class="' + (info.totalReturn >= 0 ? 'pos' : 'neg') + '">' + (info.totalReturn >= 0 ? '+' : '') + info.totalReturn.toFixed(3) + '%</span>' +
+      (USDTRY_DAILY_CHANGE ? ' · USD/TRY: ' + (USDTRY_DAILY_CHANGE >= 0 ? '+' : '') + USDTRY_DAILY_CHANGE.toFixed(3) + '%' : '');
+  }
+}
+
+async function fetchUsdTryChange() {
+  try {
+    var chg = await fetchQuote('USDTRY=X', 'us');
+    if (chg !== null && !isNaN(Number(chg)) && Math.abs(Number(chg)) < 10) {
+      USDTRY_DAILY_CHANGE = Number(chg);
+      return USDTRY_DAILY_CHANGE;
+    }
+  } catch(e) {}
+  USDTRY_DAILY_CHANGE = 0;
+  return 0;
+}
+
 // ════════════════════════════════════════════════════════
 // UPDATE UI
 // ════════════════════════════════════════════════════════
 function updateUI() {
   Object.entries(FUNDS).forEach(([id, fund]) => {
     let weightedReturn = 0;
-    let mmContrib = 0;      // para piyasası günlük katkısı
+    let mmContrib = 0;
     let coveredWeight = 0;
+    let suspectCount = 0;
+    let info = toplamAgirlikBilgisi(fund);
 
     fund.holdings.forEach(h => {
-      // Gerçek fon kodları (TPKGYF1 gibi) cash tipinde olsa bile priceCache kullan
-      const isRealFundCode = h.type === 'cash' && !h.code.includes('-') && !['REPO','MEVDUAT','TAKASBANK','TERS-REPO','FIN-BONO','VADELI-TEM','KIRA-SERT'].includes(h.code);
-      if (isRealFundCode) {
-        const chg = priceCache[h.code] ?? 0;
-        const contrib = (h.weight / 100) * chg;
+      const clsItem = classifyPortfolioItem(h);
+      const rowEl = document.getElementById(`contrib-${id}-${h.code}`)?.closest('tr');
+      if (rowEl) rowEl.classList.remove('suspect-row');
+
+      // Portföy içindeki gerçek fonlar / BYF'ler
+      if (clsItem === 'fund') {
+        const chg = priceCache[h.code];
+        if (chg === undefined || chg === null) {
+          const chgEl = document.getElementById(`chg-${id}-${h.code}`);
+          const contEl = document.getElementById(`contrib-${id}-${h.code}`);
+          if (chgEl) chgEl.innerHTML = '<span class="neu">—</span>';
+          if (contEl) { contEl.className = 'td-contrib neu'; contEl.textContent = '—'; }
+          return;
+        }
+        if (Math.abs(Number(chg)) > SUSPECT_CHANGE_LIMIT) {
+          suspectCount++;
+          if (rowEl) rowEl.classList.add('suspect-row');
+          const chgEl = document.getElementById(`chg-${id}-${h.code}`);
+          const contEl = document.getElementById(`contrib-${id}-${h.code}`);
+          if (chgEl) chgEl.innerHTML = `<span class="neg">${Number(chg).toFixed(2)}%</span><span class="suspect-note">Şüpheli</span>`;
+          if (contEl) { contEl.className = 'td-contrib neu'; contEl.textContent = 'Dışlandı'; }
+          return;
+        }
+        const contrib = (h.weight / 100) * Number(chg);
         weightedReturn += contrib;
         coveredWeight += h.weight;
         const chgEl = document.getElementById(`chg-${id}-${h.code}`);
         if (chgEl) {
           const cls = chg > 0 ? 'pos' : chg < 0 ? 'neg' : 'neu';
-          chgEl.innerHTML = `<span class="${cls}">${chg > 0 ? '+' : ''}${chg.toFixed(2)}%</span>`;
+          chgEl.innerHTML = `<span class="${cls}">${chg > 0 ? '+' : ''}${Number(chg).toFixed(2)}%</span>`;
         }
         const contEl = document.getElementById(`contrib-${id}-${h.code}`);
         if (contEl) {
-          contEl.className = `td-contrib ${chg > 0 ? 'pos' : chg < 0 ? 'neg' : 'neu'}`;
-          contEl.textContent = `${chg >= 0 ? '+' : ''}${contrib.toFixed(4)}%`;
+          const ccls = contrib > 0 ? 'pos' : contrib < 0 ? 'neg' : 'neu';
+          contEl.className = `td-contrib ${ccls}`;
+          contEl.textContent = `${contrib > 0 ? '+' : ''}${contrib.toFixed(4)}%`;
         }
         return;
       }
-      // Para piyasası araçları: günlük faiz katkısı hesapla
-      if (h.type === 'cash') {
+
+      // Para piyasası, repo, vadeli, nakit vb. kalemler
+      if (clsItem === 'cash' || clsItem === 'other') {
         const dailyRate = getDailyRate(h.code);
+        const chgEl = document.getElementById(`chg-${id}-${h.code}`);
+        const contEl = document.getElementById(`contrib-${id}-${h.code}`);
         if (dailyRate > 0 && h.weight > 0) {
           const contrib = (h.weight / 100) * dailyRate;
           mmContrib += contrib;
-          // Tabloda göster
-          const chgEl = document.getElementById(`chg-${id}-${h.code}`);
-          if (chgEl) {
-            chgEl.innerHTML = `<span class="pos">+${dailyRate.toFixed(4)}%</span><span style="font-size:9px;color:var(--muted);margin-left:3px;">/gün</span>`;
-          }
-          const contEl = document.getElementById(`contrib-${id}-${h.code}`);
-          if (contEl) {
-            contEl.className = 'td-contrib pos';
-            contEl.textContent = `+${contrib.toFixed(4)}%`;
-          }
+          if (chgEl) chgEl.innerHTML = `<span class="pos">+${dailyRate.toFixed(4)}%</span><span style="font-size:9px;color:var(--muted);margin-left:3px;">/gün</span>`;
+          if (contEl) { contEl.className = 'td-contrib pos'; contEl.textContent = `+${contrib.toFixed(4)}%`; }
+        } else {
+          if (chgEl) chgEl.innerHTML = '<span class="neu">kontrol</span>';
+          if (contEl) { contEl.className = 'td-contrib neu'; contEl.textContent = '0.0000%'; }
         }
         return;
       }
 
-      const chg = priceCache[h.code] ?? 0;
-      const contrib = (h.weight / 100) * chg;
+      // BIST / ABD hisseleri
+      let chg = priceCache[h.code];
+      if (chg === undefined || chg === null) chg = 0;
+      let appliedChg = Number(chg);
+      let kurNotu = '';
+      if (clsItem === 'us') {
+        appliedChg = Number(chg) + Number(USDTRY_DAILY_CHANGE || 0);
+        kurNotu = USDTRY_DAILY_CHANGE ? ` <span style="font-size:9px;color:var(--muted);">+ kur ${(USDTRY_DAILY_CHANGE>=0?'+':'')}${USDTRY_DAILY_CHANGE.toFixed(2)}%</span>` : '';
+      }
+
+      if (Math.abs(Number(chg)) > SUSPECT_CHANGE_LIMIT || Math.abs(Number(appliedChg)) > SUSPECT_CHANGE_LIMIT) {
+        suspectCount++;
+        if (rowEl) rowEl.classList.add('suspect-row');
+        const chgEl = document.getElementById(`chg-${id}-${h.code}`);
+        const contEl = document.getElementById(`contrib-${id}-${h.code}`);
+        if (chgEl) chgEl.innerHTML = `<span class="neg">${Number(chg).toFixed(2)}%</span><span class="suspect-note">Şüpheli</span>`;
+        if (contEl) { contEl.className = 'td-contrib neu'; contEl.textContent = 'Dışlandı'; }
+        return;
+      }
+
+      const contrib = (h.weight / 100) * appliedChg;
       weightedReturn += contrib;
       coveredWeight += h.weight;
 
-      // Update change cell
       const chgEl = document.getElementById(`chg-${id}-${h.code}`);
       if (chgEl) {
-        const cls = chg > 0 ? 'pos' : chg < 0 ? 'neg' : 'neu';
-        chgEl.innerHTML = `<span class="${cls}">${chg > 0 ? '+' : ''}${chg.toFixed(2)}%</span>`;
+        const cls = appliedChg > 0 ? 'pos' : appliedChg < 0 ? 'neg' : 'neu';
+        chgEl.innerHTML = `<span class="${cls}">${appliedChg > 0 ? '+' : ''}${appliedChg.toFixed(2)}%</span>${kurNotu}`;
       }
 
-      // Update contribution cell
       const contEl = document.getElementById(`contrib-${id}-${h.code}`);
       if (contEl) {
-        const cls = contrib > 0 ? 'pos' : contrib < 0 ? 'neg' : 'neu';
-        contEl.className = `td-contrib ${cls}`;
+        const ccls = contrib > 0 ? 'pos' : contrib < 0 ? 'neg' : 'neu';
+        contEl.className = `td-contrib ${ccls}`;
         contEl.textContent = `${contrib > 0 ? '+' : ''}${contrib.toFixed(4)}%`;
       }
     });
 
-    // Ofset uygula (sadece OFSET_AKTIF=true ise)
     const ofset = OFSET_AKTIF ? (FON_OFSET[id] || 0) : 0;
-    const totalReturn = weightedReturn + mmContrib + ofset;
+    const rawReturn = weightedReturn + mmContrib;
+    const totalReturn = rawReturn + ofset;
+    info.raw = rawReturn;
+    info.ofset = ofset;
+    info.totalReturn = totalReturn;
+    info.coveredWeight = Number(coveredWeight.toFixed(2));
+    info.suspectCount = suspectCount;
+    updateFundMathCheck(id, info);
 
-    // Display return
     const retEl = document.getElementById(`ret-${id}`);
     const barEl = document.getElementById(`bar-${id}`);
     const sumEl = document.getElementById(`sum-${id.toLowerCase()}`);
@@ -5464,12 +5644,10 @@ function updateUI() {
     }
 
     if (sumEl) {
-      const cls = totalReturn > 0 ? 'pos' : totalReturn < 0 ? 'neg' : 'neu';
       sumEl.style.setProperty('--val-color', totalReturn > 0 ? 'var(--green)' : totalReturn < 0 ? 'var(--red)' : '#fff');
       sumEl.textContent = `${totalReturn > 0 ? '+' : ''}${totalReturn.toFixed(3)}%`;
     }
 
-    // Bar (max ±3% mapped to 0-100%)
     if (barEl) {
       const maxPct = 3;
       const barWidth = Math.min(Math.abs(totalReturn) / maxPct * 50, 50);
@@ -5478,185 +5656,7 @@ function updateUI() {
     }
   });
 
-  // Gerçek değer panelini de güncelle
   if (typeof renderGercekPanel === 'function') renderGercekPanel();
-}
-
-// ════════════════════════════════════════════════════════
-// HELPERS
-// ════════════════════════════════════════════════════════
-function setStatus(state, text) {
-  document.getElementById('statusDot').className = `status-dot ${state}`;
-  document.getElementById('statusText').textContent = text;
-}
-
-// ─── Manuel veri girişi ────────────────────────────────
-var manualOverrides = {}; // { code: value } — kullanıcının elle girdiği değerler
-
-function openManualModal() {
-  // Mevcut modal varsa kaldır
-  var existing = document.getElementById('manualModal');
-  if (existing) existing.remove();
-
-  // Tüm unique hisseleri topla
-  var tickers = {};
-  Object.entries(FUNDS).forEach(function(entry) {
-    var id = entry[0], fund = entry[1];
-    fund.holdings.forEach(function(h) {
-      // cash tipinde olanları da dahil et (GLDTRF, GMSTRF gibi BYF fonlar)
-      // ama TERS-REPO, MEVDUAT gibi sahte kodları hariç tut
-      const isRealCode = !h.code.includes('-') && !['REPO','MEVDUAT','TAKASBANK'].includes(h.code);
-      if (h.type === 'bist' || h.type === 'us' || h.type === 'fund' || (h.type === 'cash' && isRealCode)) {
-        if (!tickers[h.code]) tickers[h.code] = { type: h.type, name: h.name || h.code };
-      }
-    });
-  });
-
-  var rows = '';
-  Object.entries(tickers).sort(function(a,b){return a[0].localeCompare(b[0]);}).forEach(function(entry) {
-    var code = entry[0], info = entry[1];
-    var cached = priceCache[code];
-    var manual = manualOverrides[code];
-    var val = manual !== undefined ? manual : '';
-    var isManual = manual !== undefined;
-    rows += '<div class="modal-row">' +
-      '<div class="modal-label">' + code +
-      '<small style="display:block;font-size:0.68rem;color:var(--muted);margin-top:2px;">' +
-      (info.type === 'bist' ? 'BİST' : info.type === 'us' ? 'ABD' : 'FON') +
-      (cached !== undefined ? ' · Otomatik: ' + (cached > 0 ? '+' : '') + cached.toFixed(2) + '%' : ' · Veri yok') +
-      '</small></div>' +
-      '<input class="modal-input" id="mi-' + code + '" type="number" step="0.01" placeholder="' +
-      (cached !== undefined ? (cached > 0 ? '+' : '') + cached.toFixed(2) : '% değişim') + '"' +
-      ' value="' + (val !== '' ? val : '') + '"' +
-      (isManual ? ' style="border-color:rgba(167,139,250,0.7);color:#c4b5fd;"' : '') + '>' +
-      '</div>';
-  });
-
-  // Modal HTML
-  var modal = document.createElement('div');
-  modal.id = 'manualModal';
-  modal.style.cssText = 'position:fixed;inset:0;background:rgba(4,8,20,0.92);backdrop-filter:blur(8px);z-index:9000;display:flex;align-items:center;justify-content:center;';
-  modal.innerHTML =
-    '<div style="background:#0d1c2b;border:1px solid rgba(255,255,255,0.1);border-radius:14px;padding:28px 24px;width:min(520px,94vw);max-height:80vh;display:flex;flex-direction:column;gap:0;">' +
-    '<div style="font-family:Syne,sans-serif;font-size:1.2rem;font-weight:800;color:#a78bfa;margin-bottom:4px;">&#9998; Manuel Veri Giri&#351;i</div>' +
-    '<div style="font-size:0.72rem;color:var(--muted);margin-bottom:16px;">Boş bırakılan alanlar için otomatik veri kullanılır. Silmek için alanı temizleyin.</div>' +
-    '<div style="overflow-y:auto;flex:1;display:flex;flex-direction:column;gap:8px;padding-right:4px;">' + rows + '</div>' +
-    '<div style="display:flex;gap:10px;margin-top:20px;">' +
-    '<button onclick="saveManualValues()" style="flex:1;background:rgba(167,139,250,0.15);border:1px solid rgba(167,139,250,0.4);color:#a78bfa;font-family:DM Mono,monospace;font-size:0.82rem;padding:11px;border-radius:8px;cursor:pointer;font-weight:700;">✓ Kaydet</button>' +
-    '<button onclick="closeManualModal()" style="flex:1;background:rgba(255,71,87,0.1);border:1px solid rgba(255,71,87,0.3);color:#ff4757;font-family:DM Mono,monospace;font-size:0.82rem;padding:11px;border-radius:8px;cursor:pointer;">✕ İptal</button>' +
-    '</div></div>';
-
-  document.body.appendChild(modal);
-}
-
-function closeManualModal() {
-  var modal = document.getElementById('manualModal');
-  if (modal) modal.remove();
-}
-
-function saveManualValues() {
-  var tickers = {};
-  Object.entries(FUNDS).forEach(function(entry) {
-    entry[1].holdings.forEach(function(h) {
-      const isRealCode = !h.code.includes('-') && !['REPO','MEVDUAT','TAKASBANK'].includes(h.code);
-      if (h.type === 'bist' || h.type === 'us' || h.type === 'fund' || (h.type === 'cash' && isRealCode)) {
-        tickers[h.code] = true;
-      }
-    });
-  });
-
-  Object.keys(tickers).forEach(function(code) {
-    var el = document.getElementById('mi-' + code);
-    if (!el) return;
-    var raw = el.value.trim();
-    if (raw === '') {
-      // Boş bırakıldıysa override'ı temizle (otomatik değer kullanılır)
-      delete manualOverrides[code];
-    } else {
-      var num = parseFloat(raw);
-      if (!isNaN(num)) {
-        manualOverrides[code] = num;
-        // priceCache'i de güncelle — hesaplamaya anında yansısın
-        priceCache[code] = num;
-      }
-    }
-  });
-
-  closeManualModal();
-  updateUI();
-
-  // Kaç override var say
-  var count = Object.keys(manualOverrides).length;
-  setStatus('live', 'Manuel giriş kaydedildi — ' + count + ' hisse el ile girildi · Son güncelleme: ' + (lastFetchTime ? lastFetchTime.toLocaleTimeString('tr-TR') : '—'));
-}
-// ───────────────────────────────────────────────────────
-
-// ─── Otomatik güncelleme ───────────────────────────────
-var autoRefreshTimer   = null;
-var autoRefreshInterval = 60; // saniye (başlangıç: 1 dk)
-var autoRefreshOptions  = [30, 60, 120, 300]; // saniye seçenekleri
-var autoRefreshIdx      = 1; // varsayılan: 60s
-
-function toggleAutoRefresh() {
-  if (autoRefreshTimer) {
-    // Aktifse durdur
-    clearInterval(autoRefreshTimer);
-    autoRefreshTimer = null;
-    document.getElementById('autoRefreshBtn').classList.remove('active');
-    document.getElementById('autoIcon').textContent = '⏱';
-    document.getElementById('autoLabel').textContent = 'OTOMATİK GÜNCELLE';
-  } else {
-    // Süre seç ve başlat
-    autoRefreshIdx = (autoRefreshIdx + 1) % autoRefreshOptions.length;
-    autoRefreshInterval = autoRefreshOptions[autoRefreshIdx];
-    startAutoRefresh();
-  }
-}
-
-function startAutoRefresh() {
-  if (autoRefreshTimer) clearInterval(autoRefreshTimer);
-  var sn = autoRefreshInterval;
-  var label = sn < 60 ? sn + 's' : (sn / 60) + ' dk';
-  document.getElementById('autoRefreshBtn').classList.add('active');
-  document.getElementById('autoIcon').textContent = '⏱';
-  document.getElementById('autoLabel').textContent = 'OTO: ' + label + ' — DURDUR';
-
-  // Hemen bir kez çek, sonra interval başlat
-  fetchAll();
-  autoRefreshTimer = setInterval(function() {
-    fetchAll();
-  }, sn * 1000);
-}
-// ───────────────────────────────────────────────────────
-
-function setRefreshLoading(on) {
-  const btn = document.getElementById('refreshBtn');
-  const icon = document.getElementById('refreshIcon');
-  btn.className = on ? 'refresh-btn loading' : 'refresh-btn';
-  icon.innerHTML = on ? '<span class="spin">⟳</span>' : '⟳';
-}
-
-function updateDate() {
-  const now = new Date();
-  document.getElementById('dateBadge').textContent =
-    now.toLocaleDateString('tr-TR', { weekday: 'short', day: '2-digit', month: 'long', year: 'numeric' })
-    + ' ' + now.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
-}
-
-// ════════════════════════════════════════════════════════
-// DEPOLAMA — localStorage yoksa bellekte tut
-// ════════════════════════════════════════════════════════
-var _store = {};
-function storeGet(key) {
-  try { var v = localStorage.getItem(key); return v ? JSON.parse(v) : null; } catch(e) { return _store[key] || null; }
-}
-function storeSet(key, val) {
-  try { localStorage.setItem(key, JSON.stringify(val)); } catch(e) {}
-  _store[key] = val;
-}
-function storeRemove(key) {
-  try { localStorage.removeItem(key); } catch(e) {}
-  delete _store[key];
 }
 
 // ════════════════════════════════════════════════════════
