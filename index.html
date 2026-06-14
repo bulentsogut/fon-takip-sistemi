@@ -7,6 +7,130 @@
 <!-- Vercel/GitHub index sürümü: güncel referans HTML ile eşitlendi. -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<!-- Firebase ortak ofset/snapshot depolama -->
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
+<script>
+// Vercel ve yerel HTML aynı ofset/snapshot geçmişini kullansın diye ortak Firebase katmanı.
+var SHARED_FIREBASE_CONFIG = {
+  apiKey: "AIzaSyBfbSQ11fc68FhAIPfD4LPy689OL5epuKE",
+  authDomain: "fon-takip-7af2c.firebaseapp.com",
+  databaseURL: "https://fon-takip-7af2c-default-rtdb.firebaseio.com",
+  projectId: "fon-takip-7af2c",
+  storageBucket: "fon-takip-7af2c.firebasestorage.app",
+  messagingSenderId: "543685938116",
+  appId: "1:543685938116:web:cfb12b595d7a07e3587291"
+};
+var SHARED_STORAGE_KEYS = [
+  'fon_tahmin_snapshot',
+  'fon_tahmin_snapshot_auto',
+  'fon_gercek_gecmis',
+  'fon_hesaplanan_ofset',
+  'fon_adaptif_ofset_modu'
+];
+var _sharedDb = null;
+var _sharedStorageReady = false;
+var _sharedApplyingRemote = false;
+var _sharedRemoteCache = {};
+var _sharedPath = 'fonmerkezi/shared_storage';
+
+function sharedInitFirebase() {
+  try {
+    if (typeof firebase === 'undefined') return null;
+    if (!firebase.apps || !firebase.apps.length) firebase.initializeApp(SHARED_FIREBASE_CONFIG);
+    _sharedDb = firebase.database();
+    return _sharedDb;
+  } catch(e) {
+    console.warn('Ortak Firebase baslatilamadi:', e);
+    return null;
+  }
+}
+function sharedParseLocal(key) {
+  try {
+    var raw = localStorage.getItem(key);
+    if (raw === null || raw === undefined || raw === '') return null;
+    if (key === 'fon_adaptif_ofset_modu') return raw;
+    return JSON.parse(raw);
+  } catch(e) { return null; }
+}
+function sharedWriteLocal(key, value) {
+  try {
+    if (value === undefined) return;
+    if (key === 'fon_adaptif_ofset_modu') localStorage.setItem(key, String(value || 'none'));
+    else localStorage.setItem(key, JSON.stringify(value || {}));
+  } catch(e) {}
+}
+function sharedMergeObjects(localVal, remoteVal) {
+  var out = {};
+  if (remoteVal && typeof remoteVal === 'object') Object.keys(remoteVal).forEach(function(k){ out[k] = remoteVal[k]; });
+  if (localVal && typeof localVal === 'object') Object.keys(localVal).forEach(function(k){
+    if (out[k] && typeof out[k] === 'object' && localVal[k] && typeof localVal[k] === 'object' && !Array.isArray(out[k]) && !Array.isArray(localVal[k])) {
+      out[k] = Object.assign({}, out[k], localVal[k]);
+    } else {
+      out[k] = localVal[k];
+    }
+  });
+  return out;
+}
+function sharedGet(key, fallback) {
+  var v = sharedParseLocal(key);
+  return v === null || v === undefined ? fallback : v;
+}
+function sharedSet(key, value) {
+  sharedWriteLocal(key, value);
+  if (_sharedDb && !_sharedApplyingRemote) {
+    try { _sharedDb.ref(_sharedPath + '/' + key).set(value); } catch(e) { console.warn('Ortak depolama yazma hatasi:', key, e); }
+  }
+}
+function sharedSetRaw(key, value) { sharedSet(key, value); }
+function sharedApplyRemote(data) {
+  data = data || {};
+  _sharedApplyingRemote = true;
+  try {
+    SHARED_STORAGE_KEYS.forEach(function(key){
+      var remoteVal = data[key];
+      var localVal = sharedParseLocal(key);
+      if (remoteVal === undefined || remoteVal === null) {
+        if (localVal !== null && localVal !== undefined && _sharedDb) {
+          try { _sharedDb.ref(_sharedPath + '/' + key).set(localVal); } catch(e) {}
+        }
+        return;
+      }
+      var finalVal;
+      if (key === 'fon_adaptif_ofset_modu') finalVal = remoteVal || localVal || 'none';
+      else finalVal = sharedMergeObjects(localVal, remoteVal);
+      sharedWriteLocal(key, finalVal);
+      if (JSON.stringify(finalVal) !== JSON.stringify(remoteVal) && _sharedDb) {
+        try { _sharedDb.ref(_sharedPath + '/' + key).set(finalVal); } catch(e) {}
+      }
+    });
+    if (typeof hesaplananOfset !== 'undefined') hesaplananOfset = sharedGet('fon_hesaplanan_ofset', hesaplananOfset || {}) || {};
+    if (typeof gercekGecmis !== 'undefined') gercekGecmis = sharedGet('fon_gercek_gecmis', gercekGecmis || {}) || {};
+    if (typeof ADAPTIF_OFSET_MODU !== 'undefined') ADAPTIF_OFSET_MODU = sharedGet('fon_adaptif_ofset_modu', ADAPTIF_OFSET_MODU || 'none') || 'none';
+  } finally { _sharedApplyingRemote = false; }
+}
+function sharedRefreshUI() {
+  try { if (typeof updateUI === 'function') updateUI(); } catch(e) {}
+  try { if (typeof renderGercekPanel === 'function') renderGercekPanel(); } catch(e) {}
+  try { if (typeof renderOfsetOzet === 'function') renderOfsetOzet(); } catch(e) {}
+  try { if (typeof renderAdaptifOzet === 'function') renderAdaptifOzet(); } catch(e) {}
+  try { if (typeof renderKiyasTablosu === 'function') renderKiyasTablosu(); } catch(e) {}
+  try { if (typeof renderNavOfsetStatus === 'function') renderNavOfsetStatus(true); } catch(e) {}
+}
+function sharedStartSync() {
+  var db = sharedInitFirebase();
+  if (!db) return;
+  try {
+    db.ref(_sharedPath).on('value', function(snap){
+      _sharedRemoteCache = snap.val() || {};
+      sharedApplyRemote(_sharedRemoteCache);
+      _sharedStorageReady = true;
+      sharedRefreshUI();
+    }, function(err){ console.warn('Ortak depolama okuma hatasi:', err); });
+  } catch(e) { console.warn('Ortak depolama dinleyici hatasi:', e); }
+}
+window.addEventListener('load', sharedStartSync);
+</script>
 <style>
 /* ════════════════════════════════
    SEKME NAVIGASYON SİSTEMİ
@@ -6203,7 +6327,7 @@ async function otomatikOfsetHesapla() {
       FON_OFSET[fon] = yeniOfsetler[fon] || 0;
       if (typeof hesaplananOfset !== 'undefined') hesaplananOfset[fon] = yeniOfsetler[fon] || 0;
     });
-    try { localStorage.setItem('fon_hesaplanan_ofset', JSON.stringify(yeniOfsetler)); } catch(e) {}
+    try { sharedSet('fon_hesaplanan_ofset', yeniOfsetler); } catch(e) {}
 
     // Snapshot tablosuna da yaz (kıyas tablosu güncellensin)
     var snapshots = {};
@@ -6219,7 +6343,7 @@ async function otomatikOfsetHesapla() {
         snapshots[p[0]+'.'+p[1]+'.2026'] = snap;
       }
     });
-    try { localStorage.setItem('fon_tahmin_snapshot', JSON.stringify(snapshots)); } catch(e) {}
+    try { sharedSet('fon_tahmin_snapshot', snapshots); } catch(e) {}
 
     // UI güncelle
     updateUI();
@@ -6526,10 +6650,18 @@ function updateDate() {
 // ════════════════════════════════════════════════════════
 var _store = {};
 function storeGet(key) {
-  try { var v = localStorage.getItem(key); return v ? JSON.parse(v) : null; } catch(e) { return _store[key] || null; }
+  try {
+    var sharedKeys = ['fon_gercek_gecmis','fon_hesaplanan_ofset','fon_tahmin_snapshot','fon_tahmin_snapshot_auto'];
+    if (sharedKeys.indexOf(key) >= 0) return sharedGet(key, null);
+    var v = localStorage.getItem(key); return v ? JSON.parse(v) : null;
+  } catch(e) { return _store[key] || null; }
 }
 function storeSet(key, val) {
-  try { localStorage.setItem(key, JSON.stringify(val)); } catch(e) {}
+  try {
+    var sharedKeys = ['fon_gercek_gecmis','fon_hesaplanan_ofset','fon_tahmin_snapshot','fon_tahmin_snapshot_auto'];
+    if (sharedKeys.indexOf(key) >= 0) sharedSet(key, val);
+    else localStorage.setItem(key, JSON.stringify(val));
+  } catch(e) {}
   _store[key] = val;
 }
 function storeRemove(key) {
@@ -6941,10 +7073,10 @@ function getSonNIsGunu(rates, n) {
 // ═══════════════════════════════════════════════════
 
 function getTahminSnapshots() {
-  try { return JSON.parse(localStorage.getItem('fon_tahmin_snapshot')) || {}; } catch(e) { return {}; }
+  try { return sharedGet('fon_tahmin_snapshot', {}) || {}; } catch(e) { return {}; }
 }
 function saveTahminSnapshots(data) {
-  try { localStorage.setItem('fon_tahmin_snapshot', JSON.stringify(data)); } catch(e) {}
+  try { sharedSet('fon_tahmin_snapshot', data || {}); } catch(e) {}
 }
 
 // Bugünün tahminini kaydet (saat 23:00 otomatiği veya manuel)
@@ -7232,7 +7364,7 @@ function hesaplaVeUygulaOfset() {
     }
   });
 
-  try { localStorage.setItem('fon_hesaplanan_ofset', JSON.stringify(yeniOfsetler)); } catch(e) {}
+  try { sharedSet('fon_hesaplanan_ofset', yeniOfsetler); } catch(e) {}
 
   if (typeof updateUI           === 'function') updateUI();
   if (typeof renderGercekPanel  === 'function') renderGercekPanel();
@@ -7310,8 +7442,8 @@ function setNavSync(state, text) {
 
 
 // ── ADAPTİF OFSET SİSTEMİ — YAPI KORUMALI DÜZELTME ───────────────────────
-var ADAPTIF_OFSET_MODU = localStorage.getItem('fon_adaptif_ofset_modu') || 'none';
-if (ADAPTIF_OFSET_MODU === 'nihai') { ADAPTIF_OFSET_MODU = 'none'; try { localStorage.setItem('fon_adaptif_ofset_modu', 'none'); } catch(e) {} }
+var ADAPTIF_OFSET_MODU = sharedGet('fon_adaptif_ofset_modu', 'none') || 'none';
+if (ADAPTIF_OFSET_MODU === 'nihai') { ADAPTIF_OFSET_MODU = 'none'; try { sharedSetRaw('fon_adaptif_ofset_modu', 'none'); } catch(e) {} }
 var ADAPTIF_HESAP_GORUNUMU = null;
 
 function adaptifFonListesi() { return (typeof getSelectedFundEntries === 'function') ? getSelectedFundEntries().map(function(e){return e[0];}) : ['DFI', 'TLY', 'PHE', 'CPT', 'IJC', 'PBR']; }
@@ -7431,13 +7563,13 @@ function adaptifOfsetUygula(mod) {
   }
   ADAPTIF_OFSET_MODU = mod;
   if (mod !== 'none') ADAPTIF_HESAP_GORUNUMU = mod;
-  localStorage.setItem('fon_adaptif_ofset_modu', mod);
+  sharedSetRaw('fon_adaptif_ofset_modu', mod);
   var secili = adaptifSeciliOfsetler(mod);
   Object.keys(secili).forEach(function(fon) {
     if (typeof FON_OFSET !== 'undefined' && FON_OFSET.hasOwnProperty(fon)) FON_OFSET[fon] = secili[fon] || 0;
     if (typeof hesaplananOfset !== 'undefined') hesaplananOfset[fon] = secili[fon] || 0;
   });
-  try { localStorage.setItem('fon_hesaplanan_ofset', JSON.stringify(secili)); } catch(e) {}
+  try { sharedSet('fon_hesaplanan_ofset', secili); } catch(e) {}
   if (typeof OFSET_AKTIF !== 'undefined') OFSET_AKTIF = mod !== 'none';
   if (typeof updateUI === 'function') updateUI();
   if (typeof renderGercekPanel === 'function') renderGercekPanel();
@@ -7596,11 +7728,11 @@ function migrateFromBackup(input) {
 function adaptifTumTahminSnapshotlari() {
   var out = {};
   try {
-    var manuel = JSON.parse(localStorage.getItem('fon_tahmin_snapshot')) || {};
+    var manuel = sharedGet('fon_tahmin_snapshot', {}) || {};
     Object.keys(manuel).forEach(function(k){ out[k] = Object.assign({}, manuel[k]); });
   } catch(e) {}
   try {
-    var auto = JSON.parse(localStorage.getItem('fon_tahmin_snapshot_auto')) || {};
+    var auto = sharedGet('fon_tahmin_snapshot_auto', {}) || {};
     Object.keys(auto).forEach(function(k){
       if (!out[k]) out[k] = {};
       Object.assign(out[k], auto[k]);
@@ -7733,7 +7865,7 @@ async function adaptifGecmisTahminleriOlustur() {
     if (Object.keys(snap).length) autoSnapshots[adaptifTamTarih(tarih)] = snap;
   });
 
-  try { localStorage.setItem('fon_tahmin_snapshot_auto', JSON.stringify(autoSnapshots)); } catch(e) {}
+  try { sharedSet('fon_tahmin_snapshot_auto', autoSnapshots); } catch(e) {}
   return Object.keys(autoSnapshots).length > 0;
 }
 
@@ -7782,14 +7914,14 @@ adaptifOfsetUygula = async function(mod) {
   }
   ADAPTIF_OFSET_MODU = mod;
   if (mod !== 'none') ADAPTIF_HESAP_GORUNUMU = mod;
-  localStorage.setItem('fon_adaptif_ofset_modu', mod);
+  sharedSetRaw('fon_adaptif_ofset_modu', mod);
   var secili = {};
   h.fonlar.forEach(function(fon) { secili[fon] = mod === 'none' ? 0 : ((h.guncel[fon] && h.guncel[fon][mod]) || 0); });
   Object.keys(secili).forEach(function(fon) {
     if (typeof FON_OFSET !== 'undefined' && FON_OFSET.hasOwnProperty(fon)) FON_OFSET[fon] = secili[fon] || 0;
     if (typeof hesaplananOfset !== 'undefined') hesaplananOfset[fon] = secili[fon] || 0;
   });
-  try { localStorage.setItem('fon_hesaplanan_ofset', JSON.stringify(secili)); } catch(e) {}
+  try { sharedSet('fon_hesaplanan_ofset', secili); } catch(e) {}
   if (typeof OFSET_AKTIF !== 'undefined') OFSET_AKTIF = mod !== 'none';
   if (typeof updateUI === 'function') updateUI();
   if (typeof renderGercekPanel === 'function') renderGercekPanel();
