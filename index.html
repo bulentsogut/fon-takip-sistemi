@@ -2049,6 +2049,63 @@ tbody tr:hover{background:rgba(0,180,255,0.035);}
   margin-top:8px;
 }
 
+/* ── API Tanılama Paneli ── */
+.api-diagnostics-panel{
+  display:none;
+  position:relative;
+  z-index:900;
+  margin:12px auto 0;
+  max-width:1300px;
+  padding:0 20px;
+}
+.api-diagnostics-panel.open{display:block;}
+.api-diagnostics-card{
+  background:rgba(13,21,40,0.96);
+  border:1px solid rgba(125,214,255,0.22);
+  border-radius:14px;
+  padding:14px 16px;
+  box-shadow:0 10px 34px rgba(0,0,0,0.28);
+}
+.api-diagnostics-head{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  flex-wrap:wrap;
+  margin-bottom:12px;
+}
+.api-diagnostics-title{
+  font-family:DM Mono,monospace;
+  font-size:11px;
+  font-weight:800;
+  letter-spacing:1.8px;
+  text-transform:uppercase;
+  color:#7dd6ff;
+}
+.api-diagnostics-actions{display:flex;gap:8px;flex-wrap:wrap;}
+.api-diagnostics-btn{
+  border:1px solid rgba(125,214,255,0.35);
+  background:rgba(79,163,255,0.10);
+  color:#7dd6ff;
+  border-radius:7px;
+  padding:7px 12px;
+  font-family:DM Mono,monospace;
+  font-size:10px;
+  font-weight:700;
+  cursor:pointer;
+}
+.api-diagnostics-btn.close{border-color:rgba(255,92,122,0.35);background:rgba(255,92,122,0.08);color:#ff5c7a;}
+.api-diagnostics-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;}
+.api-diagnostic-item{background:rgba(255,255,255,0.035);border:1px solid rgba(255,255,255,0.07);border-radius:10px;padding:10px 12px;min-height:72px;}
+.api-diagnostic-label{font-family:DM Mono,monospace;font-size:9px;color:#5a7499;letter-spacing:1.2px;text-transform:uppercase;margin-bottom:6px;}
+.api-diagnostic-value{font-family:DM Mono,monospace;font-size:11px;line-height:1.55;color:#d8e8ff;word-break:break-word;}
+.api-diagnostic-value.ok{color:#3ef5a0;}
+.api-diagnostic-value.err{color:#ff5c7a;}
+.api-diagnostic-value.wait{color:#ffcc44;}
+.api-diagnostic-note{font-family:DM Mono,monospace;font-size:10px;color:#5a7499;line-height:1.6;margin-top:10px;}
+@media(max-width:900px){.api-diagnostics-grid{grid-template-columns:1fr 1fr;}.api-diagnostics-panel{padding:0 12px;}}
+@media(max-width:560px){.api-diagnostics-grid{grid-template-columns:1fr;}.api-diagnostics-title{font-size:10px;}}
+
 </style>
 </head>
 <body>
@@ -2075,12 +2132,33 @@ tbody tr:hover{background:rgba(0,180,255,0.035);}
     <button class="nav-action-btn takip visible" id="refresh-btn" onclick="fetchAllFunds();">⟳ TEFAS</button>
     <button class="nav-action-btn tahmin fvt" id="refreshBtnFVT" onclick="fvtPortfoyGuncelle()">↺ AĞIRLIKLARI GÜNCELLE</button>
     <button class="nav-action-btn tahmin" id="refreshBtn" onclick="fetchAll()"><span id="refreshIcon">⟳</span> VERİLERİ GÜNCELLE</button>
+    <button class="nav-action-btn visible" id="diagnosticBtn" onclick="toggleDiagnosticPanel()">🩺 TANILAMA</button>
   </div>
   <div class="nav-ofset-status">
     <div class="ofset-sync-dot" id="navSyncDot"></div>
     <span id="navSyncText">Ofset senkronu bekleniyor</span>
   </div>
 </nav>
+
+<!-- API TANILAMA PANELİ -->
+<div class="api-diagnostics-panel" id="apiDiagnosticsPanel">
+  <div class="api-diagnostics-card">
+    <div class="api-diagnostics-head">
+      <div class="api-diagnostics-title">🩺 API / Bağlantı Tanılama</div>
+      <div class="api-diagnostics-actions">
+        <button class="api-diagnostics-btn" onclick="runApiDiagnostics()">Test Et</button>
+        <button class="api-diagnostics-btn close" onclick="toggleDiagnosticPanel(false)">Kapat</button>
+      </div>
+    </div>
+    <div class="api-diagnostics-grid">
+      <div class="api-diagnostic-item"><div class="api-diagnostic-label">TEFAS API</div><div class="api-diagnostic-value wait" id="diagTefas">Bekleniyor</div></div>
+      <div class="api-diagnostic-item"><div class="api-diagnostic-label">Yahoo API</div><div class="api-diagnostic-value wait" id="diagYahoo">Bekleniyor</div></div>
+      <div class="api-diagnostic-item"><div class="api-diagnostic-label">FVT API</div><div class="api-diagnostic-value wait" id="diagFvt">Bekleniyor</div></div>
+      <div class="api-diagnostic-item"><div class="api-diagnostic-label">Cihaz / Ağ</div><div class="api-diagnostic-value" id="diagDevice">Hazır</div></div>
+    </div>
+    <div class="api-diagnostic-note" id="diagNote">Bir veri çekme sorunu yaşarsan Tanılama → Test Et ile hangi kaynağın cevap vermediğini görebilirsin.</div>
+  </div>
+</div>
 
 <!-- TAKİP PANELİ -->
 <div class="tab-panel active" id="panel-takip">
@@ -8606,6 +8684,88 @@ function yeniHisseEkle() {
 
 <!-- Veri Taşıma Wizard -->
 
+
+
+<script>
+// API / bağlantı tanılama paneli
+(function(){
+  window.toggleDiagnosticPanel = function(force){
+    var panel = document.getElementById('apiDiagnosticsPanel');
+    if (!panel) return;
+    var open = (typeof force === 'boolean') ? force : !panel.classList.contains('open');
+    panel.classList.toggle('open', open);
+    if (open && !panel.dataset.ranOnce) {
+      panel.dataset.ranOnce = '1';
+      runApiDiagnostics();
+    }
+  };
+
+  function diagSet(id, cls, text){
+    var el = document.getElementById(id);
+    if (!el) return;
+    el.className = 'api-diagnostic-value ' + (cls || '');
+    el.textContent = text;
+  }
+
+  function diagShortError(err){
+    var msg = err && err.message ? err.message : String(err || 'Bilinmeyen hata');
+    return msg.length > 90 ? msg.slice(0, 90) + '…' : msg;
+  }
+
+  async function diagFetch(url, options, timeoutMs){
+    var controller = new AbortController();
+    var timer = setTimeout(function(){ controller.abort(); }, timeoutMs || 12000);
+    try {
+      var resp = await fetch(url, Object.assign({}, options || {}, { signal: controller.signal }));
+      clearTimeout(timer);
+      var text = await resp.text();
+      var data = null;
+      try { data = text ? JSON.parse(text) : null; } catch(e) {}
+      if (!resp.ok) throw new Error('HTTP ' + resp.status + (data && data.error ? ' · ' + data.error : ''));
+      return data || text || true;
+    } catch (e) {
+      clearTimeout(timer);
+      throw e;
+    }
+  }
+
+  window.runApiDiagnostics = async function(){
+    var started = new Date();
+    diagSet('diagTefas', 'wait', 'Test ediliyor…');
+    diagSet('diagYahoo', 'wait', 'Test ediliyor…');
+    diagSet('diagFvt', 'wait', 'Test ediliyor…');
+    diagSet('diagDevice', '', 'Online: ' + (navigator.onLine ? 'Evet' : 'Hayır') + ' · ' + (screen.width || '?') + '×' + (screen.height || '?'));
+    var note = document.getElementById('diagNote');
+    if (note) note.textContent = 'Test başladı: ' + started.toLocaleTimeString('tr-TR');
+
+    var tefasBody = { endpoint:'fonBilgiGetir', body:{ dil:'TR', fonKodu:'DFI', fonTip:'YAT' } };
+    var tests = [
+      ['diagTefas','TEFAS', function(){ return diagFetch('/api/tefas', {method:'POST', headers:{'Content-Type':'application/json','Accept':'application/json'}, body:JSON.stringify(tefasBody)}, 18000); }],
+      ['diagYahoo','Yahoo', function(){ return diagFetch('/api/yahoo?ticker=' + encodeURIComponent('ASELS.IS') + '&range=5d', {method:'GET', headers:{'Accept':'application/json'}}, 14000); }],
+      ['diagFvt','FVT', function(){ return diagFetch('/api/fvt?fon=DFI', {method:'GET', headers:{'Accept':'application/json'}}, 18000); }]
+    ];
+
+    var results = await Promise.all(tests.map(async function(t){
+      var t0 = performance.now();
+      try {
+        await t[2]();
+        var ms = Math.round(performance.now() - t0);
+        diagSet(t[0], 'ok', 'OK · ' + ms + ' ms');
+        return {name:t[1], ok:true};
+      } catch(e) {
+        diagSet(t[0], 'err', 'HATA · ' + diagShortError(e));
+        return {name:t[1], ok:false, error:e};
+      }
+    }));
+
+    var okCount = results.filter(function(r){ return r.ok; }).length;
+    if (note) {
+      note.textContent = 'Son test: ' + new Date().toLocaleTimeString('tr-TR') + ' · ' + okCount + '/3 kaynak çalışıyor. ' +
+        (okCount === 3 ? 'Veri çekme altyapısı sağlıklı görünüyor.' : 'Hata varsa önce bu panelde kırmızı görünen kaynağı kontrol et.');
+    }
+  };
+})();
+</script>
 
 </body>
 </html>
