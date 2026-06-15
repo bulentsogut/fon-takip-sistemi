@@ -2871,8 +2871,8 @@ var hisseFiyatCache = {}; // { ASELS: {fiyat, degisim}, ISKPL: {fiyat, degisim} 
 
 async function fetchHisseFiyat(kod) {
   var ticker = HISSELER[kod].ticker;
-  var q1 = 'https://query1.finance.yahoo.com/v8/finance/chart/' + ticker + '?interval=1d&range=5d';
-  var q2 = 'https://query2.finance.yahoo.com/v8/finance/chart/' + ticker + '?interval=1d&range=5d';
+  var q1 = '/api/yahoo?ticker=' + encodeURIComponent(ticker) + '&range=5d;
+  var q2 = '/api/yahoo?ticker=' + encodeURIComponent(ticker) + '&range=5d;
   var urls = [q1, q2];
   for (var i = 0; i < urls.length; i++) {
     try {
@@ -3279,14 +3279,14 @@ function _tk_fwt(url, options, ms) {
 // CORS proxy: önce direkt dene, başarısız olursa allorigins üzerinden git
 async function tefasPostDirect(endpoint, body) {
   var resp = await _tk_fwt(
-    'https://www.tefas.gov.tr/api/funds/' + endpoint,
+    '/api/tefas',
     {method:'POST', headers:{'Content-Type':'application/json','Accept':'application/json'},
      body: JSON.stringify(Object.assign({dil:'TR'}, body))}, 12000);
   if (!resp.ok) throw new Error('HTTP ' + resp.status);
   return resp.json();
 }
 async function tefasPostProxy(endpoint, body) {
-  var targetUrl = 'https://www.tefas.gov.tr/api/funds/' + endpoint;
+  var targetUrl = '/api/tefas';
   var payload = JSON.stringify(Object.assign({dil:'TR'}, body));
   // allorigins.win: POST body'yi query string ile ilet
   var proxyUrl = 'https://api.allorigins.win/raw?url=' + encodeURIComponent(targetUrl);
