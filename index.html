@@ -2871,9 +2871,8 @@ var hisseFiyatCache = {}; // { ASELS: {fiyat, degisim}, ISKPL: {fiyat, degisim} 
 
 async function fetchHisseFiyat(kod) {
   var ticker = HISSELER[kod].ticker;
-  var q1 = 'https://query1.finance.yahoo.com/v8/finance/chart/' + ticker + '?interval=1d&range=5d';
-  var q2 = 'https://query2.finance.yahoo.com/v8/finance/chart/' + ticker + '?interval=1d&range=5d';
-  var urls = [q1, q2];
+  var q1 = '/api/yahoo?ticker=' + encodeURIComponent(ticker) + '&range=5d';
+  var urls = [q1];
   for (var i = 0; i < urls.length; i++) {
     try {
       var resp = await fetchWithTimeout(urls[i], {headers:{'Accept':'application/json'}}, 6000);
@@ -3276,60 +3275,24 @@ function _tk_fwt(url, options, ms) {
     .catch(function(e){ clearTimeout(timer); throw e; });
 }
 
-// CORS proxy: önce direkt dene, başarısız olursa allorigins üzerinden git
-async function tefasPostDirect(endpoint, body) {
-  var resp = await _tk_fwt(
-    'https://www.tefas.gov.tr/api/funds/' + endpoint,
-    {method:'POST', headers:{'Content-Type':'application/json','Accept':'application/json'},
-     body: JSON.stringify(Object.assign({dil:'TR'}, body))}, 12000);
-  if (!resp.ok) throw new Error('HTTP ' + resp.status);
-  return resp.json();
-}
-async function tefasPostProxy(endpoint, body) {
-  var targetUrl = 'https://www.tefas.gov.tr/api/funds/' + endpoint;
-  var payload = JSON.stringify(Object.assign({dil:'TR'}, body));
-  // allorigins.win: POST body'yi query string ile ilet
-  var proxyUrl = 'https://api.allorigins.win/raw?url=' + encodeURIComponent(targetUrl);
-  var resp = await _tk_fwt(proxyUrl,
-    {method:'POST', headers:{'Content-Type':'application/json','Accept':'application/json'},
-     body: payload}, 25000);
-  if (!resp.ok) throw new Error('HTTP ' + resp.status);
-  return resp.json();
-}
-var _corsMode = 'unknown'; // 'direct' | 'proxy' | 'none'
+// Android uyumlu TEFAS çağrısı: tarayıcı dış servise değil Vercel API'ye gider.
 async function tefasPost(endpoint, body) {
-  // Bilinen modda doğrudan git
-  if (_corsMode === 'direct') {
-    var j = await tefasPostDirect(endpoint, body);
-    return j.resultList || j.data || j.items || (Array.isArray(j) ? j : []);
-  }
-  if (_corsMode === 'proxy') {
-    var j = await tefasPostProxy(endpoint, body);
-    return j.resultList || j.data || j.items || (Array.isArray(j) ? j : []);
-  }
-  // İlk çağrıda mod tespiti yap
-  try {
-    var j = await tefasPostDirect(endpoint, body);
-    _corsMode = 'direct';
-    return j.resultList || j.data || j.items || (Array.isArray(j) ? j : []);
-  } catch(e) {
-    try {
-      var j = await tefasPostProxy(endpoint, body);
-      _corsMode = 'proxy';
-      return j.resultList || j.data || j.items || (Array.isArray(j) ? j : []);
-    } catch(e2) {
-      _corsMode = 'none';
-      throw e2;
-    }
-  }
+  var payload = { endpoint: endpoint, body: Object.assign({dil:'TR'}, body) };
+  var resp = await _tk_fwt('/api/tefas',
+    {method:'POST', headers:{'Content-Type':'application/json','Accept':'application/json'},
+     body: JSON.stringify(payload)}, 25000);
+  if (!resp.ok) throw new Error('TEFAS API HTTP ' + resp.status);
+  var j = await resp.json();
+  return j.resultList || j.data || j.items || (Array.isArray(j) ? j : []);
 }
+var _corsMode = 'vercel-api';
 
 
 // FVT yedek kaynak: TEFAS/CORS gecikirse Fon Takip tamamen kilitlenmesin.
 // Bu bölüm sadece TEFAS isteği başarısız olduğunda devreye girer.
 async function fetchFvtTakipFon(fonKodu){
-  var url = 'https://fvt.com.tr/api/funds/' + encodeURIComponent(fonKodu);
-  var urls = [url, 'https://api.allorigins.win/raw?url=' + encodeURIComponent(url)];
+  var url = '/api/fvt?fon=' + encodeURIComponent(fonKodu) + '&istek=getiri';
+  var urls = [url];
   for (var ui=0; ui<urls.length; ui++){
     try{
       var r = await _tk_fwt(urls[ui], {headers:{'Accept':'application/json'}}, 15000);
@@ -5702,8 +5665,8 @@ async function fetchQuote(code, type) {
   if (type === 'fund') {
     // FVT'den getiri
     try {
-      var fvtUrl = 'https://fvt.com.tr/api/funds/' + encodeURIComponent(code);
-      var fvtUrls = [fvtUrl, 'https://api.allorigins.win/raw?url=' + encodeURIComponent(fvtUrl)];
+      var fvtUrl = '/api/fvt?fon=' + encodeURIComponent(code) + '&istek=getiri';
+      var fvtUrls = [fvtUrl];
       for (var fi = 0; fi < fvtUrls.length; fi++) {
         try {
           var fr = await fetchWithTimeout(fvtUrls[fi], {}, 6000);
@@ -5724,10 +5687,8 @@ async function fetchQuote(code, type) {
   }
 
   const ticker = type === 'bist' ? (code + '.IS') : code;
-  const q1 = 'https://query1.finance.yahoo.com/v8/finance/chart/' + ticker + '?interval=1d&range=1d';
-  const q2 = 'https://query2.finance.yahoo.com/v8/finance/chart/' + ticker + '?interval=1d&range=1d';
-  // Önce direkt dene (3sn), olmassa q2 (3sn)
-  const urls = [q1, q2];
+  const q1 = '/api/yahoo?ticker=' + encodeURIComponent(ticker) + '&range=1d';
+  const urls = [q1];
   for (var i = 0; i < urls.length; i++) {
     try {
       var resp = await fetchWithTimeout(urls[i], {headers: {'Accept': 'application/json'}}, 3000);
@@ -5759,18 +5720,9 @@ async function fetchTefasFon(fonKodu) {
     try {
       // CORS proxy modunu kullan (tefasPost ile aynı mantık)
       var fetchBody = {fonKodu: fonKodu, dil: 'TR', fonTip: fonTipler[t]};
-      var resp;
-      if (_corsMode === 'proxy') {
-        var proxyUrl2 = 'https://api.allorigins.win/raw?url=' + encodeURIComponent('https://www.tefas.gov.tr/api/funds/fonBilgiGetir');
-        resp = await fetchWithTimeout(proxyUrl2,
-          {method:'POST', headers:{'Content-Type':'application/json','Accept':'application/json'},
-           body: JSON.stringify(fetchBody)}, 8000);
-      } else {
-        resp = await fetchWithTimeout(
-          'https://www.tefas.gov.tr/api/funds/fonBilgiGetir',
-          {method:'POST', headers:{'Content-Type':'application/json','Accept':'application/json'},
-           body: JSON.stringify(fetchBody)}, 6000);
-      }
+      var resp = await fetchWithTimeout('/api/tefas',
+        {method:'POST', headers:{'Content-Type':'application/json','Accept':'application/json'},
+         body: JSON.stringify({endpoint:'fonBilgiGetir', body: fetchBody})}, 12000);
       if (!resp.ok) continue;
       var json = await resp.json();
       var list = json.resultList || json.data || (Array.isArray(json) ? json : []);
@@ -5785,10 +5737,10 @@ async function fetchTefasFon(fonKodu) {
   return null;
 }
 
-// FVT'den portfoy dagilimini cek (allorigins proxy)
+// FVT'den portfoy dagilimini Vercel API uzerinden cek
 async function loadFVTPortfolio(fonKodu) {
-  var url = 'https://fvt.com.tr/api/funds/' + fonKodu.toUpperCase() + '/distribution';
-  var urls = [url, 'https://api.allorigins.win/raw?url=' + encodeURIComponent(url)];
+  var url = '/api/fvt?fon=' + encodeURIComponent(fonKodu.toUpperCase());
+  var urls = [url];
   for (var i = 0; i < urls.length; i++) {
     try {
       var resp = await fetchWithTimeout(urls[i], {}, 8000);
@@ -5930,15 +5882,9 @@ async function refreshAllPortfolios() {
 }
 
 async function fetchAll() {
-  // Yahoo Finance için CORS proxy wrapper
+  // Yahoo Finance çağrıları Android uyumu için /api/yahoo üzerinden yapılır.
   async function yahooFetch(url) {
-    try {
-      var r = await fetchWithTimeout(url, {}, 5000);
-      if (r.ok) return r;
-    } catch(e) {}
-    // Direkt başarısız → allorigins proxy dene
-    var proxyUrl = 'https://api.allorigins.win/raw?url=' + encodeURIComponent(url);
-    return fetchWithTimeout(proxyUrl, {}, 8000);
+    return fetchWithTimeout(url, {}, 10000);
   }
 
   try {
@@ -6108,9 +6054,7 @@ async function fetchGecmisKapanislar(code, type, isGunSayisi) {
   // 10 takvim günü = genellikle 7 iş günü, yeterince marj
   var range = '30d'; // 15 iş günü için ~21 takvim günü gerekir
   var urls = [
-    'https://query1.finance.yahoo.com/v8/finance/chart/' + ticker + '?interval=1d&range=' + range,
-    'https://query2.finance.yahoo.com/v8/finance/chart/' + ticker + '?interval=1d&range=' + range,
-    'https://api.allorigins.win/raw?url=' + encodeURIComponent('https://query1.finance.yahoo.com/v8/finance/chart/' + ticker + '?interval=1d&range=' + range),
+    '/api/yahoo?ticker=' + encodeURIComponent(ticker) + '&range=' + encodeURIComponent(range)
   ];
 
   for (var u = 0; u < urls.length; u++) {
@@ -6185,7 +6129,7 @@ async function otomatikOfsetHesapla() {
     // CORS kontrolü
     try {
       var test = await fetchWithTimeout(
-        'https://query1.finance.yahoo.com/v8/finance/chart/AAPL?interval=1d&range=1d', {}, 8000
+        '/api/yahoo?ticker=AAPL&range=1d', {}, 8000
       );
       if (!test.ok) throw new Error();
     } catch(e) {
@@ -6246,7 +6190,7 @@ async function otomatikOfsetHesapla() {
     if (eksikFonlar.length > 0) {
       await Promise.all(eksikFonlar.map(async function(fon) {
         try {
-          var fvtResp = await fetchWithTimeout('https://fvt.com.tr/api/funds/' + fon, {}, 8000);
+          var fvtResp = await fetchWithTimeout('/api/fvt?fon=' + encodeURIComponent(fon), {}, 12000);
           if (!fvtResp.ok) return;
           var fvtData = await fvtResp.json();
           var ph = fvtData.data && fvtData.data.priceHistory;
@@ -7958,8 +7902,7 @@ try {
 async function fetchHisseGecmis(kod) {
   var ticker = HISSE_PORTFOY[kod].ticker;
   var urls = [
-    'https://query1.finance.yahoo.com/v8/finance/chart/' + ticker + '?interval=1d&range=1mo',
-    'https://query2.finance.yahoo.com/v8/finance/chart/' + ticker + '?interval=1d&range=1mo'
+    '/api/yahoo?ticker=' + encodeURIComponent(ticker) + '&range=1mo'
   ];
   for (var u = 0; u < urls.length; u++) {
     try {
