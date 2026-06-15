@@ -976,6 +976,44 @@ tbody tr:hover{background:rgba(0,180,255,0.035);}
   .sc-raw-corner strong { font-size: 9px; }
 }
 
+
+
+/* ── Paket 1: Tahmin Başarı Merkezi & Güven Skoru ── */
+.prediction-quality-panel{
+  background:rgba(13,21,40,0.88);
+  border:1px solid rgba(99,179,255,0.18);
+  border-radius:14px;
+  padding:18px 20px;
+  margin:0 0 24px;
+  overflow:hidden;
+}
+.prediction-quality-head{
+  display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px;
+}
+.prediction-quality-title{
+  font-family:var(--mono);font-size:10px;font-weight:800;letter-spacing:.15em;text-transform:uppercase;color:var(--accent2);
+}
+.prediction-quality-note{font-family:var(--mono);font-size:9.5px;color:var(--muted);line-height:1.6;max-width:620px;text-align:right;}
+.prediction-quality-grid{display:grid;grid-template-columns:1.2fr .8fr;gap:14px;}
+.prediction-quality-card{border:1px solid rgba(99,179,255,0.13);background:rgba(6,8,16,0.28);border-radius:12px;padding:14px;}
+.prediction-quality-subtitle{font-family:var(--mono);font-size:9.5px;font-weight:800;letter-spacing:.13em;text-transform:uppercase;color:#7dd6ff;margin-bottom:10px;}
+.prediction-score-row{display:grid;grid-template-columns:64px 1fr 58px 66px;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid rgba(255,255,255,0.045);}
+.prediction-score-row:last-child{border-bottom:none;}
+.prediction-code{font-family:var(--mono);font-size:13px;font-weight:800;letter-spacing:.08em;}
+.prediction-bar-bg{height:7px;background:rgba(255,255,255,0.06);border-radius:99px;overflow:hidden;}
+.prediction-bar-fill{height:100%;border-radius:99px;background:currentColor;min-width:2px;}
+.prediction-score-val{font-family:var(--mono);font-size:13px;font-weight:800;text-align:right;}
+.prediction-meta{font-family:var(--mono);font-size:9px;color:var(--muted);text-align:right;white-space:nowrap;}
+.prediction-method-row{display:grid;grid-template-columns:72px 1fr 58px;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid rgba(255,255,255,0.045);}
+.prediction-method-row:last-child{border-bottom:none;}
+.confidence-badge{position:absolute;right:10px;top:10px;z-index:4;font-family:var(--mono);font-size:10px;font-weight:800;letter-spacing:.03em;padding:4px 7px;border-radius:7px;border:1px solid currentColor;background:rgba(6,8,16,0.72);box-shadow:0 0 10px rgba(0,0,0,0.18);}
+.confidence-badge.good{color:#3ef5a0;}
+.confidence-badge.ok{color:#7dd6ff;}
+.confidence-badge.warn{color:#ffcc44;}
+.confidence-badge.bad{color:#ff5c7a;}
+.confidence-badge.empty{color:#5a7499;}
+@media(max-width:820px){.prediction-quality-grid{grid-template-columns:1fr}.prediction-quality-note{text-align:left}.prediction-score-row{grid-template-columns:54px 1fr 48px 58px}}
+
 /* ── Fon cards ── */
 .funds-grid {
   display: grid;
@@ -2472,6 +2510,29 @@ tbody tr:hover{background:rgba(0,180,255,0.035);}
       <div class="sc-value" id="sum-pbr" style="--val-color:#fff">—</div>
       <div class="sc-sub">Pusula Portföy Birinci Değişken</div>
       <div class="sc-raw-corner" id="raw-sum-pbr" title="Ofset uygulanmadan önceki sistem tahmini">Ofsetsiz<strong>—</strong></div>
+    </div>
+  </div>
+
+
+
+  <!-- Paket 1: Tahmin Başarı Merkezi -->
+  <div class="prediction-quality-panel" id="predictionQualityPanel">
+    <div class="prediction-quality-head">
+      <div>
+        <div class="prediction-quality-title">📊 TAHMİN BAŞARI MERKEZİ</div>
+        <div style="font-family:var(--mono);font-size:9.5px;color:var(--muted);margin-top:6px">Snapshot kayıtları ve TEFAS gerçekleşenleriyle hesaplanır.</div>
+      </div>
+      <div class="prediction-quality-note" id="predictionQualityNote">Veriler hazırlanıyor...</div>
+    </div>
+    <div class="prediction-quality-grid">
+      <div class="prediction-quality-card">
+        <div class="prediction-quality-subtitle">Fon Bazlı Başarı</div>
+        <div id="predictionFundScores"><div style="color:var(--muted);font-family:var(--mono);font-size:11px">Henüz hesaplanmadı.</div></div>
+      </div>
+      <div class="prediction-quality-card">
+        <div class="prediction-quality-subtitle">Yöntem Karşılaştırması</div>
+        <div id="predictionMethodScores"><div style="color:var(--muted);font-family:var(--mono);font-size:11px">Henüz hesaplanmadı.</div></div>
+      </div>
     </div>
   </div>
 
@@ -5573,6 +5634,7 @@ function renderSummaryCards() {
       .replace('PUSULA PORTFÖY BİRİNCİ DEĞİŞKEN FON','Pusula Portföy Birinci Değişken');
     return `<div class="summary-card" style="--accent-color:${fund.color}; border-color:${fund.color}55;">
       <button class="summary-card-close" title="${id} fonunu kapat" onclick="removeSelectedFund('${id}')">×</button>
+      <span class="confidence-badge empty" id="conf-sum-${id.toLowerCase()}" title="Tahmin güven skoru">—</span>
       <div class="sc-label" style="color:${fund.color};">${id}</div>
       <div class="sc-value" id="sum-${id.toLowerCase()}" style="--val-color:#fff">—</div>
       <div class="sc-sub">${shortName}</div>
@@ -5590,6 +5652,7 @@ function renderFunds() {
   renderFundSelector();
   renderCommonHoldingsTable();
   renderOverlapAnalysis();
+  if (typeof renderTahminBasariPanel === 'function') setTimeout(renderTahminBasariPanel, 0);
   const entries = getSelectedFundEntries();
   if (!entries.length) { grid.innerHTML = '<div class="fund-empty-state">Henüz seçili fon yok. Yukarıdaki Fon Ekle alanından fon ekleyin.</div>'; return; }
   grid.innerHTML = entries.map(([id, fund]) => {
@@ -6502,7 +6565,9 @@ function updateUI() {
 
   // Gerçek değer panelini de güncelle
   if (typeof renderGercekPanel === 'function') renderGercekPanel();
+  if (typeof renderTahminBasariPanel === 'function') renderTahminBasariPanel();
 }
+
 
 // ════════════════════════════════════════════════════════
 // HELPERS
@@ -6859,6 +6924,7 @@ function duzeltmeUygula() {
   // UI güncelle
   updateUI();
   renderGercekPanel();
+  if (typeof renderTahminBasariPanel === 'function') renderTahminBasariPanel();
 
   var fonSayisi = Object.keys(gercekBugunkuGiris).length;
   setStatus('live',
@@ -6910,7 +6976,7 @@ updateDate();
 setInterval(updateDate, 30000);
 
 // DOM tam yüklendikten sonra gerçek panel render et
-setTimeout(function() { renderGercekPanel(); }, 100);
+setTimeout(function() { renderGercekPanel(); if (typeof renderTahminBasariPanel === 'function') renderTahminBasariPanel(); }, 100);
 
 // Auto-load with fallback data on start
 setTimeout(() => {
@@ -6923,7 +6989,7 @@ setTimeout(() => {
 }, 300);
 
 // Kıyas tablosunu yükle
-setTimeout(function(){ if(typeof renderKiyasTablosu==='function') renderKiyasTablosu(); }, 500);
+setTimeout(function(){ if(typeof renderKiyasTablosu==='function') renderKiyasTablosu(); if (typeof renderTahminBasariPanel === 'function') renderTahminBasariPanel(); }, 500);
 
 
 
@@ -7710,6 +7776,193 @@ function renderNavOfsetStatus(synced) {
     text.textContent = 'Ofsetsiz tahmin modu';
   }
 }
+
+
+
+// ════════════════════════════════════════════════════════
+// PAKET 1 — TAHMİN BAŞARI KARNESİ & GÜVEN SKORU
+// ════════════════════════════════════════════════════════
+var TAHMIN_BASARI_CACHE = { fonlar:{}, yontemler:{}, genel:null, kayitSayisi:0, updatedAt:null };
+
+function basariClamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
+function basariScoreFromMae(mae) {
+  if (mae === null || mae === undefined || isNaN(mae)) return null;
+  // Fon günlük getirileri yüzde puan olarak tutuluyor. 0.10 hata ≈ 95 puan, 0.50 hata ≈ 75 puan, 1.00 hata ≈ 50 puan.
+  return Math.round(basariClamp(100 - (Math.abs(mae) * 50), 0, 100));
+}
+function basariClass(score) {
+  if (score === null || score === undefined || isNaN(score)) return 'empty';
+  if (score >= 90) return 'good';
+  if (score >= 75) return 'ok';
+  if (score >= 60) return 'warn';
+  return 'bad';
+}
+function basariIcon(score) {
+  if (score === null || score === undefined || isNaN(score)) return '⚪';
+  if (score >= 90) return '🟢';
+  if (score >= 75) return '🔵';
+  if (score >= 60) return '🟡';
+  return '🔴';
+}
+function basariRenk(score) {
+  var cls = basariClass(score);
+  return cls === 'good' ? '#3ef5a0' : cls === 'ok' ? '#7dd6ff' : cls === 'warn' ? '#ffcc44' : cls === 'bad' ? '#ff5c7a' : '#5a7499';
+}
+function basariMean(arr) {
+  arr = (arr || []).filter(function(x){ return typeof x === 'number' && isFinite(x); });
+  if (!arr.length) return null;
+  return arr.reduce(function(a,b){ return a+b; },0) / arr.length;
+}
+function basariTahminVerileri() {
+  var out = {};
+  try {
+    if (typeof adaptifHesapla === 'function') {
+      var h = adaptifHesapla();
+      (h.fonlar || []).forEach(function(fon) {
+        var rows = [];
+        (h.tarihler || []).forEach(function(tarih) {
+          var d = h.satir && h.satir[tarih] && h.satir[tarih][fon];
+          if (!d) return;
+          rows.push({
+            fon: fon, tarih: tarih, tahmin: Number(d.tahmin), gercek: Number(d.gercek),
+            hata: Number(d.hata), kisa: d.kisa, uzun: d.uzun, ema: d.ema, nihai: d.nihai
+          });
+        });
+        out[fon] = rows;
+      });
+    }
+  } catch(e) {}
+  // Manuel gerçek girişleri varsa yedek kaynak olarak ekle.
+  try {
+    var gg = (typeof gercekGecmis !== 'undefined' && gercekGecmis) ? gercekGecmis : (storeGet('fon_gercek_gecmis') || {});
+    Object.keys(gg || {}).forEach(function(fon) {
+      if (!out[fon]) out[fon] = [];
+      (gg[fon] || []).forEach(function(r) {
+        if (r && r.tahmin !== undefined && r.gercek !== undefined) {
+          var duplicate = out[fon].some(function(x){ return x.tarih === r.tarih; });
+          if (!duplicate) out[fon].push({ fon:fon, tarih:r.tarih, tahmin:Number(r.tahmin), gercek:Number(r.gercek), hata:Number(r.gercek)-Number(r.tahmin) });
+        }
+      });
+    });
+  } catch(e) {}
+  return out;
+}
+function hesaplaTahminBasari() {
+  var veri = basariTahminVerileri();
+  var fonlar = (typeof adaptifFonListesi === 'function' ? adaptifFonListesi() : Object.keys(FUNDS || {})).filter(function(f){ return typeof FUNDS === 'undefined' || FUNDS[f]; });
+  var sonuc = { fonlar:{}, yontemler:{}, genel:null, kayitSayisi:0, updatedAt:new Date() };
+  var tumHatalar = [];
+  fonlar.forEach(function(fon) {
+    var rows = (veri[fon] || []).slice(0, 30);
+    var abs = rows.map(function(r){ return Math.abs(Number(r.hata)); }).filter(function(x){ return isFinite(x); });
+    var mae = basariMean(abs);
+    var score = basariScoreFromMae(mae);
+    sonuc.fonlar[fon] = { score:score, mae:mae, adet:abs.length };
+    tumHatalar = tumHatalar.concat(abs);
+    sonuc.kayitSayisi += abs.length;
+  });
+  sonuc.genel = basariScoreFromMae(basariMean(tumHatalar));
+
+  var methodDefs = [
+    ['kisa','Kısa'], ['uzun','Uzun'], ['ema','EMA'], ['nihai','Nihai']
+  ];
+  methodDefs.forEach(function(def) {
+    var key = def[0], label = def[1], errs = [], adet = 0;
+    Object.keys(veri).forEach(function(fon) {
+      (veri[fon] || []).slice(0, 30).forEach(function(r) {
+        var adj = r[key];
+        if (adj === null || adj === undefined || isNaN(adj)) return;
+        // Yeni hata = gerçek - (tahmin + yöntem ofseti) = hata - yöntem ofseti
+        errs.push(Math.abs(Number(r.hata) - Number(adj)));
+        adet++;
+      });
+    });
+    var mae = basariMean(errs);
+    sonuc.yontemler[key] = { label:label, score:basariScoreFromMae(mae), mae:mae, adet:adet };
+  });
+  TAHMIN_BASARI_CACHE = sonuc;
+  return sonuc;
+}
+function tahminGuvenSkoru(fon) {
+  var c = TAHMIN_BASARI_CACHE && TAHMIN_BASARI_CACHE.fonlar ? TAHMIN_BASARI_CACHE.fonlar[fon] : null;
+  if (!c || c.score === null || c.score === undefined) return null;
+  var basari = c.score;
+  var adetPuan = basariClamp((c.adet || 0) / 10 * 100, 0, 100);
+  var veriPuan = 100;
+  try {
+    var fund = FUNDS && FUNDS[fon];
+    if (fund && fund.holdings) {
+      var active = fund.holdings.filter(function(h){ return h.type !== 'cash'; });
+      var covered = active.filter(function(h){ return priceCache && priceCache[h.code] !== undefined && priceCache[h.code] !== null; });
+      veriPuan = active.length ? Math.round((covered.length / active.length) * 100) : 100;
+    }
+  } catch(e) {}
+  var volatilitePuan = 80;
+  try {
+    var rows = (basariTahminVerileri()[fon] || []).slice(0, 10);
+    var vals = rows.map(function(r){ return Math.abs(Number(r.gercek)); }).filter(function(x){ return isFinite(x); });
+    var avgAbs = basariMean(vals);
+    volatilitePuan = avgAbs === null ? 80 : basariClamp(100 - avgAbs * 20, 35, 100);
+  } catch(e) {}
+  return Math.round((basari * 0.40) + (100 * 0.20) + (veriPuan * 0.20) + (volatilitePuan * 0.20) + (adetPuan * 0.00));
+}
+function renderTahminBasariPanel() {
+  var panel = document.getElementById('predictionQualityPanel');
+  if (!panel) return;
+  var h = hesaplaTahminBasari();
+  var fundBox = document.getElementById('predictionFundScores');
+  var methodBox = document.getElementById('predictionMethodScores');
+  var note = document.getElementById('predictionQualityNote');
+  var fonlar = (typeof getSelectedFundEntries === 'function' ? getSelectedFundEntries().map(function(e){return e[0];}) : Object.keys(h.fonlar));
+  if (note) {
+    note.innerHTML = h.kayitSayisi ? (h.kayitSayisi + ' kıyas kaydı analiz edildi · Genel skor: <strong style="color:' + basariRenk(h.genel) + '">' + (h.genel === null ? '—' : h.genel + '/100') + '</strong>') : 'Henüz yeterli kıyas kaydı yok. Verileri güncelle ve TEFAS gerçekleri oluştukça panel dolacak.';
+  }
+  if (fundBox) {
+    if (!h.kayitSayisi) {
+      fundBox.innerHTML = '<div style="color:var(--muted);font-family:var(--mono);font-size:11px;line-height:1.7">Başarı hesabı için tahmin snapshotları ile TEFAS gerçekleşenlerinin aynı tarihte eşleşmesi gerekiyor.</div>';
+    } else {
+      fundBox.innerHTML = fonlar.map(function(fon) {
+        var d = h.fonlar[fon] || {score:null, adet:0, mae:null};
+        var score = d.score;
+        var color = basariRenk(score);
+        var width = score === null ? 0 : score;
+        return '<div class="prediction-score-row">'
+          + '<div class="prediction-code" style="color:' + (adaptifRenk ? adaptifRenk(fon) : color) + '">' + fon + '</div>'
+          + '<div class="prediction-bar-bg"><div class="prediction-bar-fill" style="width:' + width + '%;color:' + color + '"></div></div>'
+          + '<div class="prediction-score-val" style="color:' + color + '">' + (score === null ? '—' : score) + '</div>'
+          + '<div class="prediction-meta">' + (d.adet || 0) + ' kayıt</div>'
+          + '</div>';
+      }).join('');
+    }
+  }
+  if (methodBox) {
+    var keys = ['ema','nihai','uzun','kisa'];
+    methodBox.innerHTML = keys.map(function(k) {
+      var d = h.yontemler[k] || {label:k, score:null, adet:0};
+      var score = d.score;
+      var color = basariRenk(score);
+      return '<div class="prediction-method-row">'
+        + '<div class="prediction-code" style="font-size:11px;color:' + color + '">' + d.label + '</div>'
+        + '<div class="prediction-bar-bg"><div class="prediction-bar-fill" style="width:' + (score || 0) + '%;color:' + color + '"></div></div>'
+        + '<div class="prediction-score-val" style="color:' + color + '">' + (score === null ? '—' : score) + '</div>'
+        + '</div>';
+    }).join('');
+  }
+  guncelleGuvenRozetleri();
+}
+function guncelleGuvenRozetleri() {
+  var fonlar = (typeof getSelectedFundEntries === 'function' ? getSelectedFundEntries().map(function(e){return e[0];}) : Object.keys(FUNDS || {}));
+  fonlar.forEach(function(fon) {
+    var score = tahminGuvenSkoru(fon);
+    var el = document.getElementById('conf-sum-' + fon.toLowerCase());
+    if (!el) return;
+    var cls = basariClass(score);
+    el.className = 'confidence-badge ' + cls;
+    el.textContent = score === null ? '—' : (basariIcon(score) + score);
+    el.title = score === null ? 'Güven skoru için yeterli geçmiş veri yok' : ('Tahmin güven skoru: ' + score + '/100');
+  });
+}
+
 
 // Sayfa yüklenince ofset durumunu kontrol et
 setTimeout(function() {
