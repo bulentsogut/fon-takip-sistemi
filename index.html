@@ -8617,36 +8617,42 @@ function renderHisseKartlar() {
   });
   row.innerHTML = html;
 
-  // Hero kartları güncelle
+  // Hero kartları dinamik güncelle: portföydeki tüm BIST/ABD hisseleri üst K/Z kartlarına dahil edilir.
   var toplamKZ = 0, toplamPortfoy = 0, toplamBaslangic = 0;
+  var heroCards = [];
   Object.entries(HISSE_PORTFOY).forEach(function(entry){
     var kod = entry[0], h = entry[1];
     var fiyat = (hisseBugunkuFiyat[kod] || {}).fiyat || 0;
-    toplamKZ       += hisseDegerTL(kod, (fiyat - h.ortMaliyet) * h.adet);
+    var kz = fiyat > 0 ? (fiyat - h.ortMaliyet) * h.adet : 0;
+    var pct = fiyat > 0 ? (fiyat - h.ortMaliyet) / h.ortMaliyet * 100 : 0;
+    toplamKZ       += hisseDegerTL(kod, kz);
     toplamPortfoy  += hisseDegerTL(kod, fiyat > 0 ? fiyat * h.adet : h.ortMaliyet * h.adet);
     toplamBaslangic += hisseDegerTL(kod, h.ortMaliyet * h.adet);
+    heroCards.push({ kod:kod, h:h, fiyat:fiyat, kz:kz, pct:pct });
   });
-  var totalEl = document.getElementById('hisse-h-total');
-  if (totalEl) totalEl.textContent = Math.round(toplamPortfoy).toLocaleString('tr-TR') + ' ₺';
-  var basEl = document.getElementById('hisse-h-baslangic');
-  if (basEl) basEl.textContent = 'Başlangıç: ' + Math.round(toplamBaslangic).toLocaleString('tr-TR') + ' ₺';
-  var kzEl = document.getElementById('hisse-h-kz');
-  if (kzEl) {
-    kzEl.textContent = (toplamKZ >= 0 ? '+' : '') + Math.round(toplamKZ).toLocaleString('tr-TR') + ' ₺';
-    kzEl.className = 'badge ' + (toplamKZ >= 0 ? 'pos' : 'neg');
+
+  var hero = document.getElementById('hisse-hero-row');
+  if (hero) {
+    var toplamClass = toplamKZ >= 0 ? 'pos' : 'neg';
+    var heroHtml = ''
+      + '<div class="hcard main">'
+      + '<div class="hlabel">Toplam Hisse Portföyü</div>'
+      + '<div class="hval" id="hisse-h-total">' + Math.round(toplamPortfoy).toLocaleString('tr-TR') + ' ₺</div>'
+      + '<div class="hsub" id="hisse-h-baslangic">Başlangıç: ' + Math.round(toplamBaslangic).toLocaleString('tr-TR') + ' ₺</div>'
+      + '<div class="badge ' + toplamClass + '" id="hisse-h-kz">' + (toplamKZ >= 0 ? '+' : '') + Math.round(toplamKZ).toLocaleString('tr-TR') + ' ₺</div>'
+      + '</div>';
+
+    heroCards.forEach(function(item){
+      var up = item.pct >= 0;
+      heroHtml += '<div class="hcard">'
+        + '<div class="hlabel">' + item.kod + ' K/Z</div>'
+        + '<div class="hval" style="font-size:1.5rem;color:' + (item.kz >= 0 ? 'var(--green)' : 'var(--red)') + ';" id="hisse-h-' + item.kod.toLowerCase() + '-kz">' + (item.fiyat > 0 ? formatHisseTutar(item.kod, item.kz) : '—') + '</div>'
+        + '<div class="badge ' + (up ? 'pos' : 'neg') + '" id="hisse-h-' + item.kod.toLowerCase() + '-pct">' + (item.fiyat > 0 ? ((up ? '▲ +' : '▼ ') + item.pct.toFixed(2) + '%') : '—') + '</div>'
+        + '</div>';
+    });
+    hero.innerHTML = heroHtml;
   }
 
-  // Hisse bazlı hero
-  Object.entries(HISSE_PORTFOY).forEach(function(entry){
-    var kod = entry[0], h = entry[1];
-    var fiyat = (hisseBugunkuFiyat[kod] || {}).fiyat || 0;
-    var kz = (fiyat - h.ortMaliyet) * h.adet;
-    var pct = fiyat > 0 ? (fiyat - h.ortMaliyet) / h.ortMaliyet * 100 : 0;
-    var kzEl2 = document.getElementById('hisse-h-' + kod.toLowerCase() + '-kz');
-    var pctEl = document.getElementById('hisse-h-' + kod.toLowerCase() + '-pct');
-    if (kzEl2) { kzEl2.textContent = formatHisseTutar(kod, kz); kzEl2.style.color = kz >= 0 ? 'var(--green)' : 'var(--red)'; }
-    if (pctEl) { pctEl.textContent = (pct>=0?'▲ +':'▼ ') + pct.toFixed(2) + '%'; pctEl.className = 'badge ' + (pct>=0?'pos':'neg'); }
-  });
 }
 
 function getHisseGunler() {
