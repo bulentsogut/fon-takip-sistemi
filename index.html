@@ -5887,24 +5887,34 @@ async function loadFVTPortfolio(fonKodu) {
       var resp = await fetchWithTimeout(urls[i], {}, 8000);
       if (!resp.ok) continue;
       var data = await resp.json();
-      var items = (data.data && data.data.items) || [];
+      // /api/fvt Vercel cevabı yeni yapıda {holdings:[...]} döndürüyor.
+      // Eski/doğrudan FVT cevabı ise {data:{items:[...]}} şeklindeydi.
+      // Android uyumluluk sonrası buton basılmış gibi görünüp ağırlıkları yenilememesinin sebebi
+      // HTML'in hâlâ sadece eski {data.items} yapısını beklemesiydi.
+      var apiHoldings = Array.isArray(data.holdings) ? data.holdings : null;
+      var items = apiHoldings || ((data.data && data.data.items) || []);
       if (items.length === 0) continue;
       var holdings = items
-        .filter(function(it){ return it.hisseKodu && it.hisseKodu.trim() !== '' && parseFloat(it.agirlik) > 0.01; })
         .map(function(it){
-          var kod = it.hisseKodu.trim();
-          var ad = (it.sirketAdi || '').trim();
-          var tip;
-          var BYF = ['GLDTRF','GMSTRF','ZPX3GF','ZPX30F'];
-          if (BYF.indexOf(kod) !== -1) tip = 'cash';
-          else if (it.etf === 1) tip = 'fund';
-          else if (ad === '' && it.yabanci === 0) tip = 'fund';
-          else if (it.yabanci === 1) tip = 'us';
-          else tip = 'bist';
-          return { code: kod, name: ad || kod, weight: parseFloat(it.agirlik) || 0, type: tip };
+          var kod = (it.code || it.kod || it.hisseKodu || '').trim();
+          var ad = (it.name || it.ad || it.sirketAdi || '').trim();
+          var agirlik = parseFloat(it.weight != null ? it.weight : it.agirlik) || 0;
+          if (!kod || agirlik <= 0.01) return null;
+          var tip = it.type || it.tip;
+          if (!tip) {
+            var BYF = ['GLDTRF','GMSTRF','ZPX3GF','ZPX30F','TPKGY','TPKGYF1'];
+            if (BYF.indexOf(kod) !== -1) tip = 'cash';
+            else if (it.etf === 1 || it.etf === true) tip = 'fund';
+            else if (ad === '' && (it.yabanci === 0 || it.yabanci === false)) tip = 'fund';
+            else if (it.yabanci === 1 || it.yabanci === true) tip = 'us';
+            else tip = 'bist';
+          }
+          return { code: kod, name: ad || kod, weight: agirlik, type: tip };
         })
+        .filter(Boolean)
         .sort(function(a,b){ return b.weight - a.weight; });
-      return { holdings: holdings, aciklamaTarihi: (data.data && data.data.meta && data.data.meta.aciklamaTarihi) || '' };
+      var tarih = data.aciklamaTarihi || (data.data && data.data.meta && data.data.meta.aciklamaTarihi) || '';
+      return { holdings: holdings, aciklamaTarihi: tarih };
     } catch(e) {}
   }
   return null;
