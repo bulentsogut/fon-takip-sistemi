@@ -2428,17 +2428,20 @@ tbody tr:hover{background:rgba(0,180,255,0.035);}
 
   <!-- Adaptif Ofset Paneli -->
   <div id="adaptifOfsetPanel" style="background:rgba(0,255,200,0.035);border:1px solid rgba(0,255,200,0.14);border-radius:10px;padding:14px 16px;margin-bottom:14px">
-    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:14px;flex-wrap:wrap">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px">
+      <div style="font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:#00ffc8">
+        ⟳ ADAPTİF OFSET SEÇİMİ
+      </div>
+      <button class="btn-ofset-sync" id="btnAdaptifToggle" onclick="toggleAdaptifOfsetPanel()" style="font-size:10px;padding:6px 10px;background:rgba(78,106,130,0.10);border-color:rgba(78,106,130,0.30);color:#7a9fc0">Gizle</button>
+    </div>
+    <div id="adaptifOfsetBody" style="display:flex;align-items:flex-start;justify-content:space-between;gap:14px;flex-wrap:wrap">
       <div style="min-width:260px;flex:1">
-        <div style="font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:#00ffc8;margin-bottom:7px">
-            ⟳ ADAPTİF OFSET SEÇİMİ
-          </div>
           <div id="adaptifModBilgi" style="font-family:var(--mono);font-size:10px;color:#7a9fc0;line-height:1.65">
             Aktif Ofset: <strong style="color:#e8f4fd">Ofsetsiz</strong>
           </div>
           <div id="adaptifOzet" style="display:none"></div>
           <div id="adaptifHesapSonuc" style="font-family:var(--mono);font-size:10px;color:#7a9fc0;margin-top:8px;display:none"></div>
-  </div>
+      </div>
       <div style="display:flex;flex-direction:column;gap:10px;align-items:flex-end;justify-content:flex-start;min-width:520px;max-width:760px">
         <div style="display:grid;grid-template-columns:repeat(3,minmax(120px,1fr));gap:8px;width:100%">
           <div style="display:flex;flex-direction:column;gap:6px">
@@ -2457,7 +2460,8 @@ tbody tr:hover{background:rgba(0,180,255,0.035);}
         <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;align-items:center;width:100%;padding-top:4px;border-top:1px solid rgba(255,255,255,0.08)">
           <button class="btn-ofset-sync" id="btnOfsetYok" onclick="adaptifOfsetUygula('none')" style="font-size:10px;padding:8px 12px;background:rgba(78,106,130,0.10);border-color:rgba(78,106,130,0.30);color:#7a9fc0">Ofsetsiz Tahmine Dön</button>
         </div>
-      </div>  </div>
+      </div>
+    </div>
   </div>
 
   <!-- Fon seçim kontrolleri -->
@@ -2515,26 +2519,7 @@ tbody tr:hover{background:rgba(0,180,255,0.035);}
 
 
 
-  <!-- Paket 1: Tahmin Başarı Merkezi -->
-  <div class="prediction-quality-panel" id="predictionQualityPanel">
-    <div class="prediction-quality-head">
-      <div>
-        <div class="prediction-quality-title">📊 TAHMİN BAŞARI MERKEZİ</div>
-        <div style="font-family:var(--mono);font-size:9.5px;color:var(--muted);margin-top:6px">Snapshot kayıtları ve TEFAS gerçekleşenleriyle hesaplanır.</div>
-      </div>
-      <div class="prediction-quality-note" id="predictionQualityNote">Veriler hazırlanıyor...</div>
-    </div>
-    <div class="prediction-quality-grid">
-      <div class="prediction-quality-card">
-        <div class="prediction-quality-subtitle">Fon Bazlı Başarı</div>
-        <div id="predictionFundScores"><div style="color:var(--muted);font-family:var(--mono);font-size:11px">Henüz hesaplanmadı.</div></div>
-      </div>
-      <div class="prediction-quality-card">
-        <div class="prediction-quality-subtitle">Yöntem Karşılaştırması</div>
-        <div id="predictionMethodScores"><div style="color:var(--muted);font-family:var(--mono);font-size:11px">Henüz hesaplanmadı.</div></div>
-      </div>
-    </div>
-  </div>
+  <!-- Tahmin Başarı Merkezi kaldırıldı: Güven skoru hesaplaması arka planda korunur. -->
 
   <!-- Ortak Hisseler -->
   <div class="common-holdings-panel collapsed" id="commonHoldingsPanel">
@@ -5901,14 +5886,18 @@ async function loadFVTPortfolio(fonKodu) {
           var agirlik = parseFloat(it.weight != null ? it.weight : it.agirlik) || 0;
           if (!kod || agirlik <= 0.01) return null;
           var tip = it.type || it.tip;
+          var FON_KODLARI_ZORUNLU = ['TPKGY','TPGKY','TPKGYF1'];
           if (!tip) {
-            var BYF = ['GLDTRF','GMSTRF','ZPX3GF','ZPX30F','TPKGY','TPKGYF1'];
+            var BYF = ['GLDTRF','GMSTRF','ZPX3GF','ZPX30F','TPKGY','TPGKY','TPKGYF1'];
             if (BYF.indexOf(kod) !== -1) tip = 'fund';
             else if (it.etf === 1 || it.etf === true) tip = 'fund';
             else if (ad === '' && (it.yabanci === 0 || it.yabanci === false)) tip = 'fund';
             else if (it.yabanci === 1 || it.yabanci === true) tip = 'us';
             else tip = 'bist';
           }
+          // FVT bazı sürümlerde TPKGY'yi likit/nakit benzeri grupta döndürebiliyor.
+          // Kod bazlı zorunlu düzeltme: TPKGY her zaman FON olarak işlenir.
+          if (FON_KODLARI_ZORUNLU.indexOf(kod) !== -1) tip = 'fund';
           return { code: kod, name: ad || kod, weight: agirlik, type: tip };
         })
         .filter(Boolean)
@@ -6598,7 +6587,8 @@ var manualOverrides = {}; // { code: value } — kullanıcının elle girdiği d
 // TPKGY, FVT çıktısında bazen nakit/diğer kalemlerin yanında gelebiliyor;
 // burada kesin olarak FON grubunda tutulur.
 var MANUAL_EXTRA_FUNDS = {
-  TPKGY: { type: 'fund', name: 'TPKGY Gayrimenkul Yatırım Fonu' }
+  TPKGY: { type: 'fund', name: 'TPKGY Gayrimenkul Yatırım Fonu' },
+  TPGKY: { type: 'fund', name: 'TPGKY / TPKGY Gayrimenkul Yatırım Fonu' }
 };
 
 function buildManualTickerMap() {
@@ -7929,8 +7919,8 @@ function tahminGuvenSkoru(fon) {
 }
 function renderTahminBasariPanel() {
   var panel = document.getElementById('predictionQualityPanel');
-  if (!panel) return;
   var h = hesaplaTahminBasari();
+  if (!panel) { guncelleGuvenRozetleri(); return; }
   var fundBox = document.getElementById('predictionFundScores');
   var methodBox = document.getElementById('predictionMethodScores');
   var note = document.getElementById('predictionQualityNote');
@@ -7985,8 +7975,26 @@ function guncelleGuvenRozetleri() {
 }
 
 
+
+function applyAdaptifOfsetPanelVisibility() {
+  var body = document.getElementById('adaptifOfsetBody');
+  var btn = document.getElementById('btnAdaptifToggle');
+  if (!body || !btn) return;
+  var hidden = false;
+  try { hidden = localStorage.getItem('fon_adaptif_panel_gizli') === '1'; } catch(e) {}
+  body.style.display = hidden ? 'none' : 'flex';
+  btn.textContent = hidden ? 'Göster' : 'Gizle';
+}
+function toggleAdaptifOfsetPanel() {
+  var hidden = false;
+  try { hidden = localStorage.getItem('fon_adaptif_panel_gizli') === '1'; } catch(e) {}
+  try { localStorage.setItem('fon_adaptif_panel_gizli', hidden ? '0' : '1'); } catch(e) {}
+  applyAdaptifOfsetPanelVisibility();
+}
+
 // Sayfa yüklenince ofset durumunu kontrol et
 setTimeout(function() {
+  applyAdaptifOfsetPanelVisibility();
   renderNavOfsetStatus();
   if (typeof renderKiyasTablosu === 'function') renderKiyasTablosu();
   if (typeof baslat23Kontrol   === 'function') baslat23Kontrol();
