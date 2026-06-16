@@ -6594,21 +6594,37 @@ function setStatus(state, text, isHtml) {
 // ─── Manuel veri girişi ────────────────────────────────
 var manualOverrides = {}; // { code: value } — kullanıcının elle girdiği değerler
 
-function openManualModal() {
-  // Mevcut modal varsa kaldır
-  var existing = document.getElementById('manualModal');
-  if (existing) existing.remove();
+// Manuel giriş ekranında portföyden bağımsız olarak görünmesi gereken fonlar.
+// TPKGY, FVT çıktısında bazen nakit/diğer kalemlerin yanında gelebiliyor;
+// burada kesin olarak FON grubunda tutulur.
+var MANUAL_EXTRA_FUNDS = {
+  TPKGY: { type: 'fund', name: 'TPKGY Gayrimenkul Yatırım Fonu' }
+};
 
-  // Tüm unique hisseleri topla
+function buildManualTickerMap() {
   var tickers = {};
   Object.entries(FUNDS).forEach(function(entry) {
-    var id = entry[0], fund = entry[1];
-    fund.holdings.forEach(function(h) {
+    var fund = entry[1];
+    (fund.holdings || []).forEach(function(h) {
       if (h.type === 'bist' || h.type === 'us' || h.type === 'fund') {
         if (!tickers[h.code]) tickers[h.code] = { type: h.type, name: h.name || h.code };
       }
     });
   });
+  Object.keys(MANUAL_EXTRA_FUNDS).forEach(function(code) {
+    if (!tickers[code]) tickers[code] = MANUAL_EXTRA_FUNDS[code];
+    tickers[code].type = 'fund';
+  });
+  return tickers;
+}
+
+function openManualModal() {
+  // Mevcut modal varsa kaldır
+  var existing = document.getElementById('manualModal');
+  if (existing) existing.remove();
+
+  // Tüm unique hisse/fonları topla
+  var tickers = buildManualTickerMap();
 
   var rows = '';
   Object.entries(tickers).sort(function(a,b){return a[0].localeCompare(b[0]);}).forEach(function(entry) {
@@ -6653,12 +6669,7 @@ function closeManualModal() {
 }
 
 function saveManualValues() {
-  var tickers = {};
-  Object.entries(FUNDS).forEach(function(entry) {
-    entry[1].holdings.forEach(function(h) {
-      if (h.type === 'bist' || h.type === 'us' || h.type === 'fund') tickers[h.code] = true;
-    });
-  });
+  var tickers = buildManualTickerMap();
 
   Object.keys(tickers).forEach(function(code) {
     var el = document.getElementById('mi-' + code);
