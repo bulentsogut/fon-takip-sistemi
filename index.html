@@ -5863,6 +5863,54 @@ async function fetchTefasFon(fonKodu) {
   return null;
 }
 
+
+// ─── Kod normalizasyonu / tekilleştirme ─────────────────
+// FVT bazı kaynaklarda aynı fonu TPGKY/TPKGY gibi farklı kodlarla döndürebiliyor.
+// Uygulama içinde tek gerçek kod olarak TPKGY kullanılır.
+function canonicalAssetCode(code) {
+  var c = String(code || '').trim().toUpperCase();
+  if (c === 'TPGKY' || c === 'TPKGYF1') return 'TPKGY';
+  return c;
+}
+function canonicalAssetName(code, name) {
+  var c = canonicalAssetCode(code);
+  if (c === 'TPKGY') return 'TPKGY Gayrimenkul Yatırım Fonu';
+  return name || c;
+}
+function forceAssetType(code, type) {
+  var c = canonicalAssetCode(code);
+  if (c === 'TPKGY') return 'fund';
+  return type;
+}
+function normalizeHoldingItem(h) {
+  if (!h) return null;
+  var code = canonicalAssetCode(h.code || h.kod || h.hisseKodu || '');
+  if (!code) return null;
+  return {
+    code: code,
+    name: canonicalAssetName(code, h.name || h.ad || h.sirketAdi || h.unvan || code),
+    weight: parseFloat(h.weight != null ? h.weight : h.agirlik) || 0,
+    type: forceAssetType(code, h.type || h.tip || 'bist')
+  };
+}
+function dedupeHoldingsByCode(list) {
+  var map = {};
+  (list || []).forEach(function(raw) {
+    var h = normalizeHoldingItem(raw);
+    if (!h || h.weight <= 0.01) return;
+    if (!map[h.code]) {
+      map[h.code] = h;
+    } else {
+      // Aynı kod iki kez geldiyse ağırlıkları birleştir, manuel/tahmin tarafında tek satır kalsın.
+      map[h.code].weight += h.weight;
+      if (h.type === 'fund') map[h.code].type = 'fund';
+      if (!map[h.code].name || map[h.code].name === map[h.code].code) map[h.code].name = h.name;
+    }
+  });
+  return Object.keys(map).map(function(k){ return map[k]; }).sort(function(a,b){ return b.weight - a.weight; });
+}
+// ───────────────────────────────────────────────────────
+
 // FVT'den portfoy dagilimini Vercel API uzerinden cek
 async function loadFVTPortfolio(fonKodu) {
   var url = '/api/fvt?fon=' + encodeURIComponent(fonKodu.toUpperCase());
@@ -5881,27 +5929,23 @@ async function loadFVTPortfolio(fonKodu) {
       if (items.length === 0) continue;
       var holdings = items
         .map(function(it){
-          var kod = (it.code || it.kod || it.hisseKodu || '').trim();
-          var ad = (it.name || it.ad || it.sirketAdi || '').trim();
+          var kod = canonicalAssetCode(it.code || it.kod || it.hisseKodu || '');
+          var ad = canonicalAssetName(kod, (it.name || it.ad || it.sirketAdi || '').trim());
           var agirlik = parseFloat(it.weight != null ? it.weight : it.agirlik) || 0;
           if (!kod || agirlik <= 0.01) return null;
           var tip = it.type || it.tip;
-          var FON_KODLARI_ZORUNLU = ['TPKGY','TPGKY','TPKGYF1'];
           if (!tip) {
-            var BYF = ['GLDTRF','GMSTRF','ZPX3GF','ZPX30F','TPKGY','TPGKY','TPKGYF1'];
+            var BYF = ['GLDTRF','GMSTRF','ZPX3GF','ZPX30F','TPKGY'];
             if (BYF.indexOf(kod) !== -1) tip = 'fund';
             else if (it.etf === 1 || it.etf === true) tip = 'fund';
             else if (ad === '' && (it.yabanci === 0 || it.yabanci === false)) tip = 'fund';
             else if (it.yabanci === 1 || it.yabanci === true) tip = 'us';
             else tip = 'bist';
           }
-          // FVT bazı sürümlerde TPKGY'yi likit/nakit benzeri grupta döndürebiliyor.
-          // Kod bazlı zorunlu düzeltme: TPKGY her zaman FON olarak işlenir.
-          if (FON_KODLARI_ZORUNLU.indexOf(kod) !== -1) tip = 'fund';
+          tip = forceAssetType(kod, tip);
           return { code: kod, name: ad || kod, weight: agirlik, type: tip };
-        })
-        .filter(Boolean)
-        .sort(function(a,b){ return b.weight - a.weight; });
+        });
+      holdings = dedupeHoldingsByCode(holdings);
       var tarih = data.aciklamaTarihi || (data.data && data.data.meta && data.data.meta.aciklamaTarihi) || '';
       return { holdings: holdings, aciklamaTarihi: tarih };
     } catch(e) {}
@@ -5962,7 +6006,7 @@ async function refreshAllPortfoliosDetay() {
         var cashKalemleri = FUNDS[fon].holdings.filter(function(h){
           return h.type === 'cash' && !fvtKodlar.has(h.code);
         });
-        FUNDS[fon].holdings = result.holdings.concat(cashKalemleri);
+        FUNDS[fon].holdings = dedupeHoldingsByCode(result.holdings.concat(cashKalemleri));
         FUNDS[fon].aciklamaTarihi = result.aciklamaTarihi;
         updated++;
 
@@ -6008,7 +6052,7 @@ async function refreshAllPortfolios() {
       var cashKalemleri = FUNDS[fon].holdings.filter(function(h){
         return h.type === 'cash' && !fvtKodlar.has(h.code);
       });
-      FUNDS[fon].holdings = result.holdings.concat(cashKalemleri);
+      FUNDS[fon].holdings = dedupeHoldingsByCode(result.holdings.concat(cashKalemleri));
       if (result.aciklamaTarihi) FUNDS[fon].aciklamaTarihi = result.aciklamaTarihi;
       updated++;
     }
@@ -6041,11 +6085,13 @@ async function fetchAll() {
   takipFonEntries.forEach(function(entry) {
     var f = entry[1];
     (f.holdings || []).forEach(function(h) {
-      if (h.type === 'bist' || h.type === 'us') {
-        tickers[h.code] = h.type;
+      var code = canonicalAssetCode(h.code);
+      var typ = forceAssetType(code, h.type);
+      if (typ === 'bist' || typ === 'us') {
+        tickers[code] = typ;
         pozisyonToplam++;
-      } else if (h.type === 'fund') {
-        fonlar[h.code] = true;
+      } else if (typ === 'fund') {
+        fonlar[code] = true;
         pozisyonToplam++;
       }
     });
@@ -6097,6 +6143,8 @@ async function fetchAll() {
 
   // Otomatik çekilen veriler + manuel override'lar merge edilir
   priceCache    = Object.assign({}, results, manualOverrides);
+  if (priceCache.TPGKY !== undefined && priceCache.TPKGY === undefined) priceCache.TPKGY = priceCache.TPGKY;
+  delete priceCache.TPGKY; delete priceCache.TPKGYF1;
   lastFetchTime = new Date();
   updateUI();
 
@@ -6476,6 +6524,7 @@ function toggleOfset() {
 // UPDATE UI
 // ════════════════════════════════════════════════════════
 function updateUI() {
+  Object.keys(FUNDS).forEach(function(fid){ FUNDS[fid].holdings = dedupeHoldingsByCode(FUNDS[fid].holdings || []); });
   getSelectedFundEntries().forEach(([id, fund]) => {
     let weightedReturn = 0;
     let mmContrib = 0;      // para piyasası günlük katkısı
@@ -6502,7 +6551,8 @@ function updateUI() {
         return;
       }
 
-      const chg = priceCache[h.code] ?? 0;
+      const hCode = canonicalAssetCode(h.code);
+      const chg = priceCache[hCode] ?? priceCache[h.code] ?? 0;
       const contrib = (h.weight / 100) * chg;
       weightedReturn += contrib;
       coveredWeight += h.weight;
@@ -6587,23 +6637,28 @@ var manualOverrides = {}; // { code: value } — kullanıcının elle girdiği d
 // TPKGY, FVT çıktısında bazen nakit/diğer kalemlerin yanında gelebiliyor;
 // burada kesin olarak FON grubunda tutulur.
 var MANUAL_EXTRA_FUNDS = {
-  TPKGY: { type: 'fund', name: 'TPKGY Gayrimenkul Yatırım Fonu' },
-  TPGKY: { type: 'fund', name: 'TPGKY / TPKGY Gayrimenkul Yatırım Fonu' }
+  TPKGY: { type: 'fund', name: 'TPKGY Gayrimenkul Yatırım Fonu' }
 };
 
 function buildManualTickerMap() {
+  Object.keys(FUNDS).forEach(function(fid){ FUNDS[fid].holdings = dedupeHoldingsByCode(FUNDS[fid].holdings || []); });
   var tickers = {};
   Object.entries(FUNDS).forEach(function(entry) {
     var fund = entry[1];
     (fund.holdings || []).forEach(function(h) {
-      if (h.type === 'bist' || h.type === 'us' || h.type === 'fund') {
-        if (!tickers[h.code]) tickers[h.code] = { type: h.type, name: h.name || h.code };
+      var nh = normalizeHoldingItem(h);
+      if (!nh) return;
+      if (nh.type === 'bist' || nh.type === 'us' || nh.type === 'fund') {
+        if (!tickers[nh.code]) tickers[nh.code] = { type: nh.type, name: nh.name || nh.code };
+        if (nh.type === 'fund') tickers[nh.code].type = 'fund';
       }
     });
   });
   Object.keys(MANUAL_EXTRA_FUNDS).forEach(function(code) {
-    if (!tickers[code]) tickers[code] = MANUAL_EXTRA_FUNDS[code];
-    tickers[code].type = 'fund';
+    var c = canonicalAssetCode(code);
+    if (!tickers[c]) tickers[c] = MANUAL_EXTRA_FUNDS[code];
+    tickers[c].type = 'fund';
+    tickers[c].name = canonicalAssetName(c, tickers[c].name);
   });
   return tickers;
 }
@@ -6667,13 +6722,18 @@ function saveManualValues() {
     var raw = el.value.trim();
     if (raw === '') {
       // Boş bırakıldıysa override'ı temizle (otomatik değer kullanılır)
-      delete manualOverrides[code];
+      delete manualOverrides[canonicalAssetCode(code)];
     } else {
       var num = parseFloat(raw);
       if (!isNaN(num)) {
-        manualOverrides[code] = num;
+        var c = canonicalAssetCode(code);
+        manualOverrides[c] = num;
+        delete manualOverrides.TPGKY;
+        delete manualOverrides.TPKGYF1;
         // priceCache'i de güncelle — hesaplamaya anında yansısın
-        priceCache[code] = num;
+        priceCache[c] = num;
+        delete priceCache.TPGKY;
+        delete priceCache.TPKGYF1;
       }
     }
   });
