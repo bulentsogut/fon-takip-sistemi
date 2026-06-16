@@ -8319,22 +8319,59 @@ try {
   if (_hbv) Object.assign(hisseBugunkuFiyat, _hbv);
 } catch(e) {}
 
+function hisseTickerAdaylari(kod) {
+  var h = HISSE_PORTFOY[kod] || {};
+  var rawKod = String(kod || '').trim().toUpperCase();
+  var ticker = String(h.ticker || '').trim().toUpperCase();
+  var adaylar = [];
+  function add(x){ x = String(x || '').trim().toUpperCase(); if (x && adaylar.indexOf(x) === -1) adaylar.push(x); }
+
+  // Öncelik: kaydedilmiş ticker. Eğer BIST gibi .IS ile kayıtlıysa onu önce deneriz.
+  add(ticker || rawKod + '.IS');
+
+  // ABD hisseleri için Yahoo sembolü uzantısızdır. SPXC gibi bir kod .IS ile başarısız olursa raw kod denenir.
+  if (ticker.endsWith('.IS')) add(rawKod);
+  if (!ticker.endsWith('.IS')) add(rawKod + '.IS');
+  return adaylar;
+}
+
+function hisseParaBirimi(kod) {
+  var h = HISSE_PORTFOY[kod] || {};
+  var t = String(h.ticker || '').toUpperCase();
+  if (h.currency) return h.currency;
+  if (t && !t.endsWith('.IS')) return 'USD';
+  return 'TRY';
+}
+
+function hisseParaSembol(kod) {
+  var c = hisseParaBirimi(kod);
+  return c === 'USD' ? '$' : c === 'EUR' ? '€' : '₺';
+}
+
+function formatHisseFiyat(kod, v) {
+  var sym = hisseParaSembol(kod);
+  if (!v || isNaN(v)) return '—';
+  var s = Number(v).toLocaleString('tr-TR', {minimumFractionDigits:2, maximumFractionDigits:2});
+  return sym === '$' ? '$' + s : s + ' ' + sym;
+}
+
 async function fetchHisseGecmis(kod) {
-  var ticker = HISSE_PORTFOY[kod].ticker;
-  var urls = [
-    '/api/yahoo?ticker=' + encodeURIComponent(ticker) + '&range=1mo'
-  ];
-  for (var u = 0; u < urls.length; u++) {
+  var adaylar = hisseTickerAdaylari(kod);
+  for (var u = 0; u < adaylar.length; u++) {
+    var ticker = adaylar[u];
     try {
-      var resp = await fetchWithTimeout(urls[u], {headers:{'Accept':'application/json'}}, 8000);
+      var url = '/api/yahoo?ticker=' + encodeURIComponent(ticker) + '&range=1mo';
+      var resp = await fetchWithTimeout(url, {headers:{'Accept':'application/json'}}, 9000);
       if (!resp.ok) continue;
       var data = await resp.json();
       var result = data && data.chart && data.chart.result && data.chart.result[0];
       if (!result) continue;
-      var meta = result.meta;
+      var meta = result.meta || {};
       var timestamps = result.timestamp || [];
       var closes = result.indicators && result.indicators.adjclose &&
                    result.indicators.adjclose[0] && result.indicators.adjclose[0].adjclose || [];
+      if (!timestamps.length || !closes.length) continue;
+
       for (var i = 0; i < timestamps.length; i++) {
         if (!closes[i]) continue;
         var dt = new Date(timestamps[i] * 1000);
@@ -8342,10 +8379,9 @@ async function fetchHisseGecmis(kod) {
         if (!hisseGunlukFiyat[key]) hisseGunlukFiyat[key] = {};
         hisseGunlukFiyat[key][kod] = closes[i];
       }
-      var bugunFiyat = meta.regularMarketPrice;
+      var bugunFiyat = meta.regularMarketPrice || closes[closes.length - 1];
       var gunlukDeg = meta.regularMarketChangePercent;
       if (gunlukDeg == null || gunlukDeg === 0) {
-        // regularMarketChangePercent yoksa fiyat farkından hesapla
         var prev = meta.previousClose || meta.chartPreviousClose;
         if (prev && prev > 0) {
           var hesap = (bugunFiyat - prev) / prev * 100;
@@ -8354,9 +8390,15 @@ async function fetchHisseGecmis(kod) {
           gunlukDeg = 0;
         }
       }
-      // ±25% aşırı değer filtresi
       if (Math.abs(gunlukDeg) > 25) gunlukDeg = 0;
-      hisseBugunkuFiyat[kod] = { fiyat: bugunFiyat, degisim: parseFloat(gunlukDeg.toFixed(4)) };
+
+      // Başarılı olan ticker'ı portföye yaz. Böylece SPXC gibi ABD hisseleri bir kez bulununca .IS'e geri dönmez.
+      HISSE_PORTFOY[kod].ticker = ticker;
+      HISSE_PORTFOY[kod].market = ticker.endsWith('.IS') ? 'BIST' : 'US';
+      HISSE_PORTFOY[kod].currency = meta.currency || (ticker.endsWith('.IS') ? 'TRY' : 'USD');
+      hissePortfoyuKaydet();
+
+      hisseBugunkuFiyat[kod] = { fiyat: bugunFiyat, degisim: parseFloat(gunlukDeg.toFixed(4)), currency: HISSE_PORTFOY[kod].currency, ticker: ticker };
       return true;
     } catch(e) {}
   }
@@ -8509,7 +8551,7 @@ function renderHisseKartlar() {
     html += '<div class="fcard" style="border-bottom-color:' + h.renk + ';">'
       + '<div class="fname" style="color:' + h.renk + ';">' + kod + '</div>'
       + '<div class="hlabel" style="margin-top:4px">' + h.ad + '</div>'
-      + '<div class="ftotal" style="color:' + cc(deg) + ';">' + (fiyat > 0 ? fiyat.toLocaleString('tr-TR',{minimumFractionDigits:2,maximumFractionDigits:2}) + ' ₺' : '—') + '</div>'
+      + '<div class="ftotal" style="color:' + cc(deg) + ';">' + (fiyat > 0 ? formatHisseFiyat(kod, fiyat) : '—') + '</div>'
       + '<div class="fret" style="color:' + cc(deg) + ';">' + (fiyat > 0 ? fmtP(deg) + ' bugün' : '—') + '</div>'
       + '<div class="fprice-row">'
         + '<div><div class="fprice-label">Ort. Maliyet</div><div class="fprice-val" style="color:' + h.renk + ';">' + h.ortMaliyet.toLocaleString('tr-TR',{minimumFractionDigits:2}) + ' ₺</div></div>'
@@ -8900,7 +8942,7 @@ function openHissePortfoyModal() {
     html += '<div style="margin-bottom:12px;padding:12px;background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.06);border-radius:8px;">'
       + '<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">'
         + '<div style="font-family:Syne,sans-serif;font-weight:800;color:' + renk + ';width:60px;">' + kod + '</div>'
-        + '<div style="flex:1;font-size:0.7rem;color:#4e6a82;">' + (h.ad || '') + '</div>'
+        + '<div style="flex:1;font-size:0.7rem;color:#4e6a82;">' + (h.ad || '') + ' · ' + (h.market || (String(h.ticker||'').toUpperCase().endsWith('.IS') ? 'BIST' : 'ABD')) + '</div>'
         + '<button data-kod="' + kod + '" class="hisse-sil-btn" style="background:rgba(255,71,87,0.18);border:1px solid rgba(255,71,87,0.5);color:#ff4757;font-family:DM Mono,monospace;font-size:0.65rem;padding:5px 10px;border-radius:6px;cursor:pointer;font-weight:700;">Sil</button>'
       + '</div>'
       + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">'
@@ -8909,7 +8951,7 @@ function openHissePortfoyModal() {
           + '<input id="hpm-adet-' + kod + '" type="number" step="1" value="' + h.adet + '" style="width:100%;background:#060c14;border:1px solid rgba(255,159,67,0.2);border-radius:6px;padding:6px 10px;color:#e8f4fd;font-family:DM Mono,monospace;font-size:0.82rem;">'
         + '</div>'
         + '<div>'
-          + '<div style="font-size:0.6rem;color:#4e6a82;margin-bottom:4px;">ORT. MALİYET (₺)</div>'
+          + '<div style="font-size:0.6rem;color:#4e6a82;margin-bottom:4px;">ORT. MALİYET</div>'
           + '<input id="hpm-maliyet-' + kod + '" type="number" step="0.01" value="' + h.ortMaliyet + '" style="width:100%;background:#060c14;border:1px solid rgba(255,159,67,0.2);border-radius:6px;padding:6px 10px;color:#e8f4fd;font-family:DM Mono,monospace;font-size:0.82rem;">'
         + '</div>'
       + '</div>'
@@ -8921,10 +8963,11 @@ function openHissePortfoyModal() {
 
   // Yeni hisse ekle
   html += '<div style="font-size:0.7rem;color:#4e6a82;text-transform:uppercase;letter-spacing:2px;margin:16px 0 10px;">Yeni Hisse Ekle</div>';
-  html += '<div style="display:grid;grid-template-columns:80px 1fr 1fr;gap:8px;margin-bottom:8px;">'
-    + '<input id="hpm-yeni-kod" type="text" placeholder="KOD" maxlength="8" style="background:#060c14;border:1px solid rgba(255,159,67,0.2);border-radius:6px;padding:6px 10px;color:#e8f4fd;font-family:DM Mono,monospace;font-size:0.82rem;text-transform:uppercase;">'
+  html += '<div style="display:grid;grid-template-columns:80px 92px 1fr 1fr;gap:8px;margin-bottom:8px;">'
+    + '<input id="hpm-yeni-kod" type="text" placeholder="KOD" maxlength="12" style="background:#060c14;border:1px solid rgba(255,159,67,0.2);border-radius:6px;padding:6px 10px;color:#e8f4fd;font-family:DM Mono,monospace;font-size:0.82rem;text-transform:uppercase;">'
+    + '<select id="hpm-yeni-piyasa" style="background:#060c14;border:1px solid rgba(255,159,67,0.2);border-radius:6px;padding:6px 8px;color:#e8f4fd;font-family:DM Mono,monospace;font-size:0.78rem;"><option value="BIST">BIST</option><option value="US">ABD</option></select>'
     + '<input id="hpm-yeni-adet" type="number" step="1" placeholder="Adet" style="background:#060c14;border:1px solid rgba(255,159,67,0.2);border-radius:6px;padding:6px 10px;color:#e8f4fd;font-family:DM Mono,monospace;font-size:0.82rem;">'
-    + '<input id="hpm-yeni-maliyet" type="number" step="0.01" placeholder="Ort. Maliyet ₺" style="background:#060c14;border:1px solid rgba(255,159,67,0.2);border-radius:6px;padding:6px 10px;color:#e8f4fd;font-family:DM Mono,monospace;font-size:0.82rem;">'
+    + '<input id="hpm-yeni-maliyet" type="number" step="0.01" placeholder="Ort. Maliyet" style="background:#060c14;border:1px solid rgba(255,159,67,0.2);border-radius:6px;padding:6px 10px;color:#e8f4fd;font-family:DM Mono,monospace;font-size:0.82rem;">'
     + '</div>';
   html += '<div style="display:grid;grid-template-columns:1fr;gap:8px;margin-bottom:16px;">'
     + '<input id="hpm-yeni-ad" type="text" placeholder="Şirket Adı (opsiyonel)" style="background:#060c14;border:1px solid rgba(255,159,67,0.2);border-radius:6px;padding:6px 10px;color:#e8f4fd;font-family:DM Mono,monospace;font-size:0.82rem;">'
@@ -8983,10 +9026,12 @@ function yeniHisseEkle() {
   var adetEl    = document.getElementById('hpm-yeni-adet');
   var maliyetEl = document.getElementById('hpm-yeni-maliyet');
   var adEl      = document.getElementById('hpm-yeni-ad');
+  var piyasaEl  = document.getElementById('hpm-yeni-piyasa');
   var kod     = (kodEl.value || '').trim().toUpperCase();
   var adet    = parseInt(adetEl.value);
   var maliyet = parseFloat(maliyetEl.value);
   var ad      = (adEl.value || '').trim();
+  var piyasa  = ((piyasaEl && piyasaEl.value) || 'BIST').toUpperCase();
   if (!kod || isNaN(adet) || adet <= 0 || isNaN(maliyet) || maliyet <= 0) {
     alert('Kod, adet ve maliyet zorunlu.');
     return;
@@ -8995,7 +9040,7 @@ function yeniHisseEkle() {
   // Renk ata
   var renkler = ['#ff9f43','#a78bfa','#2ed573','#ff6b6b','#4fa3ff','#ffd166','#ff5c7a','#48dbfb'];
   var renk = renkler[Object.keys(HISSE_PORTFOY).length % renkler.length];
-  HISSE_PORTFOY[kod] = { ad: ad || kod, adet: adet, ortMaliyet: maliyet, ticker: kod + '.IS', renk: renk };
+  HISSE_PORTFOY[kod] = { ad: ad || kod, adet: adet, ortMaliyet: maliyet, ticker: piyasa === 'US' ? kod : (kod + '.IS'), market: piyasa, currency: piyasa === 'US' ? 'USD' : 'TRY', renk: renk };
   hissePortfoyuKaydet();
   document.getElementById('hisse-portfoy-modal').remove();
   tumHisseleriGuncelle();
