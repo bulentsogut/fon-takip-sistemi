@@ -8617,29 +8617,52 @@ function renderHisseKartlar() {
   });
   row.innerHTML = html;
 
-  // Hero kartları dinamik güncelle: portföydeki tüm BIST/ABD hisseleri üst K/Z kartlarına dahil edilir.
+  // Hero kartları dinamik güncelle: BIST TL, ABD USD ve genel TL toplamı ayrı hesaplanır.
   var toplamKZ = 0, toplamPortfoy = 0, toplamBaslangic = 0;
+  var bistPortfoyTL = 0, bistBaslangicTL = 0;
+  var abdPortfoyUSD = 0, abdBaslangicUSD = 0;
   var heroCards = [];
   Object.entries(HISSE_PORTFOY).forEach(function(entry){
     var kod = entry[0], h = entry[1];
     var fiyat = (hisseBugunkuFiyat[kod] || {}).fiyat || 0;
+    var aktifDeger = fiyat > 0 ? fiyat * h.adet : h.ortMaliyet * h.adet;
+    var baslangicDeger = h.ortMaliyet * h.adet;
     var kz = fiyat > 0 ? (fiyat - h.ortMaliyet) * h.adet : 0;
     var pct = fiyat > 0 ? (fiyat - h.ortMaliyet) / h.ortMaliyet * 100 : 0;
+
+    if (hisseUSD(kod)) {
+      abdPortfoyUSD += aktifDeger;
+      abdBaslangicUSD += baslangicDeger;
+    } else {
+      bistPortfoyTL += aktifDeger;
+      bistBaslangicTL += baslangicDeger;
+    }
+
     toplamKZ       += hisseDegerTL(kod, kz);
-    toplamPortfoy  += hisseDegerTL(kod, fiyat > 0 ? fiyat * h.adet : h.ortMaliyet * h.adet);
-    toplamBaslangic += hisseDegerTL(kod, h.ortMaliyet * h.adet);
+    toplamPortfoy  += hisseDegerTL(kod, aktifDeger);
+    toplamBaslangic += hisseDegerTL(kod, baslangicDeger);
     heroCards.push({ kod:kod, h:h, fiyat:fiyat, kz:kz, pct:pct });
   });
+
+  function fmtTL(v) { return Math.round(v || 0).toLocaleString('tr-TR') + ' ₺'; }
+  function fmtUSD(v) {
+    var n = Number(v || 0);
+    return '$' + n.toLocaleString('tr-TR', {minimumFractionDigits:2, maximumFractionDigits:2});
+  }
 
   var hero = document.getElementById('hisse-hero-row');
   if (hero) {
     var toplamClass = toplamKZ >= 0 ? 'pos' : 'neg';
+    var abdTLKarsilik = hisseUsdTry ? fmtTL(abdPortfoyUSD * hisseUsdTry) : 'Kur yok';
     var heroHtml = ''
       + '<div class="hcard main">'
       + '<div class="hlabel">Toplam Hisse Portföyü</div>'
-      + '<div class="hval" id="hisse-h-total">' + Math.round(toplamPortfoy).toLocaleString('tr-TR') + ' ₺</div>'
-      + '<div class="hsub" id="hisse-h-baslangic">Başlangıç: ' + Math.round(toplamBaslangic).toLocaleString('tr-TR') + ' ₺</div>'
-      + '<div class="badge ' + toplamClass + '" id="hisse-h-kz">' + (toplamKZ >= 0 ? '+' : '') + Math.round(toplamKZ).toLocaleString('tr-TR') + ' ₺</div>'
+      + '<div class="hsub" style="margin-top:0;">BIST: <strong style="color:var(--text);">' + fmtTL(bistPortfoyTL) + '</strong></div>'
+      + '<div class="hsub">ABD: <strong style="color:var(--text);">' + fmtUSD(abdPortfoyUSD) + '</strong> <span style="color:var(--muted);">≈ ' + abdTLKarsilik + '</span></div>'
+      + '<div class="hlabel" style="margin-top:10px;margin-bottom:6px;">Genel TL Toplamı</div>'
+      + '<div class="hval" id="hisse-h-total">' + fmtTL(toplamPortfoy) + '</div>'
+      + '<div class="hsub" id="hisse-h-baslangic">Başlangıç: ' + fmtTL(toplamBaslangic) + '</div>'
+      + '<div class="badge ' + toplamClass + '" id="hisse-h-kz">' + (toplamKZ > 0 ? '+' : toplamKZ < 0 ? '-' : '') + fmtTL(Math.abs(toplamKZ)) + '</div>'
       + '</div>';
 
     heroCards.forEach(function(item){
