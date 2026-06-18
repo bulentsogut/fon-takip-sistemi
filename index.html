@@ -8500,6 +8500,11 @@ function renderHisseGrafikleri() {
     var W = 900, H = 90, px = 40, py = 12;
     var minF = Math.min.apply(null, noktalar.map(function(n){ return n.fiyat; }));
     var maxF = Math.max.apply(null, noktalar.map(function(n){ return n.fiyat; }));
+    var maliyet = parseFloat(h.ortMaliyet || 0);
+    if (maliyet && !isNaN(maliyet) && maliyet > 0) {
+      minF = Math.min(minF, maliyet);
+      maxF = Math.max(maxF, maliyet);
+    }
     var range = maxF - minF || 1;
     minF = minF - range * 0.1;
     maxF = maxF + range * 0.1;
@@ -8540,6 +8545,14 @@ function renderHisseGrafikleri() {
       labels += '<text x="' + p.x + '" y="' + (H + 4) + '" text-anchor="middle" fill="#4e6a82" font-size="9" font-family="DM Mono,monospace">' + p.tarih + '</text>';
     });
 
+    // Maliyet çizgisi: kullanıcının ortalama maliyeti grafikte kesikli turkuaz çizgi olarak gösterilir
+    var costLine = '';
+    if (maliyet && !isNaN(maliyet) && maliyet > 0) {
+      var costY = py + (1 - (maliyet - minF) / range) * (H - py * 2);
+      costLine = '<line x1="' + px + '" x2="' + (W-px) + '" y1="' + costY + '" y2="' + costY + '" stroke="#00ffc8" stroke-width="1.6" stroke-dasharray="7 5" opacity="0.95"/>'
+        + '<text x="' + (W-px-4) + '" y="' + (costY - 5) + '" text-anchor="end" fill="#00ffc8" font-size="9" font-family="DM Mono,monospace">Maliyet ' + maliyet.toFixed(2) + '</text>';
+    }
+
     // Son nokta etiketi
     var lastPt = pts[pts.length - 1];
     var lastLabel = '<circle cx="' + lastPt.x + '" cy="' + lastPt.y + '" r="4" fill="' + lineColor + '" stroke="#060c14" stroke-width="2"/>'
@@ -8549,6 +8562,7 @@ function renderHisseGrafikleri() {
       + '<defs><linearGradient id="' + gradId + '" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="' + lineColor + '" stop-opacity="0.3"/><stop offset="100%" stop-color="' + lineColor + '" stop-opacity="0"/></linearGradient></defs>'
       + gridLines
       + '<path d="' + areaD + '" fill="url(#' + gradId + ')"/>'
+      + costLine
       + '<path d="' + pathD + '" fill="none" stroke="' + lineColor + '" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>'
       + lastLabel
       + labels
