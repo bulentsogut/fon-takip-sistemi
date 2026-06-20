@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Fon Yönetim Merkezi — Takip & Tahmin</title>
-<!-- Vercel/GitHub index sürümü: güncel referans HTML ile eşitlendi. -->
+<!-- Vercel/GitHub index sürümü: güncel referans HTML ile eşitlendi. Firebase portföy senkronu aktif. -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 <!-- Firebase ortak ofset/snapshot depolama -->
@@ -22,11 +22,28 @@ var SHARED_FIREBASE_CONFIG = {
   appId: "1:543685938116:web:cfb12b595d7a07e3587291"
 };
 var SHARED_STORAGE_KEYS = [
+  // Tahmin / ofset verileri
   'fon_tahmin_snapshot',
   'fon_tahmin_snapshot_auto',
   'fon_gercek_gecmis',
   'fon_hesaplanan_ofset',
-  'fon_adaptif_ofset_modu'
+  'fon_adaptif_ofset_modu',
+  // Fon Takip verileri
+  'fon_v5',
+  'fon_tefas_v3',
+  'fon_trx_v5',
+  'fon_trx_extra_v1',
+  'fon_deleted_funds_v1',
+  'fon_satis_gecmisi_v1',
+  // Getiri Tahmin fon seçimleri
+  'fon_tahmin_secili_fonlar_v1',
+  'fon_tahmin_ozel_fonlar_v1',
+  // Hisse Takip verileri
+  'hisse_portfoy_v1',
+  'hisse_gunluk_v1',
+  'hisse_bugun_v1',
+  'hisse_kayit_paketi_v1',
+  'hisse_usdtry_v1'
 ];
 var _sharedDb = null;
 var _sharedStorageReady = false;
@@ -57,7 +74,7 @@ function sharedWriteLocal(key, value) {
   try {
     if (value === undefined) return;
     if (key === 'fon_adaptif_ofset_modu') localStorage.setItem(key, String(value || 'none'));
-    else localStorage.setItem(key, JSON.stringify(value || {}));
+    else localStorage.setItem(key, JSON.stringify(value === null ? null : value));
   } catch(e) {}
 }
 function sharedMergeObjects(localVal, remoteVal) {
@@ -83,6 +100,36 @@ function sharedSet(key, value) {
   }
 }
 function sharedSetRaw(key, value) { sharedSet(key, value); }
+function sharedSetJsonString(key, jsonString) {
+  try {
+    if (SHARED_STORAGE_KEYS.indexOf(key) < 0) return false;
+    var parsed = (jsonString === null || jsonString === undefined || jsonString === '') ? null : JSON.parse(jsonString);
+    sharedSet(key, parsed);
+    return true;
+  } catch(e) {
+    try { if (SHARED_STORAGE_KEYS.indexOf(key) >= 0) sharedWriteLocal(key, JSON.parse(jsonString)); } catch(_e) {}
+    return false;
+  }
+}
+function firebaseKaydetTumVeriler(silent) {
+  try {
+    if (!_sharedDb) sharedInitFirebase();
+    var payload = {};
+    SHARED_STORAGE_KEYS.forEach(function(key){
+      var val = sharedParseLocal(key);
+      if (val !== null && val !== undefined) payload[key] = val;
+    });
+    if (_sharedDb) {
+      _sharedDb.ref(_sharedPath).update(payload);
+      if (!silent && typeof toast === 'function') toast("☁ Veriler Firebase'e kaydedildi", 'ok');
+    } else if (!silent && typeof toast === 'function') {
+      toast('Firebase bağlantısı yok; veriler bu cihazda kaydedildi', 'info');
+    }
+  } catch(e) {
+    if (!silent && typeof toast === 'function') toast('Firebase kayıt hatası: ' + e.message, 'err');
+    console.warn('Firebase kayıt hatası:', e);
+  }
+}
 function sharedApplyRemote(data) {
   data = data || {};
   _sharedApplyingRemote = true;
@@ -110,7 +157,18 @@ function sharedApplyRemote(data) {
   } finally { _sharedApplyingRemote = false; }
 }
 function sharedRefreshUI() {
+  try { if (typeof hesaplananOfset !== 'undefined') hesaplananOfset = sharedGet('fon_hesaplanan_ofset', hesaplananOfset || {}) || {}; } catch(e) {}
+  try { if (typeof gercekGecmis !== 'undefined') gercekGecmis = sharedGet('fon_gercek_gecmis', gercekGecmis || {}) || {}; } catch(e) {}
+  try { if (typeof loadCustomFundsIntoRegistry === 'function') loadCustomFundsIntoRegistry(); } catch(e) {}
+  try { if (typeof loadSelectedFundIds === 'function' && typeof selectedFundIds !== 'undefined') selectedFundIds = loadSelectedFundIds(); } catch(e) {}
+  try { if (typeof HISSE_PORTFOY !== 'undefined' && typeof hissePortfoyuYukle === 'function') { Object.keys(HISSE_PORTFOY).forEach(function(k){ delete HISSE_PORTFOY[k]; }); hissePortfoyuYukle(); } } catch(e) {}
+  try { if (typeof hisseGunlukFiyat !== 'undefined') { var hg = sharedGet('hisse_gunluk_v1', null); if (hg) { Object.keys(hisseGunlukFiyat).forEach(function(k){ delete hisseGunlukFiyat[k]; }); Object.assign(hisseGunlukFiyat, hg); } } } catch(e) {}
+  try { if (typeof hisseBugunkuFiyat !== 'undefined') { var hb = sharedGet('hisse_bugun_v1', null); if (hb) { Object.keys(hisseBugunkuFiyat).forEach(function(k){ delete hisseBugunkuFiyat[k]; }); Object.assign(hisseBugunkuFiyat, hb); } } } catch(e) {}
   try { if (typeof updateUI === 'function') updateUI(); } catch(e) {}
+  try { if (typeof initTakipAyOtomasyon === 'function') initTakipAyOtomasyon(); } catch(e) {}
+  try { if (typeof render === 'function') render(); } catch(e) {}
+  try { if (typeof renderTefasCards === 'function') renderTefasCards(); } catch(e) {}
+  try { if (typeof renderHissePanel === 'function') renderHissePanel(); } catch(e) {}
   try { if (typeof renderGercekPanel === 'function') renderGercekPanel(); } catch(e) {}
   try { if (typeof renderOfsetOzet === 'function') renderOfsetOzet(); } catch(e) {}
   try { if (typeof renderAdaptifOzet === 'function') renderAdaptifOzet(); } catch(e) {}
@@ -3252,7 +3310,13 @@ function _lsGet(key){
 }
 function _lsSet(key,val){ 
   if(_useMemory){ _memStore[key]=val; return; }
-  try{ localStorage.setItem(key,val); }catch(e){ _useMemory=true; _memStore[key]=val; }
+  try{
+    if (typeof SHARED_STORAGE_KEYS !== 'undefined' && SHARED_STORAGE_KEYS.indexOf(key) >= 0 && typeof sharedSetJsonString === 'function') {
+      sharedSetJsonString(key, val);
+    } else {
+      localStorage.setItem(key,val);
+    }
+  }catch(e){ _useMemory=true; _memStore[key]=val; }
 }
 function _lsDel(key){
   if(_useMemory){ delete _memStore[key]; return; }
@@ -3626,7 +3690,8 @@ function saveData(){
     }
   });
   saveR(s);
-  toast('💾 Veriler kaydedildi','ok');
+  try { if (typeof firebaseKaydetTumVeriler === 'function') firebaseKaydetTumVeriler(true); } catch(e) {}
+  toast('💾 Veriler kaydedildi ve Firebase ile senkronlandı','ok');
 }
 function backupData(){
   // Önce ekrandaki tüm input değerlerini localStorage'a yaz
@@ -5679,8 +5744,7 @@ function colorForFundCode(code) {
 
 function loadCustomFundsIntoRegistry() {
   try {
-    const raw = localStorage.getItem(CUSTOM_FUNDS_STORAGE_KEY);
-    const parsed = raw ? JSON.parse(raw) : {};
+    const parsed = (typeof sharedGet==='function') ? (sharedGet(CUSTOM_FUNDS_STORAGE_KEY, {}) || {}) : (function(){ const raw = localStorage.getItem(CUSTOM_FUNDS_STORAGE_KEY); return raw ? JSON.parse(raw) : {}; })();
     if (parsed && typeof parsed === 'object') {
       Object.keys(parsed).forEach(function(code){
         const c = normalizeFundCode(code);
@@ -5704,7 +5768,7 @@ function saveCustomFundsFromRegistry() {
     Object.keys(FUNDS).forEach(function(code){
       if (FUNDS[code] && FUNDS[code].custom) out[code] = FUNDS[code];
     });
-    localStorage.setItem(CUSTOM_FUNDS_STORAGE_KEY, JSON.stringify(out));
+    (typeof sharedSetRaw==='function' ? sharedSetRaw(CUSTOM_FUNDS_STORAGE_KEY, out) : localStorage.setItem(CUSTOM_FUNDS_STORAGE_KEY, JSON.stringify(out)));
   } catch(e) {}
 }
 
@@ -5723,18 +5787,15 @@ let selectedFundIds = loadSelectedFundIds();
 
 function loadSelectedFundIds() {
   try {
-    const raw = localStorage.getItem(SELECTED_FUNDS_STORAGE_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      const valid = Array.isArray(parsed) ? parsed.filter(id => FUNDS[id]) : [];
-      if (valid.length > 0) return valid;
-    }
+    const parsed = (typeof sharedGet==='function') ? sharedGet(SELECTED_FUNDS_STORAGE_KEY, null) : (function(){ const raw = localStorage.getItem(SELECTED_FUNDS_STORAGE_KEY); return raw ? JSON.parse(raw) : null; })();
+    const valid = Array.isArray(parsed) ? parsed.filter(id => FUNDS[id]) : [];
+    if (valid.length > 0) return valid;
   } catch(e) {}
   return Object.keys(FUNDS);
 }
 
 function saveSelectedFundIds() {
-  try { localStorage.setItem(SELECTED_FUNDS_STORAGE_KEY, JSON.stringify(selectedFundIds)); } catch(e) {}
+  try { (typeof sharedSetRaw==='function' ? sharedSetRaw(SELECTED_FUNDS_STORAGE_KEY, selectedFundIds) : localStorage.setItem(SELECTED_FUNDS_STORAGE_KEY, JSON.stringify(selectedFundIds))); } catch(e) {}
 }
 
 function getSelectedFundEntries() {
@@ -6870,7 +6931,7 @@ async function otomatikOfsetHesapla() {
       FON_OFSET[fon] = yeniOfsetler[fon] || 0;
       if (typeof hesaplananOfset !== 'undefined') hesaplananOfset[fon] = yeniOfsetler[fon] || 0;
     });
-    try { localStorage.setItem('fon_hesaplanan_ofset', JSON.stringify(yeniOfsetler)); } catch(e) {}
+    try { (typeof sharedSetRaw==='function' ? sharedSetRaw('fon_hesaplanan_ofset', yeniOfsetler) : localStorage.setItem('fon_hesaplanan_ofset', JSON.stringify(yeniOfsetler))); } catch(e) {}
 
     // Snapshot tablosuna da yaz (kıyas tablosu güncellensin)
     var snapshots = {};
@@ -6886,7 +6947,7 @@ async function otomatikOfsetHesapla() {
         snapshots[p[0]+'.'+p[1]+'.2026'] = snap;
       }
     });
-    try { localStorage.setItem('fon_tahmin_snapshot', JSON.stringify(snapshots)); } catch(e) {}
+    try { (typeof sharedSetRaw==='function' ? sharedSetRaw('fon_tahmin_snapshot', snapshots) : localStorage.setItem('fon_tahmin_snapshot', JSON.stringify(snapshots))); } catch(e) {}
 
     // UI güncelle
     updateUI();
@@ -7611,7 +7672,7 @@ function getTahminSnapshots() {
   try { return JSON.parse(localStorage.getItem('fon_tahmin_snapshot')) || {}; } catch(e) { return {}; }
 }
 function saveTahminSnapshots(data) {
-  try { localStorage.setItem('fon_tahmin_snapshot', JSON.stringify(data)); } catch(e) {}
+  try { (typeof sharedSetRaw==='function' ? sharedSetRaw('fon_tahmin_snapshot', data) : localStorage.setItem('fon_tahmin_snapshot', JSON.stringify(data))); } catch(e) {}
 }
 
 // Bugünün tahminini kaydet (saat 23:00 otomatiği veya manuel)
@@ -7899,7 +7960,7 @@ function hesaplaVeUygulaOfset() {
     }
   });
 
-  try { localStorage.setItem('fon_hesaplanan_ofset', JSON.stringify(yeniOfsetler)); } catch(e) {}
+  try { (typeof sharedSetRaw==='function' ? sharedSetRaw('fon_hesaplanan_ofset', yeniOfsetler) : localStorage.setItem('fon_hesaplanan_ofset', JSON.stringify(yeniOfsetler))); } catch(e) {}
 
   if (typeof updateUI           === 'function') updateUI();
   if (typeof renderGercekPanel  === 'function') renderGercekPanel();
@@ -7978,7 +8039,7 @@ function setNavSync(state, text) {
 
 // ── ADAPTİF OFSET SİSTEMİ — YAPI KORUMALI DÜZELTME ───────────────────────
 var ADAPTIF_OFSET_MODU = localStorage.getItem('fon_adaptif_ofset_modu') || 'none';
-if (ADAPTIF_OFSET_MODU === 'nihai') { ADAPTIF_OFSET_MODU = 'none'; try { localStorage.setItem('fon_adaptif_ofset_modu', 'none'); } catch(e) {} }
+if (ADAPTIF_OFSET_MODU === 'nihai') { ADAPTIF_OFSET_MODU = 'none'; try { (typeof sharedSetRaw==='function' ? sharedSetRaw('fon_adaptif_ofset_modu', 'none') : localStorage.setItem('fon_adaptif_ofset_modu', 'none')); } catch(e) {} }
 var ADAPTIF_HESAP_GORUNUMU = null;
 
 function adaptifFonListesi() { return (typeof getSelectedFundEntries === 'function') ? getSelectedFundEntries().map(function(e){return e[0];}) : ['DFI', 'TLY', 'PHE', 'CPT', 'IJC', 'PBR']; }
@@ -8098,13 +8159,13 @@ function adaptifOfsetUygula(mod) {
   }
   ADAPTIF_OFSET_MODU = mod;
   if (mod !== 'none') ADAPTIF_HESAP_GORUNUMU = mod;
-  localStorage.setItem('fon_adaptif_ofset_modu', mod);
+  (typeof sharedSetRaw==='function' ? sharedSetRaw('fon_adaptif_ofset_modu', mod) : localStorage.setItem('fon_adaptif_ofset_modu', mod));
   var secili = adaptifSeciliOfsetler(mod);
   Object.keys(secili).forEach(function(fon) {
     if (typeof FON_OFSET !== 'undefined' && FON_OFSET.hasOwnProperty(fon)) FON_OFSET[fon] = secili[fon] || 0;
     if (typeof hesaplananOfset !== 'undefined') hesaplananOfset[fon] = secili[fon] || 0;
   });
-  try { localStorage.setItem('fon_hesaplanan_ofset', JSON.stringify(secili)); } catch(e) {}
+  try { (typeof sharedSetRaw==='function' ? sharedSetRaw('fon_hesaplanan_ofset', secili) : localStorage.setItem('fon_hesaplanan_ofset', JSON.stringify(secili))); } catch(e) {}
   if (typeof OFSET_AKTIF !== 'undefined') OFSET_AKTIF = mod !== 'none';
   if (typeof updateUI === 'function') updateUI();
   if (typeof renderGercekPanel === 'function') renderGercekPanel();
@@ -8239,8 +8300,8 @@ function migrateFromBackup(input) {
       var d = JSON.parse(e.target.result);
       if (!d.rates) { alert('Geçersiz yedek dosyası.'); return; }
       // Save to localStorage with TAKİP's keys
-      try { localStorage.setItem('fon_v5', JSON.stringify(d.rates)); } catch(e2) {}
-      if (d.tefas) try { localStorage.setItem('fon_tefas_v3', JSON.stringify(d.tefas)); } catch(e2) {}
+      try { (typeof sharedSetRaw==='function' ? sharedSetRaw('fon_v5', d.rates) : localStorage.setItem('fon_v5', JSON.stringify(d.rates))); } catch(e2) {}
+      if (d.tefas) try { (typeof sharedSetRaw==='function' ? sharedSetRaw('fon_tefas_v3', d.tefas) : localStorage.setItem('fon_tefas_v3', JSON.stringify(d.tefas))); } catch(e2) {}
       // Reload liveRates
       liveRates = Object.assign({}, PREFILLED, d.rates || {});
       
@@ -8400,7 +8461,7 @@ async function adaptifGecmisTahminleriOlustur() {
     if (Object.keys(snap).length) autoSnapshots[adaptifTamTarih(tarih)] = snap;
   });
 
-  try { localStorage.setItem('fon_tahmin_snapshot_auto', JSON.stringify(autoSnapshots)); } catch(e) {}
+  try { (typeof sharedSetRaw==='function' ? sharedSetRaw('fon_tahmin_snapshot_auto', autoSnapshots) : localStorage.setItem('fon_tahmin_snapshot_auto', JSON.stringify(autoSnapshots))); } catch(e) {}
   return Object.keys(autoSnapshots).length > 0;
 }
 
@@ -8449,14 +8510,14 @@ adaptifOfsetUygula = async function(mod) {
   }
   ADAPTIF_OFSET_MODU = mod;
   if (mod !== 'none') ADAPTIF_HESAP_GORUNUMU = mod;
-  localStorage.setItem('fon_adaptif_ofset_modu', mod);
+  (typeof sharedSetRaw==='function' ? sharedSetRaw('fon_adaptif_ofset_modu', mod) : localStorage.setItem('fon_adaptif_ofset_modu', mod));
   var secili = {};
   h.fonlar.forEach(function(fon) { secili[fon] = mod === 'none' ? 0 : ((h.guncel[fon] && h.guncel[fon][mod]) || 0); });
   Object.keys(secili).forEach(function(fon) {
     if (typeof FON_OFSET !== 'undefined' && FON_OFSET.hasOwnProperty(fon)) FON_OFSET[fon] = secili[fon] || 0;
     if (typeof hesaplananOfset !== 'undefined') hesaplananOfset[fon] = secili[fon] || 0;
   });
-  try { localStorage.setItem('fon_hesaplanan_ofset', JSON.stringify(secili)); } catch(e) {}
+  try { (typeof sharedSetRaw==='function' ? sharedSetRaw('fon_hesaplanan_ofset', secili) : localStorage.setItem('fon_hesaplanan_ofset', JSON.stringify(secili))); } catch(e) {}
   if (typeof OFSET_AKTIF !== 'undefined') OFSET_AKTIF = mod !== 'none';
   if (typeof updateUI === 'function') updateUI();
   if (typeof renderGercekPanel === 'function') renderGercekPanel();
@@ -9015,14 +9076,17 @@ function hisseDrillKapat() {
 
 // HISSE_LS_KEY yukarıda erken tanımlandı.
 function hissePortfoyuKaydet() {
-  try { localStorage.setItem(HISSE_LS_KEY, JSON.stringify(HISSE_PORTFOY)); } catch(e) {}
+  try {
+    if (typeof sharedSetRaw === 'function') sharedSetRaw(HISSE_LS_KEY, HISSE_PORTFOY);
+    else localStorage.setItem(HISSE_LS_KEY, JSON.stringify(HISSE_PORTFOY));
+  } catch(e) {}
 }
 
 function hissePortfoyuYukle() {
   try {
-    var saved = JSON.parse(localStorage.getItem(HISSE_LS_KEY));
+    var saved = (typeof sharedGet === 'function') ? sharedGet(HISSE_LS_KEY, null) : JSON.parse(localStorage.getItem(HISSE_LS_KEY));
     if (!saved) {
-      var paket = JSON.parse(localStorage.getItem('hisse_kayit_paketi_v1'));
+      var paket = (typeof sharedGet === 'function') ? sharedGet('hisse_kayit_paketi_v1', null) : JSON.parse(localStorage.getItem('hisse_kayit_paketi_v1'));
       if (paket && paket.portfoy) saved = paket.portfoy;
     }
     if (saved && typeof saved === 'object') {
@@ -9191,7 +9255,7 @@ function _restoreHisseBolumu(hisse){
     try{
       Object.keys(hisseGunlukFiyat).forEach(function(k){ delete hisseGunlukFiyat[k]; });
       Object.assign(hisseGunlukFiyat, hisse.gunluk);
-      localStorage.setItem('hisse_gunluk_v1', JSON.stringify(hisseGunlukFiyat));
+      (typeof sharedSetRaw==='function' ? sharedSetRaw('hisse_gunluk_v1', hisseGunlukFiyat) : localStorage.setItem('hisse_gunluk_v1', JSON.stringify(hisseGunlukFiyat)));
       changed=true;
     }catch(e){}
   }
@@ -9199,7 +9263,7 @@ function _restoreHisseBolumu(hisse){
     try{
       Object.keys(hisseBugunkuFiyat).forEach(function(k){ delete hisseBugunkuFiyat[k]; });
       Object.assign(hisseBugunkuFiyat, hisse.bugun);
-      localStorage.setItem('hisse_bugun_v1', JSON.stringify(hisseBugunkuFiyat));
+      (typeof sharedSetRaw==='function' ? sharedSetRaw('hisse_bugun_v1', hisseBugunkuFiyat) : localStorage.setItem('hisse_bugun_v1', JSON.stringify(hisseBugunkuFiyat)));
       changed=true;
     }catch(e){}
   }
@@ -9245,18 +9309,26 @@ function genelGeriYukle(input){
 function hisseVerileriKaydet() {
   try {
     // Kaydet butonu artık yalnızca fiyatları değil, portföy listesini de kalıcı yazar.
-    // Böylece sonradan eklenen SPCX/ABD hisseleri sayfa yeniden açılınca kaybolmaz.
+    // Firebase senkronu sayesinde farklı bilgisayarlarda da son kayıt görünür.
     hissePortfoyuKaydet();
-    localStorage.setItem('hisse_gunluk_v1', JSON.stringify(hisseGunlukFiyat));
-    localStorage.setItem('hisse_bugun_v1', JSON.stringify(hisseBugunkuFiyat));
-    localStorage.setItem('hisse_kayit_paketi_v1', JSON.stringify({
+    var paket = {
       v: 2,
       at: new Date().toISOString(),
       portfoy: HISSE_PORTFOY,
       gunluk: hisseGunlukFiyat,
       bugun: hisseBugunkuFiyat
-    }));
-    toast('Hisse portföyü ve verileri kaydedildi.', 'ok');
+    };
+    if (typeof sharedSetRaw === 'function') {
+      sharedSetRaw('hisse_gunluk_v1', hisseGunlukFiyat);
+      sharedSetRaw('hisse_bugun_v1', hisseBugunkuFiyat);
+      sharedSetRaw('hisse_kayit_paketi_v1', paket);
+      firebaseKaydetTumVeriler(true);
+    } else {
+      (typeof sharedSetRaw==='function' ? sharedSetRaw('hisse_gunluk_v1', hisseGunlukFiyat) : localStorage.setItem('hisse_gunluk_v1', JSON.stringify(hisseGunlukFiyat)));
+      (typeof sharedSetRaw==='function' ? sharedSetRaw('hisse_bugun_v1', hisseBugunkuFiyat) : localStorage.setItem('hisse_bugun_v1', JSON.stringify(hisseBugunkuFiyat)));
+      (typeof sharedSetRaw==='function' ? sharedSetRaw('hisse_kayit_paketi_v1', paket) : localStorage.setItem('hisse_kayit_paketi_v1', JSON.stringify(paket)));
+    }
+    toast('Hisse portföyü ve verileri Firebase ile senkronlandı.', 'ok');
   } catch(e) { toast('Kayıt hatası: ' + e.message, 'err'); }
 }
 
@@ -9291,11 +9363,11 @@ function hisseGeriYukle(input) {
       }
       if (d.gunluk) {
         Object.assign(hisseGunlukFiyat, d.gunluk);
-        localStorage.setItem('hisse_gunluk_v1', JSON.stringify(hisseGunlukFiyat));
+        (typeof sharedSetRaw==='function' ? sharedSetRaw('hisse_gunluk_v1', hisseGunlukFiyat) : localStorage.setItem('hisse_gunluk_v1', JSON.stringify(hisseGunlukFiyat)));
       }
       if (d.bugun) {
         Object.assign(hisseBugunkuFiyat, d.bugun);
-        localStorage.setItem('hisse_bugun_v1', JSON.stringify(hisseBugunkuFiyat));
+        (typeof sharedSetRaw==='function' ? sharedSetRaw('hisse_bugun_v1', hisseBugunkuFiyat) : localStorage.setItem('hisse_bugun_v1', JSON.stringify(hisseBugunkuFiyat)));
       }
       renderHissePanel();
       toast('Hisse verileri geri yüklendi.', 'ok');
