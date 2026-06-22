@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 
-<!-- Firebase Fon Takip ortak depolama -->
+<!-- Firebase Fon + Hisse ortak depolama -->
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
 <script>
@@ -26,7 +26,13 @@ var FON_FIREBASE_KEYS = [
   'fon_trx_v5',
   'fon_trx_extra_v1',
   'fon_deleted_funds_v1',
-  'fon_satis_gecmisi_v1'
+  'fon_satis_gecmisi_v1',
+  // Hisse Takip verileri
+  'hisse_portfoy_v1',
+  'hisse_gunluk_v1',
+  'hisse_bugun_v1',
+  'hisse_kayit_paketi_v1',
+  'hisse_usdtry_v1'
 ];
 var _fonFirebaseDb = null;
 var _fonFirebaseReady = false;
@@ -118,7 +124,7 @@ function fonFirebaseSave(silent){
     }
     var payload = fonFirebaseSnapshot();
     db.ref(_fonFirebasePath).set(payload);
-    if(!silent && typeof toast === 'function') toast('☁ Fon verileri Firebase’e kaydedildi', 'ok');
+    if(!silent && typeof toast === 'function') toast('☁ Fon/Hisse verileri Firebase’e kaydedildi', 'ok');
   }catch(e){
     console.warn('Fon Firebase kayıt hatası:', e);
     if(!silent && typeof toast === 'function') toast('Firebase kayıt hatası: ' + e.message, 'err');
@@ -138,6 +144,7 @@ function fonFirebaseRefreshUI(){
   try{ if(typeof render === 'function') render(); }catch(e){}
   try{ if(typeof renderTefasCards === 'function') renderTefasCards(); }catch(e){}
   try{ if(typeof renderPortfolioPie === 'function') renderPortfolioPie(); }catch(e){}
+  try{ if(typeof renderHissePanel === 'function') renderHissePanel(); }catch(e){}
 }
 function fonFirebaseStart(){
   var db = fonFirebaseInit();
@@ -149,7 +156,7 @@ function fonFirebaseStart(){
         fonFirebaseApply(data);
         fonFirebaseRefreshUI();
         _fonFirebaseReady = true;
-        if(typeof toast === 'function') toast('☁ Firebase fon verileri yüklendi', 'info');
+        if(typeof toast === 'function') toast('☁ Firebase fon/hisse verileri yüklendi', 'info');
       }else{
         fonFirebaseSave(true);
         _fonFirebaseReady = true;
@@ -9080,6 +9087,9 @@ function hisseDrillKapat() {
 // HISSE_LS_KEY yukarıda erken tanımlandı.
 function hissePortfoyuKaydet() {
   try { localStorage.setItem(HISSE_LS_KEY, JSON.stringify(HISSE_PORTFOY)); } catch(e) {}
+
+  // hissePortfoyuKaydet Firebase
+  if(typeof fonFirebaseSave === 'function') fonFirebaseSave(true);
 }
 
 function hissePortfoyuYukle() {
@@ -9322,6 +9332,9 @@ function hisseVerileriKaydet() {
     }));
     toast('Hisse portföyü ve verileri kaydedildi.', 'ok');
   } catch(e) { toast('Kayıt hatası: ' + e.message, 'err'); }
+
+  // hisseVerileriKaydet Firebase
+  if(typeof fonFirebaseSave === 'function') fonFirebaseSave(true);
 }
 
 function hisseYedekle() {
