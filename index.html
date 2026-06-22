@@ -140,11 +140,15 @@ function fonFirebaseApply(data){
   }finally{ _fonFirebaseApplying = false; }
 }
 function fonFirebaseRefreshUI(){
-  try{ if(typeof initTakipAyOtomasyon === 'function') initTakipAyOtomasyon(); }catch(e){}
-  try{ if(typeof render === 'function') render(); }catch(e){}
-  try{ if(typeof renderTefasCards === 'function') renderTefasCards(); }catch(e){}
-  try{ if(typeof renderPortfolioPie === 'function') renderPortfolioPie(); }catch(e){}
-  try{ if(typeof renderHissePanel === 'function') renderHissePanel(); }catch(e){}
+  function run(){
+    try{ if(typeof initTakipAyOtomasyon === 'function') initTakipAyOtomasyon(); }catch(e){}
+    try{ if(typeof render === 'function') render(); }catch(e){}
+    try{ if(typeof renderTefasCards === 'function') renderTefasCards(); }catch(e){}
+    try{ if(typeof renderHissePanel === 'function') renderHissePanel(); }catch(e){}
+  }
+  run();
+  setTimeout(run, 250);
+  setTimeout(run, 900);
 }
 function fonFirebaseStart(){
   var db = fonFirebaseInit();
@@ -4355,6 +4359,22 @@ function compute(rates){
 }
 
 function renderPortfolioPie(bakiye){
+  if(!bakiye){
+    try{
+      var usr=loadR(), merged={};
+      Object.keys(PREFILLED).forEach(function(d){ merged[d]=Object.assign({}, PREFILLED[d]); });
+      Object.keys(liveRates||{}).forEach(function(d){
+        if(!merged[d]) merged[d]={};
+        Object.keys(liveRates[d]).forEach(function(f){ if(liveRates[d][f]!==0) merged[d][f]=liveRates[d][f]; });
+      });
+      Object.keys(usr||{}).forEach(function(d){
+        if(!merged[d]) merged[d]={};
+        Object.keys(usr[d]).forEach(function(f){ if(usr[d][f]!==null && usr[d][f]!==undefined) merged[d][f]=usr[d][f]; });
+      });
+      var r=compute(merged);
+      bakiye = r && r.bakiye ? r.bakiye : {};
+    }catch(e){ bakiye={}; }
+  }
   var donut=document.getElementById('portfolio-pie-donut');
   var legend=document.getElementById('portfolio-pie-legend');
   var totalEl=document.getElementById('portfolio-pie-total');
