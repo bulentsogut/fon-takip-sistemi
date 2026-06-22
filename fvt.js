@@ -11,17 +11,11 @@ export default async function handler(req, res) {
     if (!ticker) return res.status(400).json({ ok:false, error:'ticker required' });
 
     const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=${encodeURIComponent(interval)}&range=${encodeURIComponent(range)}`;
-    let r = await fetch(url, {
-      headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json,text/plain,*/*' }
-    });
-
+    let r = await fetch(url, { headers: { 'User-Agent':'Mozilla/5.0', 'Accept':'application/json,text/plain,*/*' } });
     if (!r.ok) {
       const url2 = url.replace('query1.finance.yahoo.com', 'query2.finance.yahoo.com');
-      r = await fetch(url2, {
-        headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json,text/plain,*/*' }
-      });
+      r = await fetch(url2, { headers: { 'User-Agent':'Mozilla/5.0', 'Accept':'application/json,text/plain,*/*' } });
     }
-
     const txt = await r.text();
     res.status(r.status);
     res.setHeader('Content-Type', r.headers.get('content-type') || 'application/json; charset=utf-8');
