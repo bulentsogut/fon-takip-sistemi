@@ -1,19 +1,45 @@
-export default async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Accept');
-  if (req.method === 'OPTIONS') return res.status(204).end();
-  try {
-    const code = ((req.query && (req.query.code || req.query.fund || req.query.kod)) || '').toUpperCase();
-    const type = (req.query && req.query.type) || 'distribution';
-    if (!code) return res.status(400).json({ ok:false, error:'code required' });
-    const path = type === 'distribution' ? `https://fvt.com.tr/api/funds/${code}/distribution` : `https://fvt.com.tr/api/funds/${code}`;
-    const r = await fetch(path, { headers: { 'User-Agent':'Mozilla/5.0', 'Accept':'application/json,text/plain,*/*' } });
-    const txt = await r.text();
-    res.status(r.status);
-    res.setHeader('Content-Type', r.headers.get('content-type') || 'application/json; charset=utf-8');
-    return res.send(txt);
-  } catch(e) {
-    return res.status(500).json({ ok:false, error:e && e.message ? e.message : String(e) });
+exports.handler = async function(event, context) {
+  if (event.httpMethod !== 'POST') {
+    return { statusCode: 405, body: 'Method Not Allowed' };
   }
-}
+
+  try {
+    const { endpoint, body } = JSON.parse(event.body);
+    const url = 'https://www.tefas.gov.tr/api/funds/' + endpoint;
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'Origin': 'https://www.tefas.gov.tr',
+        'Referer': 'https://www.tefas.gov.tr/'
+      },
+      body: JSON.stringify(body)
+    });
+
+    if (!response.ok) {
+      return {
+        statusCode: response.status,
+        body: JSON.stringify({ error: 'TEFAS HTTP ' + response.status })
+      };
+    }
+
+    const data = await response.json();
+
+    return {
+      statusCode: 200,
+      headers: {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*'
+      },
+      body: JSON.stringify(data)
+    };
+
+  } catch (err) {
+    return {
+      statusCode: 500,
+      body: JSON.stringify({ error: err.message })
+    };
+  }
+};
