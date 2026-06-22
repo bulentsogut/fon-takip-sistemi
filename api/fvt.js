@@ -46,7 +46,7 @@ export default async function handler(req, res) {
       }
       const fonData = (data.data && data.data.fund) ? data.data.fund : (data.data || {});
       if (dailyReturn === null && fonData.getiri) dailyReturn = parseFloat(fonData.getiri);
-      res.status(200).json({ fon: fonKodu.toUpperCase(), dailyReturn, data: data.data || data });
+      res.status(200).json({ fon: fonKodu.toUpperCase(), dailyReturn });
       return;
     } catch (err) {
       res.status(500).json({ error: err.message });
