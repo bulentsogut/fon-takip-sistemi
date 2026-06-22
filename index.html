@@ -2341,19 +2341,8 @@ tbody tr:hover{background:rgba(0,180,255,0.035);}
 <nav class="main-nav">
   <div class="nav-logo">📊 FON MERKEZİ</div>
   
-    ';
-  html += '<button id="hm-iptal" style="flex:1;background:rgba(255,71,87,0.1);border:1px solid rgba(255,71,87,0.3);color:#ff4757;font-family:DM Mono,monospace;font-size:0.8rem;padding:10px;border-radius:8px;cursor:pointer;">✕ İptal</button>';
-  html += '</div></div></div>';
-
-  var modal = document.createElement('div');
-  modal.id = 'hisse-manual-modal';
-  modal.innerHTML = html;
-  document.body.appendChild(modal);
-
-  document.getElementById('hm-kaydet').addEventListener('click', function(){ saveHisseManualUpdate(key); });
-  document.getElementById('hm-iptal').addEventListener('click', function(){ modal.remove(); });
-}
-
+    
+<!-- BOZUK ENJEKTE EDİLMİŞ JS TEMİZLENDİ -->
 function saveHisseManualUpdate(key) {
   Object.keys(HISSE_PORTFOY).forEach(function(kod) {
     var el = document.getElementById('hm-' + kod);
