@@ -6,6 +6,117 @@
 <title>Fon Yönetim Merkezi — Takip & Tahmin</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+<!-- Firebase Fon Takip ortak depolama -->
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
+<script>
+var FON_FIREBASE_CONFIG = {
+  apiKey: "AIzaSyBfbSQ11fc68FhAIPfD4LPy689OL5epuKE",
+  authDomain: "fon-takip-7af2c.firebaseapp.com",
+  databaseURL: "https://fon-takip-7af2c-default-rtdb.firebaseio.com",
+  projectId: "fon-takip-7af2c",
+  storageBucket: "fon-takip-7af2c.firebasestorage.app",
+  messagingSenderId: "543685938116",
+  appId: "1:543685938116:web:cfb12b595d7a07e3587291"
+};
+var FON_FIREBASE_KEYS = [
+  'fon_v5',
+  'fon_tefas_v3',
+  'fon_trx_v5',
+  'fon_trx_extra_v1',
+  'fon_deleted_funds_v1',
+  'fon_satis_gecmisi_v1'
+];
+var _fonFirebaseDb = null;
+var _fonFirebaseReady = false;
+var _fonFirebaseApplying = false;
+var _fonFirebasePath = 'fonmerkezi/fon_takip';
+function fonFirebaseInit(){
+  try{
+    if(typeof firebase === 'undefined') return null;
+    if(!firebase.apps || !firebase.apps.length) firebase.initializeApp(FON_FIREBASE_CONFIG);
+    _fonFirebaseDb = firebase.database();
+    return _fonFirebaseDb;
+  }catch(e){
+    console.warn('Fon Firebase başlatılamadı:', e);
+    return null;
+  }
+}
+function fonFirebaseReadLocal(key){
+  try{
+    var raw = localStorage.getItem(key);
+    if(raw === null || raw === undefined || raw === '') return null;
+    return JSON.parse(raw);
+  }catch(e){ return null; }
+}
+function fonFirebaseWriteLocal(key, value){
+  try{
+    if(value === undefined) return;
+    if(value === null) localStorage.removeItem(key);
+    else localStorage.setItem(key, JSON.stringify(value));
+  }catch(e){}
+}
+function fonFirebaseSnapshot(){
+  var out = {};
+  FON_FIREBASE_KEYS.forEach(function(key){
+    var val = fonFirebaseReadLocal(key);
+    if(val !== null && val !== undefined) out[key] = val;
+  });
+  out._updatedAt = new Date().toISOString();
+  return out;
+}
+function fonFirebaseSave(silent){
+  try{
+    var db = _fonFirebaseDb || fonFirebaseInit();
+    if(!db){
+      if(!silent && typeof toast === 'function') toast('Firebase bağlantısı yok; veriler cihazda kaydedildi', 'info');
+      return;
+    }
+    var payload = fonFirebaseSnapshot();
+    db.ref(_fonFirebasePath).set(payload);
+    if(!silent && typeof toast === 'function') toast('☁ Fon verileri Firebase’e kaydedildi', 'ok');
+  }catch(e){
+    console.warn('Fon Firebase kayıt hatası:', e);
+    if(!silent && typeof toast === 'function') toast('Firebase kayıt hatası: ' + e.message, 'err');
+  }
+}
+function fonFirebaseApply(data){
+  if(!data || typeof data !== 'object') return;
+  _fonFirebaseApplying = true;
+  try{
+    FON_FIREBASE_KEYS.forEach(function(key){
+      if(data[key] !== undefined && data[key] !== null) fonFirebaseWriteLocal(key, data[key]);
+    });
+  }finally{ _fonFirebaseApplying = false; }
+}
+function fonFirebaseRefreshUI(){
+  try{ if(typeof initTakipAyOtomasyon === 'function') initTakipAyOtomasyon(); }catch(e){}
+  try{ if(typeof render === 'function') render(); }catch(e){}
+  try{ if(typeof renderTefasCards === 'function') renderTefasCards(); }catch(e){}
+  try{ if(typeof renderPortfolioPie === 'function') renderPortfolioPie(); }catch(e){}
+}
+function fonFirebaseStart(){
+  var db = fonFirebaseInit();
+  if(!db) return;
+  try{
+    db.ref(_fonFirebasePath).once('value').then(function(snap){
+      var data = snap.val();
+      if(data){
+        fonFirebaseApply(data);
+        fonFirebaseRefreshUI();
+        _fonFirebaseReady = true;
+        if(typeof toast === 'function') toast('☁ Firebase fon verileri yüklendi', 'info');
+      }else{
+        fonFirebaseSave(true);
+        _fonFirebaseReady = true;
+      }
+    }).catch(function(e){ console.warn('Fon Firebase okuma hatası:', e); });
+  }catch(e){ console.warn('Fon Firebase başlatma hatası:', e); }
+}
+window.addEventListener('load', function(){ setTimeout(fonFirebaseStart, 500); });
+</script>
+
 <style>
 /* ════════════════════════════════
    SEKME NAVIGASYON SİSTEMİ
@@ -3147,6 +3258,26 @@ function _lsDel(key){
   if(_useMemory){ delete _memStore[key]; return; }
   try{ localStorage.removeItem(key); }catch(e){ _useMemory=true; delete _memStore[key]; }
 }
+
+// Firebase Fon Takip senkron kancası
+(function(){
+  try{
+    if(typeof _lsSet !== 'function' || window.__fonFirebaseLsHooked) return;
+    var __oldLsSet = _lsSet;
+    _lsSet = function(key, val){
+      __oldLsSet(key, val);
+      try{
+        if(!_fonFirebaseApplying && typeof FON_FIREBASE_KEYS !== 'undefined' && FON_FIREBASE_KEYS.indexOf(key) >= 0){
+          var parsed = null;
+          try{ parsed = JSON.parse(val); }catch(e){ parsed = val; }
+          if(_fonFirebaseDb) _fonFirebaseDb.ref(_fonFirebasePath + '/' + key).set(parsed);
+        }
+      }catch(e){}
+    };
+    window.__fonFirebaseLsHooked = true;
+  }catch(e){ console.warn('Firebase localStorage kancası kurulamadı:', e); }
+})();
+
 // Kullanıcının "Güncelle" ile eklediği ek işlemler (localStorage'dan yüklenir)
 
 function loadDeletedFonlar(){
@@ -3516,6 +3647,7 @@ function saveData(){
   });
   saveR(s);
   toast('💾 Veriler kaydedildi','ok');
+  if(typeof fonFirebaseSave === 'function') fonFirebaseSave(false);
 }
 function backupData(){
   // Önce ekrandaki tüm input değerlerini localStorage'a yaz
