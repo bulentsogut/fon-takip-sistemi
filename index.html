@@ -57,11 +57,54 @@ function fonFirebaseWriteLocal(key, value){
     else localStorage.setItem(key, JSON.stringify(value));
   }catch(e){}
 }
+
+function fonFirebaseSafeKey(k){
+  return String(k)
+    .replace(/%/g, '%25')
+    .replace(/\./g, '%2E')
+    .replace(/#/g, '%23')
+    .replace(/\$/g, '%24')
+    .replace(/\//g, '%2F')
+    .replace(/\[/g, '%5B')
+    .replace(/\]/g, '%5D');
+}
+function fonFirebaseUnsafeKey(k){
+  return String(k)
+    .replace(/%5D/g, ']')
+    .replace(/%5B/g, '[')
+    .replace(/%2F/g, '/')
+    .replace(/%24/g, '$')
+    .replace(/%23/g, '#')
+    .replace(/%2E/g, '.')
+    .replace(/%25/g, '%');
+}
+function fonFirebaseEncodeKeys(value){
+  if(Array.isArray(value)) return value.map(fonFirebaseEncodeKeys);
+  if(value && typeof value === 'object'){
+    var out = {};
+    Object.keys(value).forEach(function(k){
+      out[fonFirebaseSafeKey(k)] = fonFirebaseEncodeKeys(value[k]);
+    });
+    return out;
+  }
+  return value;
+}
+function fonFirebaseDecodeKeys(value){
+  if(Array.isArray(value)) return value.map(fonFirebaseDecodeKeys);
+  if(value && typeof value === 'object'){
+    var out = {};
+    Object.keys(value).forEach(function(k){
+      out[fonFirebaseUnsafeKey(k)] = fonFirebaseDecodeKeys(value[k]);
+    });
+    return out;
+  }
+  return value;
+}
 function fonFirebaseSnapshot(){
   var out = {};
   FON_FIREBASE_KEYS.forEach(function(key){
     var val = fonFirebaseReadLocal(key);
-    if(val !== null && val !== undefined) out[key] = val;
+    if(val !== null && val !== undefined) out[key] = fonFirebaseEncodeKeys(val);
   });
   out._updatedAt = new Date().toISOString();
   return out;
@@ -86,7 +129,7 @@ function fonFirebaseApply(data){
   _fonFirebaseApplying = true;
   try{
     FON_FIREBASE_KEYS.forEach(function(key){
-      if(data[key] !== undefined && data[key] !== null) fonFirebaseWriteLocal(key, data[key]);
+      if(data[key] !== undefined && data[key] !== null) fonFirebaseWriteLocal(key, fonFirebaseDecodeKeys(data[key]));
     });
   }finally{ _fonFirebaseApplying = false; }
 }
@@ -3270,7 +3313,7 @@ function _lsDel(key){
         if(!_fonFirebaseApplying && typeof FON_FIREBASE_KEYS !== 'undefined' && FON_FIREBASE_KEYS.indexOf(key) >= 0){
           var parsed = null;
           try{ parsed = JSON.parse(val); }catch(e){ parsed = val; }
-          if(_fonFirebaseDb) _fonFirebaseDb.ref(_fonFirebasePath + '/' + key).set(parsed);
+          if(_fonFirebaseDb) _fonFirebaseDb.ref(_fonFirebasePath + '/' + key).set(fonFirebaseEncodeKeys(parsed));
         }
       }catch(e){}
     };
