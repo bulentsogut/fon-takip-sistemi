@@ -1,40 +1,38 @@
-// api/tefas.js - Vercel
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-  if (req.method === 'OPTIONS') { res.status(200).end(); return; }
-
-  if (req.method !== 'POST') {
-    res.status(405).json({ error: 'Method Not Allowed' });
-    return;
-  }
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Accept');
+  if (req.method === 'OPTIONS') return res.status(204).end();
 
   try {
-    const body = req.body || {};
-    const { endpoint, body: reqBody } = typeof body === 'string' ? JSON.parse(body) : body;
-    const url = 'https://www.tefas.gov.tr/api/funds/' + endpoint;
+    const endpoint = (req.query && req.query.endpoint) || 'fonFiyatBilgiGetir';
+    const allowed = new Set(['fonFiyatBilgiGetir', 'fonBilgiGetir']);
+    if (!allowed.has(endpoint)) {
+      return res.status(400).json({ ok:false, error:'Unsupported TEFAS endpoint', endpoint });
+    }
 
-    const response = await fetch(url, {
+    let bodyObj = req.body || {};
+    if (typeof bodyObj === 'string') {
+      try { bodyObj = JSON.parse(bodyObj); } catch (_) { bodyObj = {}; }
+    }
+    if (!bodyObj || typeof bodyObj !== 'object') bodyObj = {};
+    if (!bodyObj.dil) bodyObj.dil = 'TR';
+
+    const r = await fetch(`https://www.tefas.gov.tr/api/funds/${endpoint}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Accept': 'application/json',
-        'Origin': 'https://www.tefas.gov.tr',
-        'Referer': 'https://www.tefas.gov.tr/'
+        'Accept': 'application/json, text/plain, */*',
+        'User-Agent': 'Mozilla/5.0'
       },
-      body: JSON.stringify(reqBody)
+      body: JSON.stringify(bodyObj)
     });
 
-    if (!response.ok) {
-      res.status(response.status).json({ error: 'TEFAS HTTP ' + response.status });
-      return;
-    }
-
-    const data = await response.json();
-    res.status(200).json(data);
-
-  } catch (err) {
-    res.status(500).json({ error: err.message });
+    const txt = await r.text();
+    res.status(r.status);
+    res.setHeader('Content-Type', r.headers.get('content-type') || 'application/json; charset=utf-8');
+    return res.send(txt);
+  } catch (e) {
+    return res.status(500).json({ ok:false, error:e && e.message ? e.message : String(e) });
   }
 }
