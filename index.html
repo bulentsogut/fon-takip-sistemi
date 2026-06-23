@@ -5756,6 +5756,39 @@ let priceCache = {};       // { code: changePercent }
 let lastFetchTime = null;
 
 
+// Fon/BYF/Nakit ayrımı — Yahoo hisse sorgusuna sokulmaması gereken kodlar
+const KNOWN_FUND_OR_CASH_CODES = new Set([
+  'TPKGY','TPKGYF1','HMV','T3B','PKZ','PQS','PFS','ABG','TI1','RPP','CFO','RS1','PNU','PRY','CPU','PBR',
+  'GLDTRF','GMSTRF','ZPX3GF','ZPX30F','ZPX30','ZPX',
+  'TERS-REPO','REPO','FIN-BONO','MEVDUAT','VADELI-TEM','KIRA-SERT'
+]);
+
+function normalizeAssetType(h) {
+  var code = String((h && (h.code || h.kod)) || '').trim().toUpperCase();
+  var type = String((h && (h.type || h.tip)) || '').trim().toLowerCase();
+  var name = String((h && (h.name || h.ad)) || '').trim().toUpperCase();
+
+  if (type === 'cash' || type === 'fund' || type === 'us' || type === 'bist') return type;
+  if (KNOWN_FUND_OR_CASH_CODES.has(code)) {
+    if (code.indexOf('TRF') >= 0 || code.indexOf('REPO') >= 0 || code.indexOf('BONO') >= 0 || code.indexOf('MEVDUAT') >= 0 || code.indexOf('TEM') >= 0 || code.indexOf('SERT') >= 0) return 'cash';
+    return 'fund';
+  }
+  if (name.indexOf('FON') >= 0 || name.indexOf('PORTFÖY') >= 0 || name.indexOf('PORTFOY') >= 0 || name.indexOf('YATIRIM FONU') >= 0) return 'fund';
+  return type || 'bist';
+}
+
+function normalizeAllHoldingTypes() {
+  try {
+    Object.keys(FUNDS || {}).forEach(function(fid){
+      (FUNDS[fid].holdings || []).forEach(function(h){
+        h.type = normalizeAssetType(h);
+        if (!h.tip) h.tip = h.type;
+      });
+    });
+  } catch(e) {}
+}
+
+
 const SELECTED_FUNDS_STORAGE_KEY = 'fon_tahmin_secili_fonlar_v1';
 const CUSTOM_FUNDS_STORAGE_KEY = 'fon_tahmin_ozel_fonlar_v1';
 
@@ -5851,6 +5884,7 @@ function ensureFundDefinition(code) {
 
 loadCustomFundsIntoRegistry();
 loadFVTPortfolioOverrides();
+normalizeAllHoldingTypes();
 let selectedFundIds = loadSelectedFundIds();
 
 function loadSelectedFundIds() {
@@ -6517,14 +6551,16 @@ async function loadFVTPortfolio(fonKodu) {
           if (!kod || isNaN(agirlik) || Math.abs(agirlik) <= 0.01) return null;
 
           var tip;
-          var BYF = ['GLDTRF','GMSTRF','ZPX3GF','ZPX30F'];
-          if (BYF.indexOf(kod) !== -1) tip = 'cash';
+          var BYF = ['GLDTRF','GMSTRF','ZPX3GF','ZPX30F','TPKGY','TPKGYF1','HMV','T3B','PKZ','PQS','PFS','ABG','TI1','RPP','CFO','RS1','PNU','PRY','CPU','PBR'];
+          if (BYF.indexOf(kod) !== -1) tip = (kod.indexOf('TRF') >= 0 ? 'cash' : 'fund');
           else if (it.etf === 1 || it.etf === true) tip = 'fund';
           else if (it.yabanci === 1 || it.yabanci === true) tip = 'us';
           else if (ad === '' && (it.yabanci === 0 || it.yabanci === false)) tip = 'fund';
           else tip = 'bist';
 
-          return { code: kod, name: ad || kod, weight: agirlik, type: tip };
+          var obj = { code: kod, name: ad || kod, weight: agirlik, type: tip };
+          obj.type = normalizeAssetType(obj);
+          return obj;
         })
         .filter(Boolean)
         .sort(function(a,b){ return b.weight - a.weight; });
@@ -6599,6 +6635,8 @@ async function refreshAllPortfoliosDetay() {
 
         // FVT verisi ana kaynak kabul edilir. Nakit kalemler de FVT'den geliyorsa güncellenir.
         FUNDS[fon].holdings = result.holdings;
+      normalizeAllHoldingTypes();
+        normalizeAllHoldingTypes();
         FUNDS[fon].aciklamaTarihi = result.aciklamaTarihi || FUNDS[fon].aciklamaTarihi || '';
         updated++;
 
@@ -6684,15 +6722,25 @@ async function fetchAll() {
   var fonlar  = {};
   var takipFonEntries = (typeof getSelectedFundEntries === 'function') ? getSelectedFundEntries() : Object.entries(FUNDS);
   var pozisyonToplam = 0;
+  normalizeAllHoldingTypes();
+  var kategoriSay = { bist:0, us:0, fund:0, cash:0, ignored:0 };
   takipFonEntries.forEach(function(entry) {
     var f = entry[1];
     (f.holdings || []).forEach(function(h) {
-      if (h.type === 'bist' || h.type === 'us') {
-        tickers[h.code] = h.type;
+      var t = normalizeAssetType(h);
+      h.type = t;
+      if (t === 'bist' || t === 'us') {
+        tickers[h.code] = t;
         pozisyonToplam++;
-      } else if (h.type === 'fund') {
+        kategoriSay[t]++;
+      } else if (t === 'fund') {
         fonlar[h.code] = true;
         pozisyonToplam++;
+        kategoriSay.fund++;
+      } else if (t === 'cash') {
+        kategoriSay.cash++;
+      } else {
+        kategoriSay.ignored++;
       }
     });
   });
@@ -6750,9 +6798,9 @@ async function fetchAll() {
     if (!takipFonEntries || takipFonEntries.length === 0) return '';
     var parts = takipFonEntries.map(function(entry){
       var fid = entry[0], f = entry[1];
-      var rel = (f.holdings || []).filter(function(h){ return h.type === 'bist' || h.type === 'us' || h.type === 'fund'; });
+      var rel = (f.holdings || []).filter(function(h){ var t=normalizeAssetType(h); return t === 'bist' || t === 'us' || t === 'fund'; });
       if (rel.length === 0) return fid + ': 0';
-      var okPos = rel.filter(function(h){ return !failedSet[h.code]; }).length;
+      var okPos = rel.filter(function(h){ var t=normalizeAssetType(h); return (t==='fund') || !failedSet[h.code]; }).length;
       return fid + ': ' + okPos + '/' + rel.length;
     });
     return ' <span style="color:var(--muted);">· Kart pozisyonları: ' + parts.join(' | ') + '</span>';
@@ -6760,13 +6808,14 @@ async function fetchAll() {
 
   var ok = total - failed;
   var pozOzet = pozisyonOzetHtml();
+  var kategoriOzet = ' · Hisse: ' + (kategoriSay.bist+kategoriSay.us) + ' / Fon: ' + kategoriSay.fund + ' / Nakit: ' + kategoriSay.cash;
   if (failed === 0) {
-    setStatus('live', 'Tüm veriler güncellendi — ' + lastFetchTime.toLocaleTimeString('tr-TR') + ' · ' + total + ' benzersiz sembol / ' + pozisyonToplam + ' kart pozisyonu' + pozOzet, true);
+    setStatus('live', 'Tüm veriler güncellendi — ' + lastFetchTime.toLocaleTimeString('tr-TR') + ' · ' + total + ' benzersiz sembol / ' + pozisyonToplam + ' kart pozisyonu' + kategoriOzet + pozOzet, true);
   } else if (ok > 0) {
     var failedHtml = failedList.length > 0
       ? ' <span style="color:#ff4757;">[' + failedList.join(', ') + ']</span>'
       : '';
-    setStatus('live', 'Güncellendi — ' + lastFetchTime.toLocaleTimeString('tr-TR') + ' · ' + ok + '/' + total + ' benzersiz sembol / ' + pozisyonToplam + ' kart pozisyonu (<span style="color:#ff4757;">' + failed + ' bulunamadı</span>' + failedHtml + ')' + pozOzet, true);
+    setStatus('live', 'Güncellendi — ' + lastFetchTime.toLocaleTimeString('tr-TR') + ' · ' + ok + '/' + total + ' benzersiz sembol / ' + pozisyonToplam + ' kart pozisyonu' + kategoriOzet + ' (<span style="color:#ff4757;">' + failed + ' bulunamadı</span>' + failedHtml + ')' + pozOzet, true);
   } else {
     useFallbackData();
     setStatus('error', 'Veri çekilemedi. İnternet bağlantısını kontrol et ve tekrar dene.');
