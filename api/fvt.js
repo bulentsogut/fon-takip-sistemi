@@ -13,7 +13,7 @@ export default async function handler(req, res) {
       ? `https://fvt.com.tr/api/funds/${code}/distribution`
       : `https://fvt.com.tr/api/funds/${code}`;
 
-    const r = await fetch(url, { headers: { 'User-Agent':'Mozilla/5.0', 'Accept':'application/json,text/plain,*/*' } });
+    const r = await fetch(url, { headers: { 'User-Agent':'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124 Safari/537.36', 'Accept':'application/json,text/plain,*/*', 'Referer':'https://fvt.com.tr/', 'Origin':'https://fvt.com.tr' } });
     const txt = await r.text();
     res.status(r.status);
     res.setHeader('Content-Type', r.headers.get('content-type') || 'application/json; charset=utf-8');
