@@ -9049,12 +9049,17 @@ function renderHisseKartlar() {
     Object.entries(HISSE_PORTFOY).forEach(function(entry){
       var kod = entry[0], h = entry[1];
       var fiyat = (hisseBugunkuFiyat[kod] || {}).fiyat || 0;
+      var isABD = hisseIsABD(kod, h);
       var kz = fiyat > 0 ? (fiyat - h.ortMaliyet) * h.adet : 0;
       var pct = fiyat > 0 ? (fiyat - h.ortMaliyet) / h.ortMaliyet * 100 : 0;
+      var bakiye = fiyat > 0 ? fiyat * h.adet : 0;
+      var adetText = Number(h.adet || 0).toLocaleString('tr-TR') + ' adet';
+      var bakiyeText = fiyat > 0 ? hisseFmtTutar(bakiye, kod, h, isABD ? 2 : 0) : '—';
       heroHtml += '<div class="hcard">'
         + '<div class="hlabel">' + kod + ' K/Z</div>'
-        + '<div class="hval" style="font-size:1.5rem;color:' + (kz >= 0 ? 'var(--green)' : 'var(--red)') + ';">' + (fiyat > 0 ? hisseFmtTutar(kz, kod, h, hisseIsABD(kod,h) ? 2 : 0) : '—') + '</div>'
+        + '<div class="hval" style="font-size:1.5rem;color:' + (kz >= 0 ? 'var(--green)' : 'var(--red)') + ';">' + (fiyat > 0 ? hisseFmtTutar(kz, kod, h, isABD ? 2 : 0) : '—') + '</div>'
         + '<div class="badge ' + (pct >= 0 ? 'pos' : 'neg') + '">' + (pct >= 0 ? '▲ +' : '▼ ') + pct.toFixed(2) + '%</div>'
+        + '<div class="hsub" style="margin-top:10px;line-height:1.65;">Adet: <b style="color:#e8f4fd;">' + adetText + '</b><br>Bugünkü bakiye: <b style="color:#e8f4fd;">' + bakiyeText + '</b></div>'
         + '</div>';
     });
     hero.innerHTML = heroHtml;
