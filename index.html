@@ -5756,25 +5756,32 @@ let priceCache = {};       // { code: changePercent }
 let lastFetchTime = null;
 
 
-// Fon/BYF/Nakit ayrımı — Yahoo hisse sorgusuna sokulmaması gereken kodlar
-const KNOWN_FUND_OR_CASH_CODES = new Set([
-  'TPKGY','TPKGYF1','HMV','T3B','PKZ','PQS','PFS','ABG','TI1','RPP','CFO','RS1','PNU','PRY','CPU','PBR',
-  'GLDTRF','GMSTRF','ZPX3GF','ZPX30F','ZPX30','ZPX',
-  'TERS-REPO','REPO','FIN-BONO','MEVDUAT','VADELI-TEM','KIRA-SERT'
+// Enstrüman ayrımı — aynı kodu yanlış pazarda aramamak için önce kesin listeler kontrol edilir.
+const KNOWN_FUND_CODES = new Set([
+  'TPKGY','TPKGYF1','HMV','T3B','PKZ','PQS','PFS','ABG','TI1','RPP','CFO','RS1','PNU','PRY','CPU','PBR','PHE',
+  'GLDTRF','GMSTRF','ZPX3GF','ZPX30F','ZPX30','ZPX','ZPX30F'
+]);
+const KNOWN_CASH_CODES = new Set([
+  'TERS-REPO','REPO','FIN-BONO','MEVDUAT','VADELI-TEM','KIRA-SERT','BORSA-PP','VDMK','DIGER','OZEL-TAHVIL','TAKASBANK','DOVIZ-KAMU'
+]);
+const KNOWN_US_CODES = new Set([
+  'SNYA','AMD','QCOM','MTSI','SITM','ON','AMRS','ACIT','NXPI','LSCC','SWKS','TXN','PENG','AMBA','PI','POWI','MPWR','FSLR','NVDA','MCHP','CRUS','ALGM','ADI','QRVO','WOLF','AVGO','OLED','SLAB','DIOD','KOPN','SKYT','CEVA','INNO','AOSL','NVEC','AMAT','XSD','ASML','MKSI','KLAC','STM','TER','ENTG','TSM','ASX','ONTO','RTX','UMC','PCS','NVTS','MRVL','INTC','MXL','ALAB','SMTC','CRDO','MU','SPCX'
 ]);
 
 function normalizeAssetType(h) {
-  var code = String((h && (h.code || h.kod)) || '').trim().toUpperCase();
+  var code = String((h && (h.code || h.kod || h.symbol || h.assetCode)) || '').trim().toUpperCase();
   var type = String((h && (h.type || h.tip)) || '').trim().toLowerCase();
-  var name = String((h && (h.name || h.ad)) || '').trim().toUpperCase();
+  var name = String((h && (h.name || h.ad || h.assetName || h.varlikAdi)) || '').trim().toUpperCase();
 
-  if (type === 'cash' || type === 'fund' || type === 'us' || type === 'bist') return type;
-  if (KNOWN_FUND_OR_CASH_CODES.has(code)) {
-    if (code.indexOf('TRF') >= 0 || code.indexOf('REPO') >= 0 || code.indexOf('BONO') >= 0 || code.indexOf('MEVDUAT') >= 0 || code.indexOf('TEM') >= 0 || code.indexOf('SERT') >= 0) return 'cash';
-    return 'fund';
-  }
+  // Kesin sınıflar, FVT'den veya eski kayıttan hatalı type gelse bile düzeltir.
+  if (KNOWN_CASH_CODES.has(code)) return 'cash';
+  if (KNOWN_FUND_CODES.has(code)) return 'fund';
+  if (KNOWN_US_CODES.has(code)) return 'us';
+
   if (name.indexOf('FON') >= 0 || name.indexOf('PORTFÖY') >= 0 || name.indexOf('PORTFOY') >= 0 || name.indexOf('YATIRIM FONU') >= 0) return 'fund';
-  return type || 'bist';
+  if (name.indexOf('CORPORATION') >= 0 || name.indexOf(' INC') >= 0 || name.indexOf(' LTD') >= 0 || name.indexOf(' ADR') >= 0 || name.indexOf('SEMICONDUCTOR') >= 0) return 'us';
+  if (type === 'cash' || type === 'fund' || type === 'us' || type === 'bist') return type;
+  return 'bist';
 }
 
 function normalizeAllHoldingTypes() {
@@ -6432,18 +6439,12 @@ async function fetchQuote(code, type) {
     return fetchTefasFon(code);
   }
 
+  type = normalizeAssetType({ code: code, type: type });
   const ticker = type === 'bist' ? (code + '.IS') : code;
-
-  // Tarayıcıdan Yahoo'ya direkt istekler son dönemde sık sık CORS/403 yüzünden
-  // boş dönüyor. Bu yüzden önce Vercel proxy endpoint'ini kullanıyoruz;
-  // direkt Yahoo adresleri sadece son çare fallback olarak kalıyor.
-  const qApi = '/api/yahoo?ticker=' + encodeURIComponent(ticker) + '&range=5d&interval=1d';
-  const q1 = 'https://query1.finance.yahoo.com/v8/finance/chart/' + encodeURIComponent(ticker) + '?interval=1d&range=5d';
-  const q2 = 'https://query2.finance.yahoo.com/v8/finance/chart/' + encodeURIComponent(ticker) + '?interval=1d&range=5d';
-  const urls = [qApi, q1, q2];
+  const urls = ['/api/yahoo?ticker=' + encodeURIComponent(ticker) + '&interval=1d&range=1d'];
   for (var i = 0; i < urls.length; i++) {
     try {
-      var resp = await fetchWithTimeout(urls[i], {headers: {'Accept': 'application/json'}}, 3000);
+      var resp = await fetchWithTimeout(urls[i], {headers: {'Accept': 'application/json'}}, 8000);
       if (!resp.ok) continue;
       var data = await resp.json();
       var meta = data && data.chart && data.chart.result && data.chart.result[0] && data.chart.result[0].meta;
@@ -6889,13 +6890,12 @@ function getDailyRate(code) {
 // Bir hisse için geçmiş N iş günü kapanış değişimlerini çek
 // Dönüş: { "DD.MM": changePercent, ... }
 async function fetchGecmisKapanislar(code, type, isGunSayisi) {
+  type = normalizeAssetType({ code: code, type: type });
   var ticker = type === 'bist' ? (code + '.IS') : code;
   // 10 takvim günü = genellikle 7 iş günü, yeterince marj
   var range = '30d'; // 15 iş günü için ~21 takvim günü gerekir
   var urls = [
-    'https://query1.finance.yahoo.com/v8/finance/chart/' + ticker + '?interval=1d&range=' + range,
-    'https://query2.finance.yahoo.com/v8/finance/chart/' + ticker + '?interval=1d&range=' + range,
-    'https://api.allorigins.win/raw?url=' + encodeURIComponent('https://query1.finance.yahoo.com/v8/finance/chart/' + ticker + '?interval=1d&range=' + range),
+    '/api/yahoo?ticker=' + encodeURIComponent(ticker) + '&interval=1d&range=' + encodeURIComponent(range),
   ];
 
   for (var u = 0; u < urls.length; u++) {
