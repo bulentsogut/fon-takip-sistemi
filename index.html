@@ -32,7 +32,9 @@ var FON_FIREBASE_KEYS = [
   'hisse_gunluk_v1',
   'hisse_bugun_v1',
   'hisse_kayit_paketi_v1',
-  'hisse_usdtry_v1'
+  'hisse_usdtry_v1',
+  // Getiri Tahmin FVT ağırlık güncellemeleri
+  'fon_tahmin_fvt_portfoyler_v1'
 ];
 var _fonFirebaseDb = null;
 var _fonFirebaseReady = false;
@@ -5799,6 +5801,44 @@ function saveCustomFundsFromRegistry() {
   } catch(e) {}
 }
 
+const FVT_PORTFOLIO_OVERRIDE_KEY = 'fon_tahmin_fvt_portfoyler_v1';
+
+function saveFVTPortfolioOverrides() {
+  try {
+    const out = {};
+    Object.keys(FUNDS).forEach(function(code){
+      const f = FUNDS[code];
+      if (!f) return;
+      out[code] = {
+        holdings: Array.isArray(f.holdings) ? f.holdings : [],
+        aciklamaTarihi: f.aciklamaTarihi || '',
+        updatedAt: new Date().toISOString()
+      };
+    });
+    localStorage.setItem(FVT_PORTFOLIO_OVERRIDE_KEY, JSON.stringify(out));
+    if (typeof fonFirebaseSave === 'function') fonFirebaseSave(true);
+  } catch(e) {
+    console.warn('FVT portföy override kaydedilemedi:', e);
+  }
+}
+
+function loadFVTPortfolioOverrides() {
+  try {
+    const raw = localStorage.getItem(FVT_PORTFOLIO_OVERRIDE_KEY);
+    const parsed = raw ? JSON.parse(raw) : {};
+    if (!parsed || typeof parsed !== 'object') return;
+    Object.keys(parsed).forEach(function(code){
+      const c = normalizeFundCode(code);
+      if (!c || !FUNDS[c]) return;
+      const rec = parsed[code] || {};
+      if (Array.isArray(rec.holdings) && rec.holdings.length > 0) {
+        FUNDS[c].holdings = rec.holdings;
+        FUNDS[c].aciklamaTarihi = rec.aciklamaTarihi || FUNDS[c].aciklamaTarihi || '';
+      }
+    });
+  } catch(e) {}
+}
+
 function ensureFundDefinition(code) {
   code = normalizeFundCode(code);
   if (!code) return null;
@@ -5810,6 +5850,7 @@ function ensureFundDefinition(code) {
 }
 
 loadCustomFundsIntoRegistry();
+loadFVTPortfolioOverrides();
 let selectedFundIds = loadSelectedFundIds();
 
 function loadSelectedFundIds() {
@@ -6421,32 +6462,76 @@ async function fetchTefasFon(fonKodu) {
 
 // FVT'den portfoy dagilimini cek (allorigins proxy)
 async function loadFVTPortfolio(fonKodu) {
-  var url = 'https://fvt.com.tr/api/funds/' + fonKodu.toUpperCase() + '/distribution';
-  var urls = [url, 'https://api.allorigins.win/raw?url=' + encodeURIComponent(url)];
+  fonKodu = String(fonKodu || '').trim().toUpperCase();
+  if (!fonKodu) return null;
+
+  var urls = [
+    '/api/fvt?code=' + encodeURIComponent(fonKodu) + '&type=distribution',
+    '/api/fvt?kod=' + encodeURIComponent(fonKodu) + '&type=distribution'
+  ];
+
   for (var i = 0; i < urls.length; i++) {
     try {
-      var resp = await fetchWithTimeout(urls[i], {}, 8000);
-      if (!resp.ok) continue;
-      var data = await resp.json();
-      var items = (data.data && data.data.items) || [];
-      if (items.length === 0) continue;
+      var resp = await fetchWithTimeout(urls[i], { headers: { 'Accept': 'application/json,text/plain,*/*' } }, 12000);
+      if (!resp.ok) {
+        console.warn('FVT HTTP', fonKodu, resp.status, urls[i]);
+        continue;
+      }
+
+      var raw = await resp.text();
+      var data;
+      try { data = JSON.parse(raw); }
+      catch(parseErr) {
+        console.warn('FVT JSON parse hatası', fonKodu, raw.slice(0, 160));
+        continue;
+      }
+
+      var items =
+        (data && data.data && Array.isArray(data.data.items) && data.data.items) ||
+        (data && data.data && Array.isArray(data.data.distribution) && data.data.distribution) ||
+        (data && Array.isArray(data.items) && data.items) ||
+        (Array.isArray(data) && data) ||
+        [];
+
+      if (items.length === 0) {
+        console.warn('FVT boş portföy', fonKodu, data);
+        continue;
+      }
+
       var holdings = items
-        .filter(function(it){ return it.hisseKodu && it.hisseKodu.trim() !== '' && parseFloat(it.agirlik) > 0.01; })
         .map(function(it){
-          var kod = it.hisseKodu.trim();
-          var ad = (it.sirketAdi || '').trim();
+          var kod = String(it.hisseKodu || it.kod || it.code || it.assetCode || it.symbol || '').trim().toUpperCase();
+          var ad = String(it.sirketAdi || it.ad || it.name || it.assetName || kod || '').trim();
+          var agirlikRaw = it.agirlik;
+          if (agirlikRaw === undefined) agirlikRaw = it.weight;
+          if (agirlikRaw === undefined) agirlikRaw = it.oran;
+          if (typeof agirlikRaw === 'string') agirlikRaw = agirlikRaw.replace(',', '.').replace('%','');
+          var agirlik = parseFloat(agirlikRaw);
+          if (!kod || isNaN(agirlik) || Math.abs(agirlik) <= 0.01) return null;
+
           var tip;
           var BYF = ['GLDTRF','GMSTRF','ZPX3GF','ZPX30F'];
           if (BYF.indexOf(kod) !== -1) tip = 'cash';
-          else if (it.etf === 1) tip = 'fund';
-          else if (ad === '' && it.yabanci === 0) tip = 'fund';
-          else if (it.yabanci === 1) tip = 'us';
+          else if (it.etf === 1 || it.etf === true) tip = 'fund';
+          else if (it.yabanci === 1 || it.yabanci === true) tip = 'us';
+          else if (ad === '' && (it.yabanci === 0 || it.yabanci === false)) tip = 'fund';
           else tip = 'bist';
-          return { code: kod, name: ad || kod, weight: parseFloat(it.agirlik) || 0, type: tip };
+
+          return { code: kod, name: ad || kod, weight: agirlik, type: tip };
         })
+        .filter(Boolean)
         .sort(function(a,b){ return b.weight - a.weight; });
-      return { holdings: holdings, aciklamaTarihi: (data.data && data.data.meta && data.data.meta.aciklamaTarihi) || '' };
-    } catch(e) {}
+
+      if (holdings.length === 0) continue;
+
+      var meta = (data && data.data && data.data.meta) || data.meta || {};
+      return {
+        holdings: holdings,
+        aciklamaTarihi: meta.aciklamaTarihi || meta.date || meta.tarih || ''
+      };
+    } catch(e) {
+      console.warn('FVT portföy okuma hatası:', fonKodu, e);
+    }
   }
   return null;
 }
@@ -6459,6 +6544,10 @@ async function fvtPortfoyGuncelle() {
     var sonuc = await refreshAllPortfoliosDetay();
     renderFunds();
     updateUI();
+    if (!sonuc || sonuc.updated === 0) {
+      setStatus('error', 'FVT ağırlıkları güncellenemedi. Hiçbir fondan geçerli portföy verisi alınamadı.');
+      return;
+    }
     if (sonuc.detay.length > 0) {
       var detayHtml = sonuc.detay.map(function(d){
         var degHtml = '';
@@ -6479,7 +6568,7 @@ async function fvtPortfoyGuncelle() {
       }).join(' &nbsp;|&nbsp; ');
       setStatus('live', 'Portföy güncellendi — ' + sonuc.updated + ' fon: ' + detayHtml, true);
     } else {
-      setStatus('live', 'Portföy güncellendi — ' + sonuc.updated + ' fon.');
+      setStatus('live', 'Portföy güncellendi — ' + sonuc.updated + ' fon' + (sonuc.failed ? ', ' + sonuc.failed + ' fon başarısız' : '') + '.');
     }
   } catch(e) {
     setStatus('error', 'Portfoy guncelleme hatasi: ' + e.message);
@@ -6491,51 +6580,57 @@ async function fvtPortfoyGuncelle() {
 async function refreshAllPortfoliosDetay() {
   var takipFonlar = Object.keys(FUNDS);
   var updated = 0;
+  var failed = 0;
   var detay = [];
+
   await Promise.all(takipFonlar.map(async function(fon) {
     try {
       var result = await loadFVTPortfolio(fon);
-      if (result && result.holdings.length > 0) {
-        // Eski ağırlıkları kaydet
+      if (result && result.holdings && result.holdings.length > 0) {
         var eskiAgirliklar = {};
-        FUNDS[fon].holdings.forEach(function(h){ eskiAgirliklar[h.code] = h.weight; });
+        (FUNDS[fon].holdings || []).forEach(function(h){ eskiAgirliklar[h.code] = h.weight; });
 
-        var fvtKodlar = new Set(result.holdings.map(function(h){ return h.code; }));
-        var cashKalemleri = FUNDS[fon].holdings.filter(function(h){
-          return h.type === 'cash' && !fvtKodlar.has(h.code);
-        });
-        FUNDS[fon].holdings = result.holdings.concat(cashKalemleri);
-        FUNDS[fon].aciklamaTarihi = result.aciklamaTarihi;
+        // FVT verisi ana kaynak kabul edilir. Nakit kalemler de FVT'den geliyorsa güncellenir.
+        FUNDS[fon].holdings = result.holdings;
+        FUNDS[fon].aciklamaTarihi = result.aciklamaTarihi || FUNDS[fon].aciklamaTarihi || '';
         updated++;
 
-        // Değişiklikleri tespit et
+        var fvtKodlar = new Set(result.holdings.map(function(h){ return h.code; }));
         var degisiklikler = [];
+
         result.holdings.forEach(function(h) {
           var eski = eskiAgirliklar[h.code];
           if (eski === undefined) {
-            degisiklikler.push(h.code + ' +YENİ(%' + h.weight.toFixed(1) + ')');
-          } else if (Math.abs(h.weight - eski) >= 0.5) {
+            degisiklikler.push(h.code + ' +YENİ(%' + h.weight.toFixed(2) + ')');
+          } else if (Math.abs(h.weight - eski) >= 0.10) {
             var fark = h.weight - eski;
-            degisiklikler.push(h.code + ' ' + (fark > 0 ? '+' : '') + fark.toFixed(1) + '%');
-          }
-        });
-        Object.keys(eskiAgirliklar).forEach(function(kod) {
-          if (!fvtKodlar.has(kod) && !cashKalemleri.find(function(c){ return c.code === kod; })) {
-            degisiklikler.push(kod + ' -ÇIKTI');
+            degisiklikler.push(h.code + ' ' + (fark > 0 ? '+' : '') + fark.toFixed(2) + '%');
           }
         });
 
-        var toplamAgirlik = result.holdings.reduce(function(s,h){ return s + h.weight; }, 0);
+        Object.keys(eskiAgirliklar).forEach(function(kod) {
+          if (!fvtKodlar.has(kod)) degisiklikler.push(kod + ' -ÇIKTI');
+        });
+
+        var toplamAgirlik = result.holdings.reduce(function(s,h){ return s + (parseFloat(h.weight)||0); }, 0);
         detay.push({
           fon: fon,
           hisseSay: result.holdings.length,
           toplamAgirlik: toplamAgirlik,
           degisiklikler: degisiklikler
         });
+      } else {
+        failed++;
+        console.warn('FVT portföy boş/başarısız:', fon);
       }
-    } catch(e) { console.warn('FVT portfoy hatasi:', fon, e); }
+    } catch(e) {
+      failed++;
+      console.warn('FVT portfoy hatasi:', fon, e);
+    }
   }));
-  return { updated: updated, detay: detay };
+
+  if (updated > 0) saveFVTPortfolioOverrides();
+  return { updated: updated, failed: failed, detay: detay };
 }
 
 async function refreshAllPortfolios() {
@@ -6544,18 +6639,14 @@ async function refreshAllPortfolios() {
   for (var i = 0; i < fonlar.length; i++) {
     var fon = fonlar[i];
     var result = await loadFVTPortfolio(fon);
-    if (result && result.holdings.length > 0) {
-      // Nakit kalemleri koru
-      var fvtKodlar = new Set(result.holdings.map(function(h){ return h.code; }));
-      var cashKalemleri = FUNDS[fon].holdings.filter(function(h){
-        return h.type === 'cash' && !fvtKodlar.has(h.code);
-      });
-      FUNDS[fon].holdings = result.holdings.concat(cashKalemleri);
+    if (result && result.holdings && result.holdings.length > 0) {
+      FUNDS[fon].holdings = result.holdings;
       if (result.aciklamaTarihi) FUNDS[fon].aciklamaTarihi = result.aciklamaTarihi;
       updated++;
     }
   }
   if (updated > 0) {
+    saveFVTPortfolioOverrides();
     if (typeof renderFunds === 'function') renderFunds();
     if (typeof updateUI === 'function') updateUI();
     console.log('FVT portfoy guncellendi:', updated, 'fon');
@@ -9337,24 +9428,45 @@ function genelGeriYukle(input){
 }
 
 function hisseVerileriKaydet() {
+  var btn = null;
   try {
-    // Kaydet butonu artık yalnızca fiyatları değil, portföy listesini de kalıcı yazar.
-    // Böylece sonradan eklenen SPCX/ABD hisseleri sayfa yeniden açılınca kaybolmaz.
+    btn = document.querySelector('#panel-hisse button[onclick*="hisseVerileriKaydet"]');
+    if (btn) {
+      btn.dataset.oldText = btn.dataset.oldText || btn.innerHTML;
+      btn.disabled = true;
+      btn.innerHTML = '⏳ Kaydediliyor';
+    }
+
+    // Kaydet butonu yalnızca fiyatları değil, portföy listesini de kalıcı yazar.
     hissePortfoyuKaydet();
-    localStorage.setItem('hisse_gunluk_v1', JSON.stringify(hisseGunlukFiyat));
-    localStorage.setItem('hisse_bugun_v1', JSON.stringify(hisseBugunkuFiyat));
+    localStorage.setItem('hisse_gunluk_v1', JSON.stringify(hisseGunlukFiyat || {}));
+    localStorage.setItem('hisse_bugun_v1', JSON.stringify(hisseBugunkuFiyat || {}));
     localStorage.setItem('hisse_kayit_paketi_v1', JSON.stringify({
       v: 2,
       at: new Date().toISOString(),
-      portfoy: HISSE_PORTFOY,
-      gunluk: hisseGunlukFiyat,
-      bugun: hisseBugunkuFiyat
+      portfoy: HISSE_PORTFOY || {},
+      gunluk: hisseGunlukFiyat || {},
+      bugun: hisseBugunkuFiyat || {}
     }));
-    toast('Hisse portföyü ve verileri kaydedildi.', 'ok');
-  } catch(e) { toast('Kayıt hatası: ' + e.message, 'err'); }
 
-  // hisseVerileriKaydet Firebase
-  if(typeof fonFirebaseSave === 'function') fonFirebaseSave(true);
+    if (typeof fonFirebaseSave === 'function') fonFirebaseSave(true);
+
+    var el = document.getElementById('hisse-last-update');
+    if (el) el.innerHTML = 'Son kayıt: <span style="color:var(--green)">' + new Date().toLocaleTimeString('tr-TR') + '</span>';
+
+    try { renderHissePanel(); } catch(_e) {}
+    toast('☁ Hisse portföyü kaydedildi', 'ok');
+  } catch(e) {
+    toast('Hisse kayıt hatası: ' + e.message, 'err');
+    console.error('Hisse kayıt hatası:', e);
+  } finally {
+    if (btn) {
+      setTimeout(function(){
+        btn.disabled = false;
+        btn.innerHTML = btn.dataset.oldText || '💾 Kaydet';
+      }, 650);
+    }
+  }
 }
 
 function hisseYedekle() {
