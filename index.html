@@ -6487,9 +6487,14 @@ async function loadFVTPortfolio(fonKodu) {
       }
 
       var items =
+        (data && Array.isArray(data.holdings) && data.holdings) ||
+        (data && data.data && Array.isArray(data.data.holdings) && data.data.holdings) ||
         (data && data.data && Array.isArray(data.data.items) && data.data.items) ||
         (data && data.data && Array.isArray(data.data.distribution) && data.data.distribution) ||
+        (data && data.data && Array.isArray(data.data.positions) && data.data.positions) ||
         (data && Array.isArray(data.items) && data.items) ||
+        (data && Array.isArray(data.distribution) && data.distribution) ||
+        (data && Array.isArray(data.positions) && data.positions) ||
         (Array.isArray(data) && data) ||
         [];
 
@@ -6500,11 +6505,13 @@ async function loadFVTPortfolio(fonKodu) {
 
       var holdings = items
         .map(function(it){
-          var kod = String(it.hisseKodu || it.kod || it.code || it.assetCode || it.symbol || '').trim().toUpperCase();
-          var ad = String(it.sirketAdi || it.ad || it.name || it.assetName || kod || '').trim();
+          var kod = String(it.hisseKodu || it.kod || it.code || it.assetCode || it.symbol || it.varlikKodu || '').trim().toUpperCase();
+          var ad = String(it.sirketAdi || it.ad || it.name || it.assetName || it.varlikAdi || kod || '').trim();
           var agirlikRaw = it.agirlik;
           if (agirlikRaw === undefined) agirlikRaw = it.weight;
           if (agirlikRaw === undefined) agirlikRaw = it.oran;
+          if (agirlikRaw === undefined) agirlikRaw = it.agirlikYuzde;
+          if (agirlikRaw === undefined) agirlikRaw = it.percentage;
           if (typeof agirlikRaw === 'string') agirlikRaw = agirlikRaw.replace(',', '.').replace('%','');
           var agirlik = parseFloat(agirlikRaw);
           if (!kod || isNaN(agirlik) || Math.abs(agirlik) <= 0.01) return null;
@@ -6545,7 +6552,7 @@ async function fvtPortfoyGuncelle() {
     renderFunds();
     updateUI();
     if (!sonuc || sonuc.updated === 0) {
-      setStatus('error', 'FVT ağırlıkları güncellenemedi. Hiçbir fondan geçerli portföy verisi alınamadı.');
+      setStatus('error', 'FVT ağırlıkları güncellenemedi. Endpoint/oturum denemeleri başarısız oldu; mevcut ağırlıklar korundu.');
       return;
     }
     if (sonuc.detay.length > 0) {
