@@ -6433,10 +6433,14 @@ async function fetchQuote(code, type) {
   }
 
   const ticker = type === 'bist' ? (code + '.IS') : code;
-  const q1 = 'https://query1.finance.yahoo.com/v8/finance/chart/' + ticker + '?interval=1d&range=1d';
-  const q2 = 'https://query2.finance.yahoo.com/v8/finance/chart/' + ticker + '?interval=1d&range=1d';
-  // Önce direkt dene (3sn), olmassa q2 (3sn)
-  const urls = [q1, q2];
+
+  // Tarayıcıdan Yahoo'ya direkt istekler son dönemde sık sık CORS/403 yüzünden
+  // boş dönüyor. Bu yüzden önce Vercel proxy endpoint'ini kullanıyoruz;
+  // direkt Yahoo adresleri sadece son çare fallback olarak kalıyor.
+  const qApi = '/api/yahoo?ticker=' + encodeURIComponent(ticker) + '&range=5d&interval=1d';
+  const q1 = 'https://query1.finance.yahoo.com/v8/finance/chart/' + encodeURIComponent(ticker) + '?interval=1d&range=5d';
+  const q2 = 'https://query2.finance.yahoo.com/v8/finance/chart/' + encodeURIComponent(ticker) + '?interval=1d&range=5d';
+  const urls = [qApi, q1, q2];
   for (var i = 0; i < urls.length; i++) {
     try {
       var resp = await fetchWithTimeout(urls[i], {headers: {'Accept': 'application/json'}}, 3000);
