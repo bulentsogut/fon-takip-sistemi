@@ -8725,6 +8725,12 @@ var HISSE_PORTFOY = {
 
 var hisseGunlukFiyat = {};
 var hisseBugunkuFiyat = {};
+var HISSE_USDTRY_KEY = 'hisse_usdtry_v1';
+var hisseUsdTry = { kur: 0, updatedAt: null, source: '' };
+try {
+  var _hut = JSON.parse(localStorage.getItem(HISSE_USDTRY_KEY));
+  if (_hut && Number(_hut.kur) > 0) hisseUsdTry = _hut;
+} catch(e) {}
 var hisseIlkGiris = true;
 // Sayfa açılışında kayıtlı hisse portföyünü yükle
 hissePortfoyuYukle();
@@ -8780,6 +8786,58 @@ function hisseYahooUrlList(ticker, range) {
     'https://query1.finance.yahoo.com/v8/finance/chart/' + enc + '?interval=1d&range=' + encodeURIComponent(range),
     'https://query2.finance.yahoo.com/v8/finance/chart/' + enc + '?interval=1d&range=' + encodeURIComponent(range)
   ];
+}
+
+function hisseUsdTryKur() {
+  var k = Number(hisseUsdTry && hisseUsdTry.kur);
+  return isFinite(k) && k > 0 ? k : 0;
+}
+
+function hisseTlDeger(tutar, kod, h) {
+  tutar = Number(tutar) || 0;
+  if (!hisseIsABD(kod, h)) return tutar;
+  var kur = hisseUsdTryKur();
+  return kur > 0 ? tutar * kur : 0;
+}
+
+function hisseFmtTL(v) {
+  return Math.round(Number(v) || 0).toLocaleString('tr-TR') + ' ₺';
+}
+
+function hisseUsdTryKaydet() {
+  try { localStorage.setItem(HISSE_USDTRY_KEY, JSON.stringify(hisseUsdTry)); } catch(e) {}
+  try { if (typeof fonFirebaseSave === 'function') fonFirebaseSave(true); } catch(e) {}
+}
+
+async function fetchHisseUsdTry() {
+  var tickers = ['USDTRY=X', 'TRY=X'];
+  for (var t = 0; t < tickers.length; t++) {
+    var urls = hisseYahooUrlList(tickers[t], '5d');
+    for (var u = 0; u < urls.length; u++) {
+      try {
+        var resp = await fetchWithTimeout(urls[u], {headers:{'Accept':'application/json'}}, 9000);
+        if (!resp.ok) continue;
+        var data = await resp.json();
+        var result = data && data.chart && data.chart.result && data.chart.result[0];
+        if (!result) continue;
+        var meta = result.meta || {};
+        var closes = result.indicators && result.indicators.adjclose &&
+                     result.indicators.adjclose[0] && result.indicators.adjclose[0].adjclose || [];
+        var kur = Number(meta.regularMarketPrice || meta.previousClose || meta.chartPreviousClose || 0);
+        if ((!kur || kur <= 0) && closes && closes.length) {
+          for (var i = closes.length - 1; i >= 0; i--) {
+            if (Number(closes[i]) > 0) { kur = Number(closes[i]); break; }
+          }
+        }
+        if (kur && kur > 1) {
+          hisseUsdTry = { kur: kur, updatedAt: new Date().toISOString(), source: tickers[t] };
+          hisseUsdTryKaydet();
+          return kur;
+        }
+      } catch(e) {}
+    }
+  }
+  return hisseUsdTryKur();
 }
 
 function hisseParaSembol(kod, h) {
@@ -8863,7 +8921,8 @@ async function fetchHisseGecmis(kod) {
 }
 
 async function tumHisseleriGuncelle() {
-  await Promise.all(Object.keys(HISSE_PORTFOY).map(fetchHisseGecmis));
+  var abdVar = Object.keys(HISSE_PORTFOY).some(function(kod){ return hisseIsABD(kod, HISSE_PORTFOY[kod]); });
+  await Promise.all(Object.keys(HISSE_PORTFOY).map(fetchHisseGecmis).concat(abdVar ? [fetchHisseUsdTry()] : []));
   hisseVerileriKaydet();
   var el = document.getElementById('hisse-last-update');
   if (el) el.innerHTML = 'Son güncelleme: <span>' + new Date().toLocaleTimeString('tr-TR') + '</span>';
@@ -9031,19 +9090,30 @@ function renderHisseKartlar() {
   var hero = document.getElementById('hisse-hero-row');
   if (hero) {
     var toplamKZ = 0, toplamPortfoy = 0, toplamBaslangic = 0;
+    var yerliToplam = 0, yabanciToplamTL = 0, yabanciToplamUSD = 0;
+    var kur = hisseUsdTryKur();
     Object.entries(HISSE_PORTFOY).forEach(function(entry){
       var kod = entry[0], h = entry[1];
       var fiyat = (hisseBugunkuFiyat[kod] || {}).fiyat || 0;
-      toplamKZ       += (fiyat - h.ortMaliyet) * h.adet;
-      toplamPortfoy  += fiyat > 0 ? fiyat * h.adet : h.ortMaliyet * h.adet;
-      toplamBaslangic += h.ortMaliyet * h.adet;
+      var guncel = fiyat > 0 ? fiyat * h.adet : h.ortMaliyet * h.adet;
+      var baslangic = h.ortMaliyet * h.adet;
+      var kzHam = fiyat > 0 ? (fiyat - h.ortMaliyet) * h.adet : 0;
+      var guncelTL = hisseTlDeger(guncel, kod, h);
+      var baslangicTL = hisseTlDeger(baslangic, kod, h);
+      var kzTL = hisseTlDeger(kzHam, kod, h);
+      toplamKZ += kzTL;
+      toplamPortfoy += guncelTL;
+      toplamBaslangic += baslangicTL;
+      if (hisseIsABD(kod, h)) { yabanciToplamUSD += guncel; yabanciToplamTL += guncelTL; }
+      else { yerliToplam += guncelTL; }
     });
+    var kurNotu = kur > 0 ? ('USD/TRY: ' + kur.toLocaleString('tr-TR', {minimumFractionDigits:2, maximumFractionDigits:2})) : 'USD/TRY alınamadı';
 
     var heroHtml = '<div class="hcard main">'
       + '<div class="hlabel">Toplam Hisse Portföyü</div>'
-      + '<div class="hval" id="hisse-h-total">' + Math.round(toplamPortfoy).toLocaleString('tr-TR') + ' ₺</div>'
-      + '<div class="hsub" id="hisse-h-baslangic">Başlangıç: ' + Math.round(toplamBaslangic).toLocaleString('tr-TR') + ' ₺</div>'
-      + '<div class="badge ' + (toplamKZ >= 0 ? 'pos' : 'neg') + '" id="hisse-h-kz">' + (toplamKZ >= 0 ? '+' : '') + Math.round(toplamKZ).toLocaleString('tr-TR') + ' ₺</div>'
+      + '<div class="hval" id="hisse-h-total">' + hisseFmtTL(toplamPortfoy) + '</div>'
+      + '<div class="hsub" id="hisse-h-baslangic">Başlangıç: ' + hisseFmtTL(toplamBaslangic) + ' · Yerli: ' + hisseFmtTL(yerliToplam) + ' · Yabancı: ' + hisseFmtTL(yabanciToplamTL) + '</div>'
+      + '<div class="badge ' + (toplamKZ >= 0 ? 'pos' : 'neg') + '" id="hisse-h-kz">' + (toplamKZ >= 0 ? '+' : '') + hisseFmtTL(toplamKZ) + ' · ' + kurNotu + '</div>'
       + '</div>';
 
     Object.entries(HISSE_PORTFOY).forEach(function(entry){
@@ -9053,8 +9123,9 @@ function renderHisseKartlar() {
       var kz = fiyat > 0 ? (fiyat - h.ortMaliyet) * h.adet : 0;
       var pct = fiyat > 0 ? (fiyat - h.ortMaliyet) / h.ortMaliyet * 100 : 0;
       var bakiye = fiyat > 0 ? fiyat * h.adet : 0;
+      var bakiyeTL = fiyat > 0 ? hisseTlDeger(bakiye, kod, h) : 0;
       var adetText = Number(h.adet || 0).toLocaleString('tr-TR') + ' adet';
-      var bakiyeText = fiyat > 0 ? hisseFmtTutar(bakiye, kod, h, isABD ? 2 : 0) : '—';
+      var bakiyeText = fiyat > 0 ? (hisseFmtTutar(bakiye, kod, h, isABD ? 2 : 0) + (isABD && hisseUsdTryKur() > 0 ? ' / ' + hisseFmtTL(bakiyeTL) : '')) : '—';
       heroHtml += '<div class="hcard">'
         + '<div class="hlabel">' + kod + ' K/Z</div>'
         + '<div class="hval" style="font-size:1.5rem;color:' + (kz >= 0 ? 'var(--green)' : 'var(--red)') + ';">' + (fiyat > 0 ? hisseFmtTutar(kz, kod, h, isABD ? 2 : 0) : '—') + '</div>'
