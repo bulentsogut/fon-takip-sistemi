@@ -8919,6 +8919,31 @@ async function fetchHisseUsdTry() {
   return hisseUsdTryKur();
 }
 
+
+var _hisseUsdTryFetchInFlight = false;
+function hisseUsdTryStale(maxAgeMs) {
+  maxAgeMs = maxAgeMs || (6 * 60 * 60 * 1000);
+  var k = hisseUsdTryKur();
+  if (!k) return true;
+  var t = hisseUsdTry && hisseUsdTry.updatedAt ? new Date(hisseUsdTry.updatedAt).getTime() : 0;
+  return !t || (Date.now() - t > maxAgeMs);
+}
+function hissePortfoydeAbdVar() {
+  return Object.keys(HISSE_PORTFOY || {}).some(function(kod){ return hisseIsABD(kod, HISSE_PORTFOY[kod]); });
+}
+function ensureHisseUsdTryForTotals(force) {
+  if (!hissePortfoydeAbdVar()) return;
+  if (_hisseUsdTryFetchInFlight) return;
+  if (!force && !hisseUsdTryStale()) return;
+  _hisseUsdTryFetchInFlight = true;
+  fetchHisseUsdTry().then(function(kur){
+    _hisseUsdTryFetchInFlight = false;
+    if (kur && kur > 0) {
+      try { renderHissePanel(); } catch(e) {}
+    }
+  }).catch(function(){ _hisseUsdTryFetchInFlight = false; });
+}
+
 function hisseParaSembol(kod, h) {
   return hisseIsABD(kod, h) ? '$' : '₺';
 }
@@ -9000,8 +9025,10 @@ async function fetchHisseGecmis(kod) {
 }
 
 async function tumHisseleriGuncelle() {
-  var abdVar = Object.keys(HISSE_PORTFOY).some(function(kod){ return hisseIsABD(kod, HISSE_PORTFOY[kod]); });
-  await Promise.all(Object.keys(HISSE_PORTFOY).map(fetchHisseGecmis).concat(abdVar ? [fetchHisseUsdTry()] : []));
+  var abdVar = hissePortfoydeAbdVar();
+  if (abdVar) await fetchHisseUsdTry();
+  await Promise.all(Object.keys(HISSE_PORTFOY).map(fetchHisseGecmis));
+  if (abdVar) await fetchHisseUsdTry();
   hisseVerileriKaydet();
   var el = document.getElementById('hisse-last-update');
   if (el) el.innerHTML = 'Son güncelleme: <span>' + new Date().toLocaleTimeString('tr-TR') + '</span>';
@@ -9009,6 +9036,7 @@ async function tumHisseleriGuncelle() {
 }
 
 function renderHissePanel() {
+  ensureHisseUsdTryForTotals(false);
   renderHisseKartlar();
   renderHisseGrafikleri();
   renderHisseAylik();
@@ -9016,6 +9044,7 @@ function renderHissePanel() {
   var el = document.getElementById('hisse-hdate');
   if (el) el.textContent = new Date().toLocaleDateString('tr-TR', {weekday:'long',year:'numeric',month:'long',day:'numeric'});
 }
+window.addEventListener('load', function(){ setTimeout(function(){ ensureHisseUsdTryForTotals(true); }, 1200); });
 
 function renderHisseGrafikleri() {
   var container = document.getElementById('hisse-grafikler');
@@ -9191,7 +9220,7 @@ function renderHisseKartlar() {
     var heroHtml = '<div class="hcard main">'
       + '<div class="hlabel">Toplam Hisse Portföyü</div>'
       + '<div class="hval" id="hisse-h-total">' + hisseFmtTL(toplamPortfoy) + '</div>'
-      + '<div class="hsub" id="hisse-h-baslangic">Başlangıç: ' + hisseFmtTL(toplamBaslangic) + ' · Yerli: ' + hisseFmtTL(yerliToplam) + ' · Yabancı: ' + hisseFmtTL(yabanciToplamTL) + '</div>'
+      + '<div class="hsub" id="hisse-h-baslangic">Başlangıç: ' + hisseFmtTL(toplamBaslangic) + ' · Yerli: ' + hisseFmtTL(yerliToplam) + ' · Yabancı: ' + (yabanciToplamUSD > 0 ? ('$' + yabanciToplamUSD.toLocaleString('tr-TR', {minimumFractionDigits:2, maximumFractionDigits:2}) + (yabanciToplamTL > 0 ? ' / ' + hisseFmtTL(yabanciToplamTL) : '')) : hisseFmtTL(yabanciToplamTL)) + '</div>'
       + '<div class="badge ' + (toplamKZ >= 0 ? 'pos' : 'neg') + '" id="hisse-h-kz">' + (toplamKZ >= 0 ? '+' : '') + hisseFmtTL(toplamKZ) + ' · ' + kurNotu + '</div>'
       + '</div>';
 
