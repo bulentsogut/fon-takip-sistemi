@@ -34,7 +34,9 @@ var FON_FIREBASE_KEYS = [
   'hisse_kayit_paketi_v1',
   'hisse_usdtry_v1',
   // Getiri Tahmin FVT ağırlık güncellemeleri
-  'fon_tahmin_fvt_portfoyler_v1'
+  'fon_tahmin_fvt_portfoyler_v1',
+  // ORKA Cloud otomatik ay devri durumu
+  'orka_auto_month_state_v1'
 ];
 var _fonFirebaseDb = null;
 var _fonFirebaseReady = false;
@@ -162,10 +164,11 @@ function fonFirebaseStart(){
         fonFirebaseApply(data);
         fonFirebaseRefreshUI();
         _fonFirebaseReady = true;
+        try{ if(typeof fonFirebaseSave === 'function') fonFirebaseSave(true); }catch(e){}
         if(typeof toast === 'function') toast('☁ Firebase fon/hisse verileri yüklendi', 'info');
       }else{
-        fonFirebaseSave(true);
         _fonFirebaseReady = true;
+        fonFirebaseSave(true);
       }
     }).catch(function(e){ console.warn('Fon Firebase okuma hatası:', e); });
   }catch(e){ console.warn('Fon Firebase başlatma hatası:', e); }
@@ -3288,7 +3291,7 @@ function renderHisseler() {
 
 
 
-const SK='fon_v5'; const TKEY='fon_tefas_v3'; const TRX_KEY='fon_trx_v5'; const TRX_EXTRA_KEY='fon_trx_extra_v1'; const DELETED_FON_KEY='fon_deleted_funds_v1';
+const SK='fon_v5'; const TKEY='fon_tefas_v3'; const TRX_KEY='fon_trx_v5'; const TRX_EXTRA_KEY='fon_trx_extra_v1'; const DELETED_FON_KEY='fon_deleted_funds_v1'; const ORKA_AUTO_MONTH_KEY='orka_auto_month_state_v1';
 
 // localStorage erişim wrapper — file:// protokolünde de çalışır
 var _memStore = {}; // in-memory fallback
@@ -5376,11 +5379,84 @@ function renderDynamicMonthUI(){
   if(title) title.textContent='Günlük Detay — '+monthDisplay(current)+' '+monthYearFromKey(current);
 }
 
+function loadOrkaAutoMonthState(){
+  try{ return JSON.parse(_lsGet(ORKA_AUTO_MONTH_KEY)) || {}; }catch(e){ return {}; }
+}
+function saveOrkaAutoMonthState(st){
+  st = st || {};
+  st.updatedAt = new Date().toISOString();
+  try{ _lsSet(ORKA_AUTO_MONTH_KEY, JSON.stringify(st)); }catch(e){}
+}
+function getMonthClosingSnapshotForKey(k){
+  var oldAy=aktifAy, oldWeeks=WEEKS, oldPref=PREFILLED, oldBas=HAZ_TRX_BASLANGIC.slice();
+  var result=null;
+  try{
+    setAktifAyGlobals(k);
+    hazBaslangicHesapla(k);
+    result = compute(buildMergedForAy(k));
+    updateAktifAyForMonth(k, result.rows);
+    var bakiye = {};
+    Object.keys(result.bakiye||{}).forEach(function(f){
+      if((result.bakiye[f]||0)>0) bakiye[f.toUpperCase()] = parseFloat((result.bakiye[f]||0).toFixed(3));
+    });
+    return {
+      ay: k,
+      yil: monthYearFromKey(k),
+      toplam: parseFloat((result.lastTotal||0).toFixed(3)),
+      karZarar: parseFloat((result.kz||0).toFixed(3)),
+      bakiyeler: bakiye
+    };
+  }catch(e){
+    console.warn('ORKA AME kapanış snapshot alınamadı:', k, e);
+    return null;
+  }finally{
+    aktifAy=oldAy; WEEKS=oldWeeks; PREFILLED=oldPref; HAZ_TRX_BASLANGIC=oldBas;
+  }
+}
+function runOrkaCloudAutoMonthEngine(current){
+  current = current || monthKeyFromDateObj(getAppToday());
+  if(MONTH_KEY_ORDER.indexOf(current)<MONTH_KEY_ORDER.indexOf(BASE_MONTH_KEY)) current=BASE_MONTH_KEY;
+
+  var prev = prevMonthKey(current);
+  var state = loadOrkaAutoMonthState();
+  var created = Array.isArray(state.createdMonths) ? state.createdMonths.slice() : [];
+  var createdMap = {};
+  created.forEach(function(k){ if(k) createdMap[k]=true; });
+
+  var baseIdx = MONTH_KEY_ORDER.indexOf(BASE_MONTH_KEY);
+  var curIdx = MONTH_KEY_ORDER.indexOf(current);
+  var transitions = [];
+  for(var i=baseIdx+1; i<=curIdx; i++){
+    var k = MONTH_KEY_ORDER[i];
+    if(!createdMap[k]) transitions.push(k);
+  }
+
+  var lastClosing = state.lastClosingSnapshot || null;
+  transitions.forEach(function(k){
+    var p = prevMonthKey(k);
+    ensureMonthScaffold(p);
+    ensureMonthScaffold(k);
+    var closeSnap = getMonthClosingSnapshotForKey(p);
+    if(closeSnap) lastClosing = closeSnap;
+    createdMap[k] = true;
+    if(created.indexOf(k)<0) created.push(k);
+  });
+
+  state.aktifAy = current;
+  state.lastCheckedMonth = current;
+  state.createdMonths = created;
+  state.lastClosingSnapshot = lastClosing;
+  state.engine = 'ORKA_CLOUD_AME_v1';
+  state.note = 'Ay devri otomatik: yeni ay açılışı önceki ay kapanış bakiyesinden hesaplanır.';
+  saveOrkaAutoMonthState(state);
+  return state;
+}
 function initTakipAyOtomasyon(){
   var current=monthKeyFromDateObj(getAppToday());
   if(MONTH_KEY_ORDER.indexOf(current)<MONTH_KEY_ORDER.indexOf(BASE_MONTH_KEY)) current=BASE_MONTH_KEY;
   monthRangeKeys(BASE_MONTH_KEY,current).forEach(function(k){ ensureMonthScaffold(k); });
   liveRates=Object.assign({}, PREFILLED_MAY, PREFILLED_HAZ, Object.keys(saved).length>0?saved:{});
+  var ameState = runOrkaCloudAutoMonthEngine(current);
   renderTefasCardsHTML();
   var keys=monthRangeKeys(BASE_MONTH_KEY,current);
   keys.forEach(function(k,idx){
@@ -5392,8 +5468,11 @@ function initTakipAyOtomasyon(){
   hazBaslangicHesapla(current);
   renderDynamicMonthUI();
   render();
+  try{
+    if(typeof fonFirebaseSave === 'function' && _fonFirebaseReady && !_fonFirebaseApplying){ fonFirebaseSave(true); }
+  }catch(e){}
+  return ameState;
 }
-
 document.getElementById('hdate').textContent=getAppToday().toLocaleDateString('tr-TR',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
 // İşlem geçmişini localStorage'a yükle (ilk kez çalışırsa default yaz)
 if(!_lsGet(TRX_KEY)){
