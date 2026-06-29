@@ -124,16 +124,57 @@ function fonFirebaseSave(silent){
     var db = _fonFirebaseDb || fonFirebaseInit();
     if(!db){
       if(!silent && typeof toast === 'function') toast('Firebase bağlantısı yok; veriler cihazda kaydedildi', 'info');
-      return;
+      return Promise.resolve(false);
     }
     var payload = fonFirebaseSnapshot();
-    db.ref(_fonFirebasePath).set(payload);
-    if(!silent && typeof toast === 'function') toast('☁ Fon/Hisse verileri Firebase’e kaydedildi', 'ok');
+    return db.ref(_fonFirebasePath).set(payload).then(function(){
+      if(!silent && typeof toast === 'function') toast('☁ Fon/Hisse verileri Firebase’e kaydedildi', 'ok');
+      return true;
+    }).catch(function(e){
+      console.warn('Fon Firebase kayıt hatası:', e);
+      if(!silent && typeof toast === 'function') toast('Firebase kayıt hatası: ' + e.message, 'err');
+      return false;
+    });
   }catch(e){
     console.warn('Fon Firebase kayıt hatası:', e);
     if(!silent && typeof toast === 'function') toast('Firebase kayıt hatası: ' + e.message, 'err');
+    return Promise.resolve(false);
   }
 }
+
+function fonFirebaseSyncHisseMemoryFromLocal(){
+  // Firebase verisi localStorage'a yazıldıktan sonra Hisse Takip'in RAM'deki
+  // objeleri de güncellenmeli. Aksi halde Vercel ilk açılışta eski/default
+  // portföyü gösterir; ancak Genel Geri Yükle yapınca doğru görünür.
+  try{
+    var paket = fonFirebaseReadLocal('hisse_kayit_paketi_v1');
+    var portfoy = fonFirebaseReadLocal('hisse_portfoy_v1');
+    var gunluk = fonFirebaseReadLocal('hisse_gunluk_v1');
+    var bugun = fonFirebaseReadLocal('hisse_bugun_v1');
+    var usdtry = fonFirebaseReadLocal('hisse_usdtry_v1');
+    if(paket && typeof paket === 'object'){
+      if(!portfoy && paket.portfoy) portfoy = paket.portfoy;
+      if(!gunluk && paket.gunluk) gunluk = paket.gunluk;
+      if(!bugun && paket.bugun) bugun = paket.bugun;
+    }
+    if(typeof HISSE_PORTFOY !== 'undefined' && portfoy && typeof portfoy === 'object'){
+      Object.keys(HISSE_PORTFOY).forEach(function(k){ delete HISSE_PORTFOY[k]; });
+      Object.keys(portfoy).forEach(function(k){ HISSE_PORTFOY[k] = portfoy[k]; });
+    }
+    if(typeof hisseGunlukFiyat !== 'undefined' && gunluk && typeof gunluk === 'object'){
+      Object.keys(hisseGunlukFiyat).forEach(function(k){ delete hisseGunlukFiyat[k]; });
+      Object.assign(hisseGunlukFiyat, gunluk);
+    }
+    if(typeof hisseBugunkuFiyat !== 'undefined' && bugun && typeof bugun === 'object'){
+      Object.keys(hisseBugunkuFiyat).forEach(function(k){ delete hisseBugunkuFiyat[k]; });
+      Object.assign(hisseBugunkuFiyat, bugun);
+    }
+    if(typeof hisseUsdTry !== 'undefined' && usdtry && Number(usdtry.kur) > 0){
+      hisseUsdTry = usdtry;
+    }
+  }catch(e){ console.warn('Hisse RAM senkron hatası:', e); }
+}
+
 function fonFirebaseApply(data){
   if(!data || typeof data !== 'object') return;
   _fonFirebaseApplying = true;
@@ -142,6 +183,7 @@ function fonFirebaseApply(data){
       if(data[key] !== undefined && data[key] !== null) fonFirebaseWriteLocal(key, fonFirebaseDecodeKeys(data[key]));
     });
   }finally{ _fonFirebaseApplying = false; }
+  fonFirebaseSyncHisseMemoryFromLocal();
 }
 function fonFirebaseRefreshUI(){
   function run(){
@@ -3693,7 +3735,7 @@ function openFonAlimSatimGecmisi(){
 }
 
 // ── Kaydet / Yedekle ──────────────────────────────────
-function saveData(){
+async function saveData(){
   // Ekrandaki tüm input değerlerini önce localStorage'a yaz
   var s = loadR();
   document.querySelectorAll('.rinp').forEach(function(inp){
@@ -3705,8 +3747,8 @@ function saveData(){
     }
   });
   saveR(s);
-  toast('💾 Veriler kaydedildi','ok');
-  if(typeof fonFirebaseSave === 'function') fonFirebaseSave(false);
+  if(typeof fonFirebaseSave === 'function') await fonFirebaseSave(false);
+  else toast('💾 Veriler kaydedildi','ok');
 }
 function backupData(){
   // Önce ekrandaki tüm input değerlerini localStorage'a yaz
@@ -9697,7 +9739,7 @@ function genelGeriYukle(input){
   r.readAsText(f);
 }
 
-function hisseVerileriKaydet() {
+async function hisseVerileriKaydet() {
   var btn = null;
   try {
     btn = document.querySelector('#panel-hisse button[onclick*="hisseVerileriKaydet"]');
@@ -9719,13 +9761,14 @@ function hisseVerileriKaydet() {
       bugun: hisseBugunkuFiyat || {}
     }));
 
-    if (typeof fonFirebaseSave === 'function') fonFirebaseSave(true);
+    var cloudOk = true;
+    if (typeof fonFirebaseSave === 'function') cloudOk = await fonFirebaseSave(true);
 
     var el = document.getElementById('hisse-last-update');
     if (el) el.innerHTML = 'Son kayıt: <span style="color:var(--green)">' + new Date().toLocaleTimeString('tr-TR') + '</span>';
 
     try { renderHissePanel(); } catch(_e) {}
-    toast('☁ Hisse portföyü kaydedildi', 'ok');
+    toast(cloudOk ? '☁ Hisse portföyü Firebase’e kaydedildi' : '💾 Hisse verisi cihazda kaydedildi; Firebase kontrol et', cloudOk ? 'ok' : 'info');
   } catch(e) {
     toast('Hisse kayıt hatası: ' + e.message, 'err');
     console.error('Hisse kayıt hatası:', e);
