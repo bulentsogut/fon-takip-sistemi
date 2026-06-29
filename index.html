@@ -8889,6 +8889,19 @@ function hisseUsdTryKaydet() {
 }
 
 async function fetchHisseUsdTry() {
+  // ORKA CLOUD v003: USD/TRY için tek kaynağa bağlı kalma.
+  // GitHub Pages tarafında Yahoo doğrudan CORS nedeniyle bazen boş dönebiliyor;
+  // bu yüzden önce proxy/Yahoo, ardından CORS uyumlu kur servisleri denenir.
+  function kabulEt(kur, source) {
+    kur = Number(kur);
+    if (isFinite(kur) && kur > 1) {
+      hisseUsdTry = { kur: kur, updatedAt: new Date().toISOString(), source: source || 'USDTRY' };
+      hisseUsdTryKaydet();
+      return kur;
+    }
+    return 0;
+  }
+
   var tickers = ['USDTRY=X', 'TRY=X'];
   for (var t = 0; t < tickers.length; t++) {
     var urls = hisseYahooUrlList(tickers[t], '5d');
@@ -8908,14 +8921,27 @@ async function fetchHisseUsdTry() {
             if (Number(closes[i]) > 0) { kur = Number(closes[i]); break; }
           }
         }
-        if (kur && kur > 1) {
-          hisseUsdTry = { kur: kur, updatedAt: new Date().toISOString(), source: tickers[t] };
-          hisseUsdTryKaydet();
-          return kur;
-        }
+        kur = kabulEt(kur, tickers[t]);
+        if (kur) return kur;
       } catch(e) {}
     }
   }
+
+  var apiUrls = [
+    { url: 'https://api.frankfurter.app/latest?from=USD&to=TRY', parse: function(d){ return d && d.rates && d.rates.TRY; }, source: 'frankfurter' },
+    { url: 'https://open.er-api.com/v6/latest/USD', parse: function(d){ return d && d.rates && d.rates.TRY; }, source: 'open.er-api' },
+    { url: 'https://api.exchangerate.host/latest?base=USD&symbols=TRY', parse: function(d){ return d && d.rates && d.rates.TRY; }, source: 'exchangerate.host' }
+  ];
+  for (var a = 0; a < apiUrls.length; a++) {
+    try {
+      var r = await fetchWithTimeout(apiUrls[a].url, {headers:{'Accept':'application/json'}}, 9000);
+      if (!r.ok) continue;
+      var j = await r.json();
+      var k = kabulEt(apiUrls[a].parse(j), apiUrls[a].source);
+      if (k) return k;
+    } catch(e) {}
+  }
+
   return hisseUsdTryKur();
 }
 
