@@ -2634,6 +2634,8 @@ window.addEventListener('unhandledrejection', function(ev){
       <div class="status-item" id="yabanci-last-update">Son güncelleme: <span>—</span></div>
       <div class="bar-acts">
         <button class="abtn save" onclick="yabanciVerileriKaydet()">💾 Kaydet</button>
+        <button class="abtn bkp" onclick="genelYedekle()">⬇ Genel Yedekle</button>
+        <label class="abtn rst" style="cursor:pointer;">⬆ Genel Geri Yükle<input type="file" accept=".json" style="display:none" onchange="genelGeriYukle(this)"></label>
         <button class="abtn" id="yv-rate-btn" onclick="yabanciKurlariGuncelle(true)">↺ Kurları Güncelle</button>
         <button class="abtn rst" onclick="openYabanciPortfoyModal()">⚙ Portföy</button>
         <button class="abtn" onclick="yabanciVarsayilanlariYukle()">＋ Varsayılan Enstrümanlar</button>
@@ -2648,7 +2650,7 @@ window.addEventListener('unhandledrejection', function(ev){
         <div class="badge" id="yv-kz">—</div>
       </div>
       <div class="hcard"><div class="hlabel">Döviz Toplamı</div><div class="hval" style="font-size:1.55rem;" id="yv-doviz-total">—</div><div class="hsub">USD · EUR · CAD · GBP · CHF</div></div>
-      <div class="hcard"><div class="hlabel">Maden Toplamı</div><div class="hval" style="font-size:1.55rem;" id="yv-maden-total">—</div><div class="hsub">Altın · Gümüş · Ons</div></div>
+      <div class="hcard"><div class="hlabel">Maden Toplamı</div><div class="hval" style="font-size:1.55rem;" id="yv-maden-total">—</div><div class="hsub">Gram Altın · Gram Gümüş</div></div>
       <div class="hcard"><div class="hlabel">En Büyük Varlık</div><div class="hval" style="font-size:1.55rem;" id="yv-biggest">—</div><div class="hsub" id="yv-biggest-sub">—</div></div>
     </div>
 
@@ -7834,8 +7836,7 @@ const YABANCI_DEFAULTS = [
   {code:'CAD', name:'Kanada Doları', type:'Döviz', amount:0, costTry:0, currentTry:0},
   {code:'CHF', name:'İsviçre Frangı', type:'Döviz', amount:0, costTry:0, currentTry:0},
   {code:'GAU', name:'Gram Altın', type:'Maden', amount:0, costTry:0, currentTry:0},
-  {code:'XAU', name:'Ons Altın', type:'Maden', amount:0, costTry:0, currentTry:0},
-  {code:'XAG', name:'Gümüş', type:'Maden', amount:0, costTry:0, currentTry:0}
+  {code:'XAG', name:'Gram Gümüş', type:'Maden', amount:0, costTry:0, currentTry:0}
 ];
 function yvRead(){
   try{ var raw=(typeof _lsGet==='function'?_lsGet(YABANCI_VARLIK_KEY):localStorage.getItem(YABANCI_VARLIK_KEY)); if(raw) return JSON.parse(raw)||[]; }catch(e){}
@@ -7909,15 +7910,17 @@ async function yabanciKurlariGuncelle(showToast){
       try{ if(typeof fetchHisseUsdTry==='function') usdtry=await fetchHisseUsdTry(); }catch(e){}
       if(!usdtry && typeof hisseUsdTryKur==='function') usdtry=hisseUsdTryKur();
     }
-    var hasMaden=arr.some(function(x){ var c=String(x.code||'').toUpperCase(); return c==='GAU'||c==='XAU'||c==='XAG'; });
+    var hasMaden=arr.some(function(x){ var c=String(x.code||'').toUpperCase(); return c==='GAU'||c==='XAG'||c==='XAU'; });
     if(hasMaden && usdtry>0){
       xauusd=await yvFetchYahooPrice('GC=F');
       xagusd=await yvFetchYahooPrice('SI=F');
       arr.forEach(function(x){
         var c=String(x.code||'').toUpperCase();
-        if(c==='XAU' && xauusd>0) x.currentTry=xauusd*usdtry;
+        // ORKA varsayılan maden ölçüsü gramdır: adet alanı gram kabul edilir.
         if(c==='GAU' && xauusd>0) x.currentTry=xauusd*usdtry/31.1034768;
         if(c==='XAG' && xagusd>0) x.currentTry=xagusd*usdtry/31.1034768;
+        // Eski yedeklerden gelen XAU kaydı varsa geriye dönük uyumluluk için ons bazında korunur.
+        if(c==='XAU' && xauusd>0) x.currentTry=xauusd*usdtry;
       });
     }
     yvWrite(arr);
@@ -9681,13 +9684,28 @@ function saveHisseManualUpdate(key) {
 
 
 /* ── Genel Yedekle / Eski Yedek Uyumlu Geri Yükle ───────────────
-   Tek JSON dosyasında Fon Takip + Hisse Takip verileri saklanır.
+   Tek JSON dosyasında Fon Takip + Hisse Takip + Yabancı Varlık verileri saklanır.
    Geri yükleme; eski fon_yedek_*.json ve hisse_yedek_*.json dosyalarını da tanır. */
+function _getYabanciYedekVerisi(){
+  try{ return (typeof yvRead === 'function') ? yvRead() : JSON.parse(localStorage.getItem('yabanci_varliklar_v1')||'[]'); }catch(e){ return []; }
+}
+function _restoreYabanciBolumu(yabanci){
+  if(!yabanci) return false;
+  try{
+    var arr = Array.isArray(yabanci) ? yabanci : (Array.isArray(yabanci.varliklar) ? yabanci.varliklar : []);
+    if(!Array.isArray(arr)) arr=[];
+    if(typeof yvWrite === 'function') yvWrite(arr); else localStorage.setItem('yabanci_varliklar_v1', JSON.stringify(arr));
+    if(typeof renderYabanciPanel === 'function') renderYabanciPanel();
+    return true;
+  }catch(e){ return false; }
+}
+
 function genelYedekle(){
   try{
     // Önce mevcut ekran/veri durumunu kalıcı alana yaz.
     if(typeof saveData === 'function') saveData();
     if(typeof hisseVerileriKaydet === 'function') hisseVerileriKaydet();
+    if(typeof yabanciVerileriKaydet === 'function') yabanciVerileriKaydet();
 
     var fonRates = (typeof loadR === 'function') ? loadR() : (function(){try{return JSON.parse(localStorage.getItem('fon_rates_v1')||'{}');}catch(e){return {};}})();
     var fonTefas = (function(){try{return JSON.parse(_lsGet(TKEY)||'null');}catch(e){return null;}})();
@@ -9698,10 +9716,12 @@ function genelYedekle(){
     var hissePortfoy = (function(){try{return JSON.parse(JSON.stringify(HISSE_PORTFOY||{}));}catch(e){return {};}})();
     var hisseGunluk = (function(){try{return JSON.parse(JSON.stringify(hisseGunlukFiyat||{}));}catch(e){return {};}})();
     var hisseBugun = (function(){try{return JSON.parse(JSON.stringify(hisseBugunkuFiyat||{}));}catch(e){return {};}})();
+    var yabanciVarliklar = _getYabanciYedekVerisi();
 
     var data = {
-      type: 'fon_hisse_genel_yedek',
-      v: 1,
+      type: 'orka_genel_yedek',
+      legacyType: 'fon_hisse_genel_yedek',
+      v: 2,
       at: new Date().toISOString(),
       fon: {
         rates: fonRates,
@@ -9715,13 +9735,17 @@ function genelYedekle(){
         portfoy: hissePortfoy,
         gunluk: hisseGunluk,
         bugun: hisseBugun
+      },
+      yabanci: {
+        varliklar: yabanciVarliklar,
+        key: 'yabanci_varliklar_v1'
       }
     };
 
     var a=document.createElement('a');
     a.href=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}));
     var ts=new Date().toISOString().slice(0,16).replace('T','_').replace(':','');
-    a.download='genel_yedek_'+ts+'.json';
+    a.download='orka_genel_yedek_'+ts+'.json';
     a.click();
     setTimeout(function(){URL.revokeObjectURL(a.href);},1000);
     toast('⬇ Genel yedek indirildi','info');
@@ -9789,7 +9813,7 @@ function _restoreHisseBolumu(hisse){
 }
 
 function _detectBackupFormat(d){
-  if(d && (d.type === 'fon_hisse_genel_yedek' || d.fon || d.hisse)) return 'genel';
+  if(d && (d.type === 'orka_genel_yedek' || d.type === 'fon_hisse_genel_yedek' || d.legacyType === 'fon_hisse_genel_yedek' || d.fon || d.hisse || d.yabanci)) return 'genel';
   if(d && (d.rates || d.tefas || d.trx_extra || d.trx || d.deleted_fonlar)) return 'fon_eski';
   if(d && (d.portfoy || d.gunluk || d.bugun)) return 'hisse_eski';
   return 'unknown';
@@ -9803,20 +9827,21 @@ function genelGeriYukle(input){
       var d=JSON.parse(e.target.result);
       var fmt=_detectBackupFormat(d);
       if(fmt==='unknown'){ alert('Geçersiz yedek dosyası.'); input.value=''; return; }
-      var msg = fmt==='genel' ? 'Genel yedek yüklenecek. Fon + Hisse verileri birlikte geri döner.' :
-                fmt==='fon_eski' ? 'Eski Fon Takip yedeği yüklenecek. Hisse verileri korunur.' :
-                'Eski Hisse Takip yedeği yüklenecek. Fon verileri korunur.';
+      var msg = fmt==='genel' ? 'Genel yedek yüklenecek. Fon + Hisse + Yabancı Varlık verileri birlikte geri döner.' :
+                fmt==='fon_eski' ? 'Eski Fon Takip yedeği yüklenecek. Hisse ve Yabancı Varlık verileri korunur.' :
+                'Eski Hisse Takip yedeği yüklenecek. Fon ve Yabancı Varlık verileri korunur.';
       if(!confirm('"'+f.name+'"\n\n'+msg+'\n\nDevam?')){ input.value=''; return; }
-      var fonOk=false, hisseOk=false;
+      var fonOk=false, hisseOk=false, yabanciOk=false;
       if(fmt==='genel'){
         fonOk = _restoreFonBolumu(d.fon || d.takip || null);
         hisseOk = _restoreHisseBolumu(d.hisse || null);
+        yabanciOk = _restoreYabanciBolumu(d.yabanci || d.yabanci_varliklar || null);
       }else if(fmt==='fon_eski'){
         fonOk = _restoreFonBolumu({rates:d.rates, tefas:d.tefas, trx_extra:d.trx_extra, deleted_fonlar:d.deleted_fonlar, satis_gecmisi:d.satis_gecmisi, trx:d.trx});
       }else if(fmt==='hisse_eski'){
         hisseOk = _restoreHisseBolumu({portfoy:d.portfoy, gunluk:d.gunluk, bugun:d.bugun});
       }
-      toast('Geri yüklendi: '+(fonOk?'Fon ':'')+(hisseOk?'Hisse':'').trim(), 'ok');
+      toast('Geri yüklendi: '+((fonOk?'Fon ':'')+(hisseOk?'Hisse ':'')+(yabanciOk?'Yabancı Varlık':'')).trim(), 'ok');
     }catch(ex){ alert('Geri yükleme hatası: '+ex.message); }
     input.value='';
   };
