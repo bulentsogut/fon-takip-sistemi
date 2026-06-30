@@ -2634,6 +2634,7 @@ window.addEventListener('unhandledrejection', function(ev){
       <div class="status-item" id="yabanci-last-update">Son güncelleme: <span>—</span></div>
       <div class="bar-acts">
         <button class="abtn save" onclick="yabanciVerileriKaydet()">💾 Kaydet</button>
+        <button class="abtn" id="yv-rate-btn" onclick="yabanciKurlariGuncelle(true)">↺ Kurları Güncelle</button>
         <button class="abtn rst" onclick="openYabanciPortfoyModal()">⚙ Portföy</button>
         <button class="abtn" onclick="yabanciVarsayilanlariYukle()">＋ Varsayılan Enstrümanlar</button>
       </div>
@@ -7850,6 +7851,85 @@ function yvWrite(arr){
 function yvFmt(v){ return '₺'+(Number(v)||0).toLocaleString('tr-TR',{maximumFractionDigits:0}); }
 function yvNum(v){ v=String(v==null?'':v).replace(/\./g,'').replace(',', '.'); var n=parseFloat(v); return isNaN(n)?0:n; }
 function yvClass(v){ return (Number(v)||0)>=0?'pos':'neg'; }
+
+function yvYahooUrls(ticker){
+  var enc=encodeURIComponent(ticker);
+  return [
+    '/api/yahoo?ticker='+enc+'&range=5d',
+    'https://query1.finance.yahoo.com/v8/finance/chart/'+enc+'?interval=1d&range=5d',
+    'https://query2.finance.yahoo.com/v8/finance/chart/'+enc+'?interval=1d&range=5d'
+  ];
+}
+async function yvFetchYahooPrice(ticker){
+  var urls=yvYahooUrls(ticker);
+  for(var i=0;i<urls.length;i++){
+    try{
+      var resp=await fetchWithTimeout(urls[i], {headers:{'Accept':'application/json'}}, 12000);
+      if(!resp || !resp.ok) continue;
+      var data=await resp.json();
+      var result=data && data.chart && data.chart.result && data.chart.result[0];
+      if(!result) continue;
+      var meta=result.meta||{};
+      var closes=result.indicators && result.indicators.adjclose && result.indicators.adjclose[0] && result.indicators.adjclose[0].adjclose || [];
+      var price=Number(meta.regularMarketPrice || meta.previousClose || meta.chartPreviousClose || 0);
+      if((!price || price<=0) && closes && closes.length){
+        for(var c=closes.length-1;c>=0;c--){ if(Number(closes[c])>0){ price=Number(closes[c]); break; } }
+      }
+      if(price && price>0) return price;
+    }catch(e){}
+  }
+  return 0;
+}
+function yvTickerFor(code){
+  code=String(code||'').toUpperCase();
+  if(code==='USD') return 'USDTRY=X';
+  if(code==='EUR') return 'EURTRY=X';
+  if(code==='GBP') return 'GBPTRY=X';
+  if(code==='CAD') return 'CADTRY=X';
+  if(code==='CHF') return 'CHFTRY=X';
+  return '';
+}
+async function yabanciKurlariGuncelle(showToast){
+  var btn=document.getElementById('yv-rate-btn');
+  if(btn){ btn.disabled=true; btn.textContent='Güncelleniyor...'; }
+  var arr=yvRead();
+  if(!arr.length) arr=YABANCI_DEFAULTS.map(function(x){return Object.assign({},x);});
+  try{
+    var usdtry=0, xauusd=0, xagusd=0;
+    for(var i=0;i<arr.length;i++){
+      var code=String(arr[i].code||'').toUpperCase();
+      var t=yvTickerFor(code);
+      if(t){
+        var rate=await yvFetchYahooPrice(t);
+        if(rate>0) arr[i].currentTry=rate;
+        if(code==='USD' && rate>0) usdtry=rate;
+      }
+    }
+    if(!usdtry){
+      try{ if(typeof fetchHisseUsdTry==='function') usdtry=await fetchHisseUsdTry(); }catch(e){}
+      if(!usdtry && typeof hisseUsdTryKur==='function') usdtry=hisseUsdTryKur();
+    }
+    var hasMaden=arr.some(function(x){ var c=String(x.code||'').toUpperCase(); return c==='GAU'||c==='XAU'||c==='XAG'; });
+    if(hasMaden && usdtry>0){
+      xauusd=await yvFetchYahooPrice('GC=F');
+      xagusd=await yvFetchYahooPrice('SI=F');
+      arr.forEach(function(x){
+        var c=String(x.code||'').toUpperCase();
+        if(c==='XAU' && xauusd>0) x.currentTry=xauusd*usdtry;
+        if(c==='GAU' && xauusd>0) x.currentTry=xauusd*usdtry/31.1034768;
+        if(c==='XAG' && xagusd>0) x.currentTry=xagusd*usdtry/31.1034768;
+      });
+    }
+    yvWrite(arr);
+    renderYabanciPanel();
+    var el=document.getElementById('yabanci-last-update'); if(el) el.innerHTML='Son güncelleme: <span>'+new Date().toLocaleTimeString('tr-TR')+'</span>';
+    if(showToast && typeof toast==='function') toast('Yabancı varlık kurları güncellendi.','ok');
+  }catch(e){
+    if(showToast && typeof toast==='function') toast('Kur güncelleme sırasında hata oluştu; kayıtlı değerler korundu.','info');
+  }finally{
+    if(btn){ btn.disabled=false; btn.textContent='↺ Kurları Güncelle'; }
+  }
+}
 function yabanciVarsayilanlariYukle(){
   var cur = yvRead();
   var map = {}; cur.forEach(function(x){ map[String(x.code||'').toUpperCase()] = true; });
@@ -7904,7 +7984,7 @@ function yvSaveModal(){
   var arr=(window._yvEditRows||[]).filter(function(x){return String(x.code||'').trim();}).map(function(x){ return {code:String(x.code||'').toUpperCase().trim(), name:String(x.name||'').trim(), type:String(x.type||'Döviz'), amount:Number(x.amount)||0, costTry:Number(x.costTry)||0, currentTry:Number(x.currentTry)||0, updatedAt:new Date().toISOString()}; });
   yvWrite(arr); var modal=document.getElementById('yv-modal-overlay'); if(modal) modal.remove(); renderYabanciPanel(); if(typeof toast==='function') toast('Yabancı varlık portföyü kaydedildi.','ok');
 }
-window.addEventListener('load', function(){ setTimeout(function(){ try{ renderYabanciPanel(); }catch(e){} }, 600); });
+window.addEventListener('load', function(){ setTimeout(function(){ try{ renderYabanciPanel(); yabanciKurlariGuncelle(false); }catch(e){} }, 600); });
 </script>
 
 <!-- SEKME SİSTEMİ & OFSET SENKRON -->
