@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Fon Yönetim Merkezi — Takip & Tahmin</title>
+<!-- ORKA CLOUD GitHub Yabancı Varlıklar v004: FVT ağırlık motoru genişletildi. -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 
@@ -6597,14 +6598,146 @@ async function loadFVTPortfolio(fonKodu) {
   fonKodu = String(fonKodu || '').trim().toUpperCase();
   if (!fonKodu) return null;
 
+  // ORKA CLOUD v004: FVT ağırlık okuma motoru genişletildi.
+  // Eski Vercel /api/fvt endpoint'i çalışırsa onu kullanır; çalışmazsa FVT'nin
+  // güncel /api/funds/{KOD} cevabını allorigins üzerinden okuyup dağılımı
+  // olası alanlardan esnek şekilde çıkarır.
+  var directFvtUrl = 'https://fvt.com.tr/api/funds/' + encodeURIComponent(fonKodu);
   var urls = [
     '/api/fvt?code=' + encodeURIComponent(fonKodu) + '&type=distribution',
-    '/api/fvt?kod=' + encodeURIComponent(fonKodu) + '&type=distribution'
+    '/api/fvt?kod=' + encodeURIComponent(fonKodu) + '&type=distribution',
+    '/api/fvt?code=' + encodeURIComponent(fonKodu),
+    '/api/fvt?kod=' + encodeURIComponent(fonKodu),
+    'https://api.allorigins.win/raw?url=' + encodeURIComponent(directFvtUrl)
   ];
+
+  function unwrapFvtPayload(data){
+    if (!data) return {};
+    if (typeof data === 'string') {
+      try { return JSON.parse(data); } catch(e) { return {}; }
+    }
+    return data;
+  }
+
+  function looksLikeHoldingArray(arr){
+    if (!Array.isArray(arr) || arr.length === 0) return false;
+    var sample = arr.slice(0, Math.min(arr.length, 8));
+    return sample.some(function(it){
+      if (!it || typeof it !== 'object') return false;
+      var hasCode = it.hisseKodu || it.kod || it.code || it.assetCode || it.symbol || it.varlikKodu || it.stockCode || it.ticker;
+      var hasWeight = it.agirlik !== undefined || it.weight !== undefined || it.oran !== undefined || it.agirlikYuzde !== undefined || it.percentage !== undefined || it.yuzde !== undefined || it.ratio !== undefined || it.portfoyOrani !== undefined;
+      return !!hasCode && !!hasWeight;
+    });
+  }
+
+  function findHoldingArrays(obj, path, out){
+    if (!obj || typeof obj !== 'object') return;
+    if (Array.isArray(obj)) {
+      if (looksLikeHoldingArray(obj)) out.push({path:path, arr:obj});
+      obj.slice(0, 3).forEach(function(x, i){ findHoldingArrays(x, path + '[' + i + ']', out); });
+      return;
+    }
+    Object.keys(obj).forEach(function(k){
+      var v = obj[k];
+      var p = path ? path + '.' + k : k;
+      if (Array.isArray(v)) {
+        if (looksLikeHoldingArray(v)) out.push({path:p, arr:v});
+        else v.slice(0, 3).forEach(function(x, i){ findHoldingArrays(x, p + '[' + i + ']', out); });
+      } else if (v && typeof v === 'object') {
+        findHoldingArrays(v, p, out);
+      }
+    });
+  }
+
+  function extractHoldings(data){
+    data = unwrapFvtPayload(data);
+    var roots = [data, data.data, data.result, data.payload, data.fund, data.fon].filter(Boolean);
+    var candidates = [];
+
+    roots.forEach(function(r){
+      if (!r) return;
+      [
+        r.holdings, r.items, r.distribution, r.positions, r.assets, r.portfolio, r.portfoy,
+        r.portfolioDistribution, r.portfoyDagilimi, r.assetDistribution, r.varlikDagilimi,
+        r.stockDistribution, r.hisseDagilimi, r.fundAssets, r.fonVarliklari,
+        r.topHoldings, r.composition, r.allocations, r.breakdown
+      ].forEach(function(arr){ if (looksLikeHoldingArray(arr)) candidates.push({path:'direct', arr:arr}); });
+    });
+
+    if (candidates.length === 0) findHoldingArrays(data, '', candidates);
+    if (candidates.length === 0) return [];
+
+    // En çok geçerli kalem üreten aday dağılım kabul edilir.
+    var best = candidates.map(function(c){
+      var valid = c.arr.filter(function(it){
+        if (!it || typeof it !== 'object') return false;
+        var code = it.hisseKodu || it.kod || it.code || it.assetCode || it.symbol || it.varlikKodu || it.stockCode || it.ticker;
+        var w = it.agirlik;
+        if (w === undefined) w = it.weight;
+        if (w === undefined) w = it.oran;
+        if (w === undefined) w = it.agirlikYuzde;
+        if (w === undefined) w = it.percentage;
+        if (w === undefined) w = it.yuzde;
+        if (w === undefined) w = it.ratio;
+        if (w === undefined) w = it.portfoyOrani;
+        if (typeof w === 'string') w = w.replace(',', '.').replace('%','');
+        w = parseFloat(w);
+        return !!String(code || '').trim() && !isNaN(w) && Math.abs(w) > 0.01;
+      }).length;
+      return {path:c.path, arr:c.arr, valid:valid};
+    }).sort(function(a,b){ return b.valid - a.valid; })[0];
+
+    return best && best.valid ? best.arr : [];
+  }
+
+  function extractMetaDate(data){
+    data = unwrapFvtPayload(data);
+    var roots = [data, data.data, data.result, data.meta, data.data && data.data.meta, data.fund, data.data && data.data.fund].filter(Boolean);
+    for (var i=0;i<roots.length;i++){
+      var r = roots[i];
+      var d = r.aciklamaTarihi || r.date || r.tarih || r.reportDate || r.updatedAt || r.lastUpdate || r.portfoyTarihi || r.portfolioDate;
+      if (d) return d;
+    }
+    return '';
+  }
+
+  function mapHolding(it){
+    var kod = String(it.hisseKodu || it.kod || it.code || it.assetCode || it.symbol || it.varlikKodu || it.stockCode || it.ticker || '').trim().toUpperCase();
+    var ad = String(it.sirketAdi || it.ad || it.name || it.assetName || it.varlikAdi || it.unvan || it.title || kod || '').trim();
+    var agirlikRaw = it.agirlik;
+    if (agirlikRaw === undefined) agirlikRaw = it.weight;
+    if (agirlikRaw === undefined) agirlikRaw = it.oran;
+    if (agirlikRaw === undefined) agirlikRaw = it.agirlikYuzde;
+    if (agirlikRaw === undefined) agirlikRaw = it.percentage;
+    if (agirlikRaw === undefined) agirlikRaw = it.yuzde;
+    if (agirlikRaw === undefined) agirlikRaw = it.ratio;
+    if (agirlikRaw === undefined) agirlikRaw = it.portfoyOrani;
+    if (typeof agirlikRaw === 'string') agirlikRaw = agirlikRaw.replace(',', '.').replace('%','');
+    var agirlik = parseFloat(agirlikRaw);
+    // Bazı API'ler 0-1 arası oran döndürür; portföy ağırlığını yüzdeye çevir.
+    if (!isNaN(agirlik) && agirlik > 0 && agirlik <= 1) agirlik = agirlik * 100;
+    if (!kod || isNaN(agirlik) || Math.abs(agirlik) <= 0.01) return null;
+
+    var tipRaw = String(it.tip || it.type || it.assetType || it.varlikTipi || it.tur || '').toLowerCase();
+    var tip;
+    var BYF = ['GLDTRF','GMSTRF','ZPX3GF','ZPX30F','TPKGY','TPKGYF1','HMV','T3B','PKZ','PQS','PFS','ABG','TI1','RPP','CFO','RS1','PNU','PRY','CPU','PBR'];
+    if (tipRaw.indexOf('nakit') >= 0 || tipRaw.indexOf('repo') >= 0 || tipRaw.indexOf('bono') >= 0 || tipRaw.indexOf('mevduat') >= 0) tip = 'cash';
+    else if (tipRaw.indexOf('fon') >= 0 || tipRaw.indexOf('etf') >= 0) tip = 'fund';
+    else if (tipRaw.indexOf('yab') >= 0 || tipRaw.indexOf('foreign') >= 0 || tipRaw.indexOf('us') >= 0) tip = 'us';
+    else if (BYF.indexOf(kod) !== -1) tip = (kod.indexOf('TRF') >= 0 ? 'cash' : 'fund');
+    else if (it.etf === 1 || it.etf === true) tip = 'fund';
+    else if (it.yabanci === 1 || it.yabanci === true) tip = 'us';
+    else if (ad === '' && (it.yabanci === 0 || it.yabanci === false)) tip = 'fund';
+    else tip = 'bist';
+
+    var obj = { code: kod, name: ad || kod, weight: agirlik, type: tip };
+    obj.type = normalizeAssetType(obj);
+    return obj;
+  }
 
   for (var i = 0; i < urls.length; i++) {
     try {
-      var resp = await fetchWithTimeout(urls[i], { headers: { 'Accept': 'application/json,text/plain,*/*' } }, 12000);
+      var resp = await fetchWithTimeout(urls[i], { headers: { 'Accept': 'application/json,text/plain,*/*' } }, 18000);
       if (!resp.ok) {
         console.warn('FVT HTTP', fonKodu, resp.status, urls[i]);
         continue;
@@ -6618,57 +6751,18 @@ async function loadFVTPortfolio(fonKodu) {
         continue;
       }
 
-      var items =
-        (data && Array.isArray(data.holdings) && data.holdings) ||
-        (data && data.data && Array.isArray(data.data.holdings) && data.data.holdings) ||
-        (data && data.data && Array.isArray(data.data.items) && data.data.items) ||
-        (data && data.data && Array.isArray(data.data.distribution) && data.data.distribution) ||
-        (data && data.data && Array.isArray(data.data.positions) && data.data.positions) ||
-        (data && Array.isArray(data.items) && data.items) ||
-        (data && Array.isArray(data.distribution) && data.distribution) ||
-        (data && Array.isArray(data.positions) && data.positions) ||
-        (Array.isArray(data) && data) ||
-        [];
-
-      if (items.length === 0) {
+      var items = extractHoldings(data);
+      if (!items || items.length === 0) {
         console.warn('FVT boş portföy', fonKodu, data);
         continue;
       }
 
-      var holdings = items
-        .map(function(it){
-          var kod = String(it.hisseKodu || it.kod || it.code || it.assetCode || it.symbol || it.varlikKodu || '').trim().toUpperCase();
-          var ad = String(it.sirketAdi || it.ad || it.name || it.assetName || it.varlikAdi || kod || '').trim();
-          var agirlikRaw = it.agirlik;
-          if (agirlikRaw === undefined) agirlikRaw = it.weight;
-          if (agirlikRaw === undefined) agirlikRaw = it.oran;
-          if (agirlikRaw === undefined) agirlikRaw = it.agirlikYuzde;
-          if (agirlikRaw === undefined) agirlikRaw = it.percentage;
-          if (typeof agirlikRaw === 'string') agirlikRaw = agirlikRaw.replace(',', '.').replace('%','');
-          var agirlik = parseFloat(agirlikRaw);
-          if (!kod || isNaN(agirlik) || Math.abs(agirlik) <= 0.01) return null;
-
-          var tip;
-          var BYF = ['GLDTRF','GMSTRF','ZPX3GF','ZPX30F','TPKGY','TPKGYF1','HMV','T3B','PKZ','PQS','PFS','ABG','TI1','RPP','CFO','RS1','PNU','PRY','CPU','PBR'];
-          if (BYF.indexOf(kod) !== -1) tip = (kod.indexOf('TRF') >= 0 ? 'cash' : 'fund');
-          else if (it.etf === 1 || it.etf === true) tip = 'fund';
-          else if (it.yabanci === 1 || it.yabanci === true) tip = 'us';
-          else if (ad === '' && (it.yabanci === 0 || it.yabanci === false)) tip = 'fund';
-          else tip = 'bist';
-
-          var obj = { code: kod, name: ad || kod, weight: agirlik, type: tip };
-          obj.type = normalizeAssetType(obj);
-          return obj;
-        })
-        .filter(Boolean)
-        .sort(function(a,b){ return b.weight - a.weight; });
-
+      var holdings = items.map(mapHolding).filter(Boolean).sort(function(a,b){ return b.weight - a.weight; });
       if (holdings.length === 0) continue;
 
-      var meta = (data && data.data && data.data.meta) || data.meta || {};
       return {
         holdings: holdings,
-        aciklamaTarihi: meta.aciklamaTarihi || meta.date || meta.tarih || ''
+        aciklamaTarihi: extractMetaDate(data)
       };
     } catch(e) {
       console.warn('FVT portföy okuma hatası:', fonKodu, e);
