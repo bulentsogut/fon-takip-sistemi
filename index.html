@@ -175,6 +175,47 @@ function fonFirebaseStart(){
 window.addEventListener('load', function(){ setTimeout(fonFirebaseStart, 500); });
 </script>
 
+
+<script>
+/* ORKA ENGINE – Phase 2.1: merkezi API yönlendirme + teşhis katmanı */
+window.ORKA = window.ORKA || {};
+window.ORKA.config = Object.assign({
+  apiBase: 'https://fon-takip-sistemi.vercel.app',
+  debug: true
+}, window.ORKA.config || {});
+window.ORKA.log = function(){
+  try {
+    if (!window.ORKA.config.debug) return;
+    var args = Array.prototype.slice.call(arguments);
+    args.unshift('[ORKA]');
+    console.log.apply(console, args);
+  } catch(e) {}
+};
+window.ORKA.warn = function(){
+  try {
+    var args = Array.prototype.slice.call(arguments);
+    args.unshift('[ORKA]');
+    console.warn.apply(console, args);
+  } catch(e) {}
+};
+window.ORKA.apiUrl = function(url){
+  url = String(url || '');
+  if (!url) return url;
+  if (/^https?:\/\//i.test(url)) return url;
+  if (url.indexOf('/api/') === 0) {
+    try {
+      var base = String(window.ORKA.config.apiBase || '').replace(/\/$/, '');
+      var currentOrigin = (location && location.origin) ? location.origin.replace(/\/$/, '') : '';
+      if (currentOrigin && currentOrigin === base) return url;
+      return base + url;
+    } catch(e) {
+      return String(window.ORKA.config.apiBase || '').replace(/\/$/, '') + url;
+    }
+  }
+  return url;
+};
+</script>
+
 <style>
 /* ════════════════════════════════
    SEKME NAVIGASYON SİSTEMİ
@@ -6500,9 +6541,11 @@ function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
 // AbortSignal.timeout() yerine evrensel uyumlu timeout
 function fetchWithTimeout(url, options, ms) {
+  var finalUrl = (window.ORKA && typeof window.ORKA.apiUrl === 'function') ? window.ORKA.apiUrl(url) : url;
+  if (window.ORKA && finalUrl !== url) window.ORKA.log('API yönlendirildi:', url, '→', finalUrl);
   var controller = new AbortController();
   var timer = setTimeout(function() { controller.abort(); }, ms);
-  return fetch(url, Object.assign({}, options, { signal: controller.signal }))
+  return fetch(finalUrl, Object.assign({}, options || {}, { signal: controller.signal }))
     .then(function(r) { clearTimeout(timer); return r; })
     .catch(function(e) { clearTimeout(timer); throw e; });
 }
@@ -6606,6 +6649,9 @@ async function loadFVTPortfolio(fonKodu) {
   var urls = [
     '/api/fvt?code=' + encodeURIComponent(fonKodu) + '&type=distribution',
     '/api/fvt?kod=' + encodeURIComponent(fonKodu) + '&type=distribution',
+    '/api/fvt?fon=' + encodeURIComponent(fonKodu) + '&type=distribution',
+    '/api/fvt?code=' + encodeURIComponent(fonKodu) + '&type=portfolio',
+    '/api/fvt?kod=' + encodeURIComponent(fonKodu) + '&type=portfolio',
     '/api/fvt?code=' + encodeURIComponent(fonKodu),
     '/api/fvt?kod=' + encodeURIComponent(fonKodu),
     'https://api.allorigins.win/raw?url=' + encodeURIComponent(directFvtUrl)
@@ -6737,6 +6783,7 @@ async function loadFVTPortfolio(fonKodu) {
 
   for (var i = 0; i < urls.length; i++) {
     try {
+      if (window.ORKA) window.ORKA.log('FVT deneme:', fonKodu, urls[i]);
       var resp = await fetchWithTimeout(urls[i], { headers: { 'Accept': 'application/json,text/plain,*/*' } }, 18000);
       if (!resp.ok) {
         console.warn('FVT HTTP', fonKodu, resp.status, urls[i]);
@@ -6780,7 +6827,8 @@ async function fvtPortfoyGuncelle() {
     renderFunds();
     updateUI();
     if (!sonuc || sonuc.updated === 0) {
-      setStatus('error', 'FVT ağırlıkları güncellenemedi. Endpoint/oturum denemeleri başarısız oldu; mevcut ağırlıklar korundu.');
+      var ek = (sonuc && sonuc.hatalar && sonuc.hatalar.length) ? ' Detay: ' + sonuc.hatalar.slice(0,3).join(' | ') : '';
+      setStatus('error', 'FVT ağırlıkları güncellenemedi. Endpoint/oturum denemeleri başarısız oldu; mevcut ağırlıklar korundu.' + ek);
       return;
     }
     if (sonuc.detay.length > 0) {
@@ -6813,22 +6861,36 @@ async function fvtPortfoyGuncelle() {
 }
 
 async function refreshAllPortfoliosDetay() {
-  var takipFonlar = Object.keys(FUNDS);
+  // ORKA Phase 2.1: Sadece ekranda/seçimde olan fonları güncelle ve istekleri sırayla gönder.
+  // Eski yapı Object.keys(FUNDS) ile tüm registry'yi aynı anda çağırdığı için endpoint'i boğabiliyor,
+  // başarısızlıklar da "ağırlıklar güncellenmiyor" gibi görünüyordu.
+  var takipFonlar = [];
+  try {
+    if (Array.isArray(selectedFundIds) && selectedFundIds.length) takipFonlar = selectedFundIds.slice();
+  } catch(e) {}
+  if (!takipFonlar.length) takipFonlar = Object.keys(FUNDS || {});
+  takipFonlar = takipFonlar
+    .map(function(f){ return String(f || '').trim().toUpperCase(); })
+    .filter(function(f, idx, arr){ return !!f && arr.indexOf(f) === idx && FUNDS && FUNDS[f]; });
+
   var updated = 0;
   var failed = 0;
   var detay = [];
+  var hatalar = [];
 
-  await Promise.all(takipFonlar.map(async function(fon) {
+  if (window.ORKA) window.ORKA.log('FVT güncelleme başladı. Fon sayısı:', takipFonlar.length, takipFonlar.join(','));
+
+  for (var i = 0; i < takipFonlar.length; i++) {
+    var fon = takipFonlar[i];
     try {
+      if (typeof setStatus === 'function') setStatus('loading', 'FVT ağırlıkları güncelleniyor... ' + fon + ' (' + (i+1) + '/' + takipFonlar.length + ')');
       var result = await loadFVTPortfolio(fon);
       if (result && result.holdings && result.holdings.length > 0) {
         var eskiAgirliklar = {};
         (FUNDS[fon].holdings || []).forEach(function(h){ eskiAgirliklar[h.code] = h.weight; });
 
-        // FVT verisi ana kaynak kabul edilir. Nakit kalemler de FVT'den geliyorsa güncellenir.
         FUNDS[fon].holdings = result.holdings;
-      normalizeAllHoldingTypes();
-        normalizeAllHoldingTypes();
+        if (typeof normalizeAllHoldingTypes === 'function') normalizeAllHoldingTypes();
         FUNDS[fon].aciklamaTarihi = result.aciklamaTarihi || FUNDS[fon].aciklamaTarihi || '';
         updated++;
 
@@ -6856,18 +6918,26 @@ async function refreshAllPortfoliosDetay() {
           toplamAgirlik: toplamAgirlik,
           degisiklikler: degisiklikler
         });
+        if (window.ORKA) window.ORKA.log('FVT başarılı:', fon, result.holdings.length + ' kalem', '%' + toplamAgirlik.toFixed(1));
       } else {
         failed++;
-        console.warn('FVT portföy boş/başarısız:', fon);
+        hatalar.push(fon + ': boş veri');
+        if (window.ORKA) window.ORKA.warn('FVT portföy boş/başarısız:', fon);
       }
     } catch(e) {
       failed++;
-      console.warn('FVT portfoy hatasi:', fon, e);
+      hatalar.push(fon + ': ' + (e && e.message ? e.message : e));
+      if (window.ORKA) window.ORKA.warn('FVT portföy hatası:', fon, e);
     }
-  }));
+    // Endpoint'i ve proxy'leri boğmamak için kısa bekleme.
+    if (i < takipFonlar.length - 1) await new Promise(function(resolve){ setTimeout(resolve, 450); });
+  }
 
-  if (updated > 0) saveFVTPortfolioOverrides();
-  return { updated: updated, failed: failed, detay: detay };
+  if (updated > 0) {
+    saveFVTPortfolioOverrides();
+    try { if (typeof fonFirebaseSave === 'function') fonFirebaseSave(true); } catch(e) {}
+  }
+  return { updated: updated, failed: failed, detay: detay, hatalar: hatalar };
 }
 
 async function refreshAllPortfolios() {
