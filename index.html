@@ -2443,7 +2443,7 @@ window.addEventListener('unhandledrejection', function(ev){
     <button class="nav-action-btn takip visible" id="refresh-btn" onclick="fetchAllFunds();">⟳ TEFAS</button>
     <button class="nav-action-btn yabanci" onclick="yabanciVerileriKaydet()">💾 YABANCI KAYDET</button>
     <button class="nav-action-btn yabanci" onclick="openYabanciPortfoyModal()">⚙ PORTFÖY</button>
-    <button class="nav-action-btn tahmin fvt" id="refreshBtnFVT" onclick="fvtPortfoyGuncelle()">↺ AĞIRLIKLARI GÜNCELLE</button>
+    <button class="nav-action-btn tahmin fvt" id="refreshBtnFVT" onclick="ORKA_FVT_IMPORT.pickFile()">📥 FVT JSON İÇE AKTAR</button>
     <button class="nav-action-btn tahmin" id="refreshBtn" onclick="fetchAll()"><span id="refreshIcon">⟳</span> VERİLERİ GÜNCELLE</button>
   </div>
   <div class="nav-ofset-status">
@@ -6822,45 +6822,14 @@ async function loadFVTPortfolio(fonKodu) {
 }
 
 async function fvtPortfoyGuncelle() {
-  setStatus('loading', 'FVT portfoy agirliklari guncelleniyor...');
-  var btn = document.getElementById('refreshBtnFVT');
-  if (btn) btn.disabled = true;
-  try {
-    var sonuc = await refreshAllPortfoliosDetay();
-    renderFunds();
-    updateUI();
-    if (!sonuc || sonuc.updated === 0) {
-      var ek = (sonuc && sonuc.hatalar && sonuc.hatalar.length) ? ' Detay: ' + sonuc.hatalar.slice(0,3).join(' | ') : '';
-      setStatus('error', 'FVT ağırlıkları güncellenemedi. Endpoint/oturum denemeleri başarısız oldu; mevcut ağırlıklar korundu.' + ek);
-      return;
-    }
-    if (sonuc.detay.length > 0) {
-      var detayHtml = sonuc.detay.map(function(d){
-        var degHtml = '';
-        if (d.degisiklikler.length > 0) {
-          degHtml = ' [' + d.degisiklikler.map(function(deg){
-            if (deg.indexOf('+YENİ') !== -1) {
-              return '<span style="color:#2ed573;font-weight:700;">' + deg + '</span>';
-            } else if (deg.indexOf('-ÇIKTI') !== -1) {
-              return '<span style="color:#ff4757;font-weight:700;">' + deg + '</span>';
-            } else {
-              return '<span style="color:#ff9f43;">' + deg + '</span>';
-            }
-          }).join(', ') + ']';
-        } else {
-          degHtml = ' <span style="color:var(--muted);font-size:0.85em;">(değişiklik yok)</span>';
-        }
-        return '<b>' + d.fon + '</b>: ' + d.hisseSay + ' hisse, %' + d.toplamAgirlik.toFixed(1) + degHtml;
-      }).join(' &nbsp;|&nbsp; ');
-      setStatus('live', 'Portföy güncellendi — ' + sonuc.updated + ' fon: ' + detayHtml, true);
-    } else {
-      setStatus('live', 'Portföy güncellendi — ' + sonuc.updated + ' fon' + (sonuc.failed ? ', ' + sonuc.failed + ' fon başarısız' : '') + '.');
-    }
-  } catch(e) {
-    setStatus('error', 'Portfoy guncelleme hatasi: ' + e.message);
-  } finally {
-    if (btn) btn.disabled = false;
+  // ORKA Phase 3.1: Vercel API/FVT proxy kullanılmaz.
+  // Bu buton artık gerçek Chrome oturumundan üretilen Browser Provider JSON dosyasını içe aktarır.
+  if (window.ORKA_FVT_IMPORT && typeof window.ORKA_FVT_IMPORT.pickFile === 'function') {
+    if (typeof setStatus === 'function') setStatus('live', 'FVT Browser Provider JSON dosyasını seçin. API kullanılmadan ağırlıklar içe aktarılacak.', true);
+    window.ORKA_FVT_IMPORT.pickFile();
+    return;
   }
+  if (typeof setStatus === 'function') setStatus('error', 'ORKA FVT Browser Import modülü yüklenemedi. Sayfayı yenileyip tekrar deneyin.');
 }
 
 async function refreshAllPortfoliosDetay() {
@@ -10252,124 +10221,102 @@ function yeniHisseEkle() {
 
 
 <script>
-/* ORKA ENGINE Phase 3.1 — FVT Browser JSON Importer: inline fixed integration */
+/* ORKA ENGINE Phase 3.1 — FVT Browser JSON Importer: fixed real integration */
 (function(){
   function toastSafe(msg, type){
     if (typeof toast === "function") toast(msg, type || "ok");
     else if (typeof setStatus === "function") setStatus(type === "err" ? "error" : "live", msg);
     else console.log("[ORKA FVT IMPORT]", msg);
   }
-
+  function normCode(v){ return String(v || "").trim().toUpperCase(); }
+  function num(v){
+    if (v === null || v === undefined || v === "") return 0;
+    if (typeof v === "number") return Number.isFinite(v) ? v : 0;
+    var x = Number(String(v).replace("%","").replace(",",".").trim());
+    return Number.isFinite(x) ? x : 0;
+  }
   function normalizeHolding(h){
+    var code = normCode(h.code || h.hisseKodu || h.kod);
     return {
-      code: String(h.code || "").trim().toUpperCase(),
-      name: String(h.name || h.code || "").trim(),
-      weight: Number(h.weight || 0),
-      oldWeight: Number(h.oldWeight || 0),
-      diff: Number(h.diff || 0),
-      change: Number(h.change || 0),
-      type: h.type || "bist",
-      sector: h.sector || ""
+      code: code,
+      name: String(h.name || h.sirketAdi || h.fonAdi2 || code).trim(),
+      weight: num(h.weight !== undefined ? h.weight : h.agirlik),
+      oldWeight: num(h.oldWeight !== undefined ? h.oldWeight : h.eskiAgirlik),
+      diff: num(h.diff !== undefined ? h.diff : h.fark),
+      change: num(h.change !== undefined ? h.change : (h.degisimCanli !== undefined ? h.degisimCanli : h.degisim)),
+      type: h.type || (h.fonAdi2 ? "fund" : "bist"),
+      sector: h.sector || h.sektorAdi || ""
     };
   }
-
-  function ensureFund(code){
-    code = String(code || "").trim().toUpperCase();
+  function ensureFundLocal(code){
+    code = normCode(code);
     if (!code) return null;
-
     if (typeof ensureFundDefinition === "function") {
       try { return ensureFundDefinition(code); } catch(e) {}
     }
-
     if (typeof FUNDS === "object") {
-      if (!FUNDS[code]) {
-        FUNDS[code] = {
-          id: code,
-          code: code,
-          name: code,
-          color: "#38bdf8",
-          holdings: [],
-          custom: true
-        };
-      }
+      if (!FUNDS[code]) FUNDS[code] = { name: code + " FONU", color: "#38bdf8", holdings: [], custom: true };
       return FUNDS[code];
     }
-
     return null;
   }
-
-  function saveAfterImport(){
+  function writeOverrideStorage(){
+    try {
+      var key = (typeof FVT_PORTFOLIO_OVERRIDE_KEY !== "undefined") ? FVT_PORTFOLIO_OVERRIDE_KEY : "fon_tahmin_fvt_portfoyler_v1";
+      var out = {};
+      Object.keys(FUNDS || {}).forEach(function(code){
+        var f = FUNDS[code];
+        if (!f) return;
+        out[code] = {
+          holdings: Array.isArray(f.holdings) ? f.holdings : [],
+          aciklamaTarihi: f.aciklamaTarihi || "",
+          assetChart: f.assetChart || null,
+          updatedAt: new Date().toISOString(),
+          source: "browser-provider-import"
+        };
+      });
+      localStorage.setItem(key, JSON.stringify(out));
+    } catch(e) { console.warn("[ORKA FVT IMPORT] localStorage kayıt hatası", e); }
+  }
+  function refreshAfterImport(){
+    try { if (typeof normalizeAllHoldingTypes === "function") normalizeAllHoldingTypes(); } catch(e){}
+    try { writeOverrideStorage(); } catch(e){}
+    try { if (typeof saveFVTPortfolioOverrides === "function") saveFVTPortfolioOverrides(); } catch(e){}
     try { if (typeof saveCustomFundsFromRegistry === "function") saveCustomFundsFromRegistry(); } catch(e){}
-    try { if (typeof saveFVTPortfolios === "function") saveFVTPortfolios(); } catch(e){}
     try { if (typeof fonFirebaseSave === "function") fonFirebaseSave(true); } catch(e){}
     try { if (typeof renderFunds === "function") renderFunds(); } catch(e){}
     try { if (typeof updateUI === "function") updateUI(); } catch(e){}
     try { if (typeof renderGercekPanel === "function") renderGercekPanel(); } catch(e){}
     try { if (typeof renderKiyasTablosu === "function") renderKiyasTablosu(); } catch(e){}
+    try { if (typeof renderCommonHoldings === "function") renderCommonHoldings(); } catch(e){}
   }
-
   async function importJsonObject(payload){
-    if (!payload || payload.source !== "orka-browser-provider" || !payload.funds) {
-      throw new Error("Bu dosya ORKA Browser Provider JSON formatında değil.");
-    }
-
-    var imported = 0;
-    var failed = [];
-
+    if (!payload || payload.source !== "orka-browser-provider" || !payload.funds) throw new Error("Bu dosya ORKA Browser Provider JSON formatında değil.");
+    var imported = 0, failed = [];
     Object.keys(payload.funds).forEach(function(code){
       var item = payload.funds[code];
-      if (!item || !item.ok || !Array.isArray(item.holdings) || item.holdings.length === 0) {
-        failed.push(code);
-        return;
-      }
-
-      var fund = ensureFund(code);
-      if (!fund) {
-        failed.push(code);
-        return;
-      }
-
-      fund.holdings = item.holdings.map(normalizeHolding).filter(function(h){ return h.code; });
-      fund.aciklamaTarihi = item.aciklamaTarihi || "";
+      if (!item || !item.ok || !Array.isArray(item.holdings) || item.holdings.length === 0) { failed.push(code); return; }
+      var fund = ensureFundLocal(code);
+      if (!fund) { failed.push(code); return; }
+      fund.holdings = item.holdings.map(normalizeHolding).filter(function(h){ return h.code && Math.abs(h.weight) >= 0; }).sort(function(a,b){ return b.weight - a.weight; });
+      fund.aciklamaTarihi = item.aciklamaTarihi || fund.aciklamaTarihi || "";
       fund.assetChart = item.assetChart || null;
-      fund.custom = fund.custom || false;
-
-      try {
-        if (typeof window.FVT_PORTFOYLER === "object") {
-          window.FVT_PORTFOYLER[code] = {
-            holdings: fund.holdings,
-            aciklamaTarihi: fund.aciklamaTarihi,
-            assetChart: fund.assetChart,
-            updatedAt: new Date().toISOString(),
-            source: "browser-provider-import"
-          };
-        }
-      } catch(e){}
-
       imported++;
     });
-
-    saveAfterImport();
-
+    refreshAfterImport();
     if (imported > 0) {
+      if (typeof setStatus === "function") setStatus("live", "FVT Browser JSON içe aktarıldı — " + imported + " fon güncellendi.", true);
       toastSafe("✅ FVT Browser JSON içe aktarıldı: " + imported + " fon güncellendi.", "ok");
     } else {
       toastSafe("FVT Browser JSON okundu ama güncellenecek fon bulunamadı.", "err");
     }
-
-    if (failed.length) {
-      console.warn("[ORKA FVT IMPORT] Atlanan fonlar:", failed);
-    }
-
+    if (failed.length) console.warn("[ORKA FVT IMPORT] Atlanan fonlar:", failed);
     return { imported: imported, failed: failed };
   }
-
   async function importFile(file){
-    var text = await file.text();
-    var payload = JSON.parse(text);
+    var payload = JSON.parse(await file.text());
     return importJsonObject(payload);
   }
-
   function pickFile(){
     var input = document.getElementById("orkaFvtBrowserJsonInput");
     if (!input) {
@@ -10380,63 +10327,35 @@ function yeniHisseEkle() {
       input.style.display = "none";
       document.body.appendChild(input);
     }
-
     input.onchange = async function(){
       try {
         if (!input.files || !input.files[0]) return;
+        if (typeof setStatus === "function") setStatus("loading", "FVT Browser JSON içe aktarılıyor...");
         await importFile(input.files[0]);
       } catch(e) {
         console.error("[ORKA FVT IMPORT]", e);
+        if (typeof setStatus === "function") setStatus("error", "FVT JSON içe aktarma hatası: " + e.message);
         toastSafe("FVT JSON içe aktarma hatası: " + e.message, "err");
-      } finally {
-        input.value = "";
-      }
+      } finally { input.value = ""; }
     };
-
     input.click();
   }
-
   function injectPanel(){
     if (document.getElementById("orkaFvtBrowserImportPanel")) return;
-
     var panel = document.createElement("div");
     panel.id = "orkaFvtBrowserImportPanel";
     panel.style.cssText = "margin:12px 0;padding:12px;border:1px solid var(--border);border-radius:12px;background:rgba(255,255,255,.03);";
-    panel.innerHTML =
-      '<div style="font-weight:700;margin-bottom:6px;">ORKA FVT Browser Provider</div>' +
-      '<div style="font-size:12px;color:var(--muted);margin-bottom:8px;">FVT Browser Provider JSON dosyasını içe aktarır ve fon ağırlıklarını günceller.</div>' +
-      '<input id="orkaFvtBrowserJsonInput" type="file" accept=".json,application/json" style="display:none" />' +
+    panel.innerHTML = '<div style="font-weight:700;margin-bottom:6px;">ORKA FVT Browser Provider</div>'+
+      '<div style="font-size:12px;color:var(--muted);margin-bottom:8px;">Vercel API kullanılmaz. FVT Browser Provider JSON dosyasını seç, ağırlıklar doğrudan ORKA içine işlensin.</div>'+
+      '<input id="orkaFvtBrowserJsonInput" type="file" accept=".json,application/json" style="display:none" />'+
       '<button type="button" onclick="ORKA_FVT_IMPORT.pickFile()" class="abtn fvt visible">📥 FVT Browser JSON İçe Aktar</button>';
-
-    var target =
-      document.querySelector("#panel-tahmin .status-bar") ||
-      document.querySelector("#panel-takip .status-bar") ||
-      document.querySelector(".status-bar") ||
-      document.querySelector("#panel-tahmin .app") ||
-      document.querySelector("#panel-tahmin") ||
-      document.body;
-
-    if (target && target.parentNode && target.classList && target.classList.contains("status-bar")) {
-      target.parentNode.insertBefore(panel, target.nextSibling);
-    } else if (target && target !== document.body) {
-      target.insertBefore(panel, target.firstChild);
-    } else {
-      document.body.appendChild(panel);
-    }
+    var target = document.querySelector("#panel-tahmin .status-bar") || document.querySelector("#panel-takip .status-bar") || document.querySelector(".status-bar") || document.querySelector("#panel-tahmin .app") || document.querySelector("#panel-tahmin") || document.body;
+    if (target && target.parentNode && target.classList && target.classList.contains("status-bar")) target.parentNode.insertBefore(panel, target.nextSibling);
+    else if (target && target !== document.body) target.insertBefore(panel, target.firstChild);
+    else document.body.appendChild(panel);
   }
-
-  window.ORKA_FVT_IMPORT = {
-    pickFile: pickFile,
-    importFile: importFile,
-    importJsonObject: importJsonObject,
-    injectPanel: injectPanel
-  };
-
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", injectPanel);
-  } else {
-    injectPanel();
-  }
+  window.ORKA_FVT_IMPORT = { pickFile: pickFile, importFile: importFile, importJsonObject: importJsonObject, injectPanel: injectPanel };
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", injectPanel); else injectPanel();
 })();
 </script>
 
