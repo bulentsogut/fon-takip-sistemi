@@ -6128,6 +6128,21 @@ async function addSelectedFundFromInput() {
 
   if (typeof setStatus === 'function') {
     setStatus('live', code + ' eklendi ve hafızaya kaydedildi. Portföy içeriği gelmezse Ağırlıkları Güncelle butonunu kullanın.');
+    <!-- ORKA Phase 3.1 - FVT Browser Import Panel -->
+<!-- Bunu index.html içinde Fon Takip / Ağırlıklar alanına uygun bir yere ekleyebilirsin. -->
+<div class="orka-fvt-browser-panel" style="margin:12px 0;padding:12px;border:1px solid var(--border);border-radius:12px;background:rgba(255,255,255,.03);">
+  <div style="font-weight:700;margin-bottom:6px;">ORKA FVT Browser Provider</div>
+  <div style="font-size:12px;color:var(--muted);margin-bottom:8px;">
+    FVT’den alınan Browser Provider JSON dosyasını içe aktarır ve fon ağırlıklarını günceller.
+  </div>
+  <input id="orkaFvtBrowserJsonInput" type="file" accept=".json,application/json" style="display:none" />
+  <button type="button" onclick="ORKA_FVT_IMPORT.pickFile()" class="btn">
+    📥 FVT Browser JSON İçe Aktar
+  </button>
+</div>
+
+<script src="js/orka-fvt-browser-import.js"></script>
+
   }
 }
 
