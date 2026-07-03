@@ -4,7 +4,6 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Fon Yönetim Merkezi — Takip & Tahmin</title>
-<!-- ORKA CLOUD GitHub Yabancı Varlıklar v004: FVT ağırlık motoru genişletildi. -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 
@@ -173,47 +172,6 @@ function fonFirebaseStart(){
   }catch(e){ console.warn('Fon Firebase başlatma hatası:', e); }
 }
 window.addEventListener('load', function(){ setTimeout(fonFirebaseStart, 500); });
-</script>
-
-
-<script>
-/* ORKA ENGINE – Phase 2.1: merkezi API yönlendirme + teşhis katmanı */
-window.ORKA = window.ORKA || {};
-window.ORKA.config = Object.assign({
-  apiBase: 'https://fon-takip-sistemi.vercel.app',
-  debug: true
-}, window.ORKA.config || {});
-window.ORKA.log = function(){
-  try {
-    if (!window.ORKA.config.debug) return;
-    var args = Array.prototype.slice.call(arguments);
-    args.unshift('[ORKA]');
-    console.log.apply(console, args);
-  } catch(e) {}
-};
-window.ORKA.warn = function(){
-  try {
-    var args = Array.prototype.slice.call(arguments);
-    args.unshift('[ORKA]');
-    console.warn.apply(console, args);
-  } catch(e) {}
-};
-window.ORKA.apiUrl = function(url){
-  url = String(url || '');
-  if (!url) return url;
-  if (/^https?:\/\//i.test(url)) return url;
-  if (url.indexOf('/api/') === 0) {
-    try {
-      var base = String(window.ORKA.config.apiBase || '').replace(/\/$/, '');
-      var currentOrigin = (location && location.origin) ? location.origin.replace(/\/$/, '') : '';
-      if (currentOrigin && currentOrigin === base) return url;
-      return base + url;
-    } catch(e) {
-      return String(window.ORKA.config.apiBase || '').replace(/\/$/, '') + url;
-    }
-  }
-  return url;
-};
 </script>
 
 <style>
@@ -6128,9 +6086,6 @@ async function addSelectedFundFromInput() {
 
   if (typeof setStatus === 'function') {
     setStatus('live', code + ' eklendi ve hafızaya kaydedildi. Portföy içeriği gelmezse Ağırlıkları Güncelle butonunu kullanın.');
-
-
-
   }
 }
 
@@ -6544,11 +6499,9 @@ function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
 // AbortSignal.timeout() yerine evrensel uyumlu timeout
 function fetchWithTimeout(url, options, ms) {
-  var finalUrl = (window.ORKA && typeof window.ORKA.apiUrl === 'function') ? window.ORKA.apiUrl(url) : url;
-  if (window.ORKA && finalUrl !== url) window.ORKA.log('API yönlendirildi:', url, '→', finalUrl);
   var controller = new AbortController();
   var timer = setTimeout(function() { controller.abort(); }, ms);
-  return fetch(finalUrl, Object.assign({}, options || {}, { signal: controller.signal }))
+  return fetch(url, Object.assign({}, options, { signal: controller.signal }))
     .then(function(r) { clearTimeout(timer); return r; })
     .catch(function(e) { clearTimeout(timer); throw e; });
 }
@@ -6644,150 +6597,14 @@ async function loadFVTPortfolio(fonKodu) {
   fonKodu = String(fonKodu || '').trim().toUpperCase();
   if (!fonKodu) return null;
 
-  // ORKA CLOUD v004: FVT ağırlık okuma motoru genişletildi.
-  // Eski Vercel /api/fvt endpoint'i çalışırsa onu kullanır; çalışmazsa FVT'nin
-  // güncel /api/funds/{KOD} cevabını allorigins üzerinden okuyup dağılımı
-  // olası alanlardan esnek şekilde çıkarır.
-  var directFvtUrl = 'https://fvt.com.tr/api/funds/' + encodeURIComponent(fonKodu);
   var urls = [
     '/api/fvt?code=' + encodeURIComponent(fonKodu) + '&type=distribution',
-    '/api/fvt?kod=' + encodeURIComponent(fonKodu) + '&type=distribution',
-    '/api/fvt?fon=' + encodeURIComponent(fonKodu) + '&type=distribution',
-    '/api/fvt?code=' + encodeURIComponent(fonKodu) + '&type=portfolio',
-    '/api/fvt?kod=' + encodeURIComponent(fonKodu) + '&type=portfolio',
-    '/api/fvt?code=' + encodeURIComponent(fonKodu),
-    '/api/fvt?kod=' + encodeURIComponent(fonKodu),
-    'https://api.allorigins.win/raw?url=' + encodeURIComponent(directFvtUrl)
+    '/api/fvt?kod=' + encodeURIComponent(fonKodu) + '&type=distribution'
   ];
-
-  function unwrapFvtPayload(data){
-    if (!data) return {};
-    if (typeof data === 'string') {
-      try { return JSON.parse(data); } catch(e) { return {}; }
-    }
-    return data;
-  }
-
-  function looksLikeHoldingArray(arr){
-    if (!Array.isArray(arr) || arr.length === 0) return false;
-    var sample = arr.slice(0, Math.min(arr.length, 8));
-    return sample.some(function(it){
-      if (!it || typeof it !== 'object') return false;
-      var hasCode = it.hisseKodu || it.kod || it.code || it.assetCode || it.symbol || it.varlikKodu || it.stockCode || it.ticker;
-      var hasWeight = it.agirlik !== undefined || it.weight !== undefined || it.oran !== undefined || it.agirlikYuzde !== undefined || it.percentage !== undefined || it.yuzde !== undefined || it.ratio !== undefined || it.portfoyOrani !== undefined;
-      return !!hasCode && !!hasWeight;
-    });
-  }
-
-  function findHoldingArrays(obj, path, out){
-    if (!obj || typeof obj !== 'object') return;
-    if (Array.isArray(obj)) {
-      if (looksLikeHoldingArray(obj)) out.push({path:path, arr:obj});
-      obj.slice(0, 3).forEach(function(x, i){ findHoldingArrays(x, path + '[' + i + ']', out); });
-      return;
-    }
-    Object.keys(obj).forEach(function(k){
-      var v = obj[k];
-      var p = path ? path + '.' + k : k;
-      if (Array.isArray(v)) {
-        if (looksLikeHoldingArray(v)) out.push({path:p, arr:v});
-        else v.slice(0, 3).forEach(function(x, i){ findHoldingArrays(x, p + '[' + i + ']', out); });
-      } else if (v && typeof v === 'object') {
-        findHoldingArrays(v, p, out);
-      }
-    });
-  }
-
-  function extractHoldings(data){
-    data = unwrapFvtPayload(data);
-    var roots = [data, data.data, data.result, data.payload, data.fund, data.fon].filter(Boolean);
-    var candidates = [];
-
-    roots.forEach(function(r){
-      if (!r) return;
-      [
-        r.holdings, r.items, r.distribution, r.positions, r.assets, r.portfolio, r.portfoy,
-        r.portfolioDistribution, r.portfoyDagilimi, r.assetDistribution, r.varlikDagilimi,
-        r.stockDistribution, r.hisseDagilimi, r.fundAssets, r.fonVarliklari,
-        r.topHoldings, r.composition, r.allocations, r.breakdown
-      ].forEach(function(arr){ if (looksLikeHoldingArray(arr)) candidates.push({path:'direct', arr:arr}); });
-    });
-
-    if (candidates.length === 0) findHoldingArrays(data, '', candidates);
-    if (candidates.length === 0) return [];
-
-    // En çok geçerli kalem üreten aday dağılım kabul edilir.
-    var best = candidates.map(function(c){
-      var valid = c.arr.filter(function(it){
-        if (!it || typeof it !== 'object') return false;
-        var code = it.hisseKodu || it.kod || it.code || it.assetCode || it.symbol || it.varlikKodu || it.stockCode || it.ticker;
-        var w = it.agirlik;
-        if (w === undefined) w = it.weight;
-        if (w === undefined) w = it.oran;
-        if (w === undefined) w = it.agirlikYuzde;
-        if (w === undefined) w = it.percentage;
-        if (w === undefined) w = it.yuzde;
-        if (w === undefined) w = it.ratio;
-        if (w === undefined) w = it.portfoyOrani;
-        if (typeof w === 'string') w = w.replace(',', '.').replace('%','');
-        w = parseFloat(w);
-        return !!String(code || '').trim() && !isNaN(w) && Math.abs(w) > 0.01;
-      }).length;
-      return {path:c.path, arr:c.arr, valid:valid};
-    }).sort(function(a,b){ return b.valid - a.valid; })[0];
-
-    return best && best.valid ? best.arr : [];
-  }
-
-  function extractMetaDate(data){
-    data = unwrapFvtPayload(data);
-    var roots = [data, data.data, data.result, data.meta, data.data && data.data.meta, data.fund, data.data && data.data.fund].filter(Boolean);
-    for (var i=0;i<roots.length;i++){
-      var r = roots[i];
-      var d = r.aciklamaTarihi || r.date || r.tarih || r.reportDate || r.updatedAt || r.lastUpdate || r.portfoyTarihi || r.portfolioDate;
-      if (d) return d;
-    }
-    return '';
-  }
-
-  function mapHolding(it){
-    var kod = String(it.hisseKodu || it.kod || it.code || it.assetCode || it.symbol || it.varlikKodu || it.stockCode || it.ticker || '').trim().toUpperCase();
-    var ad = String(it.sirketAdi || it.ad || it.name || it.assetName || it.varlikAdi || it.unvan || it.title || kod || '').trim();
-    var agirlikRaw = it.agirlik;
-    if (agirlikRaw === undefined) agirlikRaw = it.weight;
-    if (agirlikRaw === undefined) agirlikRaw = it.oran;
-    if (agirlikRaw === undefined) agirlikRaw = it.agirlikYuzde;
-    if (agirlikRaw === undefined) agirlikRaw = it.percentage;
-    if (agirlikRaw === undefined) agirlikRaw = it.yuzde;
-    if (agirlikRaw === undefined) agirlikRaw = it.ratio;
-    if (agirlikRaw === undefined) agirlikRaw = it.portfoyOrani;
-    if (typeof agirlikRaw === 'string') agirlikRaw = agirlikRaw.replace(',', '.').replace('%','');
-    var agirlik = parseFloat(agirlikRaw);
-    // Bazı API'ler 0-1 arası oran döndürür; portföy ağırlığını yüzdeye çevir.
-    if (!isNaN(agirlik) && agirlik > 0 && agirlik <= 1) agirlik = agirlik * 100;
-    if (!kod || isNaN(agirlik) || Math.abs(agirlik) <= 0.01) return null;
-
-    var tipRaw = String(it.tip || it.type || it.assetType || it.varlikTipi || it.tur || '').toLowerCase();
-    var tip;
-    var BYF = ['GLDTRF','GMSTRF','ZPX3GF','ZPX30F','TPKGY','TPKGYF1','HMV','T3B','PKZ','PQS','PFS','ABG','TI1','RPP','CFO','RS1','PNU','PRY','CPU','PBR'];
-    if (tipRaw.indexOf('nakit') >= 0 || tipRaw.indexOf('repo') >= 0 || tipRaw.indexOf('bono') >= 0 || tipRaw.indexOf('mevduat') >= 0) tip = 'cash';
-    else if (tipRaw.indexOf('fon') >= 0 || tipRaw.indexOf('etf') >= 0) tip = 'fund';
-    else if (tipRaw.indexOf('yab') >= 0 || tipRaw.indexOf('foreign') >= 0 || tipRaw.indexOf('us') >= 0) tip = 'us';
-    else if (BYF.indexOf(kod) !== -1) tip = (kod.indexOf('TRF') >= 0 ? 'cash' : 'fund');
-    else if (it.etf === 1 || it.etf === true) tip = 'fund';
-    else if (it.yabanci === 1 || it.yabanci === true) tip = 'us';
-    else if (ad === '' && (it.yabanci === 0 || it.yabanci === false)) tip = 'fund';
-    else tip = 'bist';
-
-    var obj = { code: kod, name: ad || kod, weight: agirlik, type: tip };
-    obj.type = normalizeAssetType(obj);
-    return obj;
-  }
 
   for (var i = 0; i < urls.length; i++) {
     try {
-      if (window.ORKA) window.ORKA.log('FVT deneme:', fonKodu, urls[i]);
-      var resp = await fetchWithTimeout(urls[i], { headers: { 'Accept': 'application/json,text/plain,*/*' } }, 18000);
+      var resp = await fetchWithTimeout(urls[i], { headers: { 'Accept': 'application/json,text/plain,*/*' } }, 12000);
       if (!resp.ok) {
         console.warn('FVT HTTP', fonKodu, resp.status, urls[i]);
         continue;
@@ -6801,18 +6618,57 @@ async function loadFVTPortfolio(fonKodu) {
         continue;
       }
 
-      var items = extractHoldings(data);
-      if (!items || items.length === 0) {
+      var items =
+        (data && Array.isArray(data.holdings) && data.holdings) ||
+        (data && data.data && Array.isArray(data.data.holdings) && data.data.holdings) ||
+        (data && data.data && Array.isArray(data.data.items) && data.data.items) ||
+        (data && data.data && Array.isArray(data.data.distribution) && data.data.distribution) ||
+        (data && data.data && Array.isArray(data.data.positions) && data.data.positions) ||
+        (data && Array.isArray(data.items) && data.items) ||
+        (data && Array.isArray(data.distribution) && data.distribution) ||
+        (data && Array.isArray(data.positions) && data.positions) ||
+        (Array.isArray(data) && data) ||
+        [];
+
+      if (items.length === 0) {
         console.warn('FVT boş portföy', fonKodu, data);
         continue;
       }
 
-      var holdings = items.map(mapHolding).filter(Boolean).sort(function(a,b){ return b.weight - a.weight; });
+      var holdings = items
+        .map(function(it){
+          var kod = String(it.hisseKodu || it.kod || it.code || it.assetCode || it.symbol || it.varlikKodu || '').trim().toUpperCase();
+          var ad = String(it.sirketAdi || it.ad || it.name || it.assetName || it.varlikAdi || kod || '').trim();
+          var agirlikRaw = it.agirlik;
+          if (agirlikRaw === undefined) agirlikRaw = it.weight;
+          if (agirlikRaw === undefined) agirlikRaw = it.oran;
+          if (agirlikRaw === undefined) agirlikRaw = it.agirlikYuzde;
+          if (agirlikRaw === undefined) agirlikRaw = it.percentage;
+          if (typeof agirlikRaw === 'string') agirlikRaw = agirlikRaw.replace(',', '.').replace('%','');
+          var agirlik = parseFloat(agirlikRaw);
+          if (!kod || isNaN(agirlik) || Math.abs(agirlik) <= 0.01) return null;
+
+          var tip;
+          var BYF = ['GLDTRF','GMSTRF','ZPX3GF','ZPX30F','TPKGY','TPKGYF1','HMV','T3B','PKZ','PQS','PFS','ABG','TI1','RPP','CFO','RS1','PNU','PRY','CPU','PBR'];
+          if (BYF.indexOf(kod) !== -1) tip = (kod.indexOf('TRF') >= 0 ? 'cash' : 'fund');
+          else if (it.etf === 1 || it.etf === true) tip = 'fund';
+          else if (it.yabanci === 1 || it.yabanci === true) tip = 'us';
+          else if (ad === '' && (it.yabanci === 0 || it.yabanci === false)) tip = 'fund';
+          else tip = 'bist';
+
+          var obj = { code: kod, name: ad || kod, weight: agirlik, type: tip };
+          obj.type = normalizeAssetType(obj);
+          return obj;
+        })
+        .filter(Boolean)
+        .sort(function(a,b){ return b.weight - a.weight; });
+
       if (holdings.length === 0) continue;
 
+      var meta = (data && data.data && data.data.meta) || data.meta || {};
       return {
         holdings: holdings,
-        aciklamaTarihi: extractMetaDate(data)
+        aciklamaTarihi: meta.aciklamaTarihi || meta.date || meta.tarih || ''
       };
     } catch(e) {
       console.warn('FVT portföy okuma hatası:', fonKodu, e);
@@ -6830,8 +6686,7 @@ async function fvtPortfoyGuncelle() {
     renderFunds();
     updateUI();
     if (!sonuc || sonuc.updated === 0) {
-      var ek = (sonuc && sonuc.hatalar && sonuc.hatalar.length) ? ' Detay: ' + sonuc.hatalar.slice(0,3).join(' | ') : '';
-      setStatus('error', 'FVT ağırlıkları güncellenemedi. Endpoint/oturum denemeleri başarısız oldu; mevcut ağırlıklar korundu.' + ek);
+      setStatus('error', 'FVT ağırlıkları güncellenemedi. Endpoint/oturum denemeleri başarısız oldu; mevcut ağırlıklar korundu.');
       return;
     }
     if (sonuc.detay.length > 0) {
@@ -6864,36 +6719,22 @@ async function fvtPortfoyGuncelle() {
 }
 
 async function refreshAllPortfoliosDetay() {
-  // ORKA Phase 2.1: Sadece ekranda/seçimde olan fonları güncelle ve istekleri sırayla gönder.
-  // Eski yapı Object.keys(FUNDS) ile tüm registry'yi aynı anda çağırdığı için endpoint'i boğabiliyor,
-  // başarısızlıklar da "ağırlıklar güncellenmiyor" gibi görünüyordu.
-  var takipFonlar = [];
-  try {
-    if (Array.isArray(selectedFundIds) && selectedFundIds.length) takipFonlar = selectedFundIds.slice();
-  } catch(e) {}
-  if (!takipFonlar.length) takipFonlar = Object.keys(FUNDS || {});
-  takipFonlar = takipFonlar
-    .map(function(f){ return String(f || '').trim().toUpperCase(); })
-    .filter(function(f, idx, arr){ return !!f && arr.indexOf(f) === idx && FUNDS && FUNDS[f]; });
-
+  var takipFonlar = Object.keys(FUNDS);
   var updated = 0;
   var failed = 0;
   var detay = [];
-  var hatalar = [];
 
-  if (window.ORKA) window.ORKA.log('FVT güncelleme başladı. Fon sayısı:', takipFonlar.length, takipFonlar.join(','));
-
-  for (var i = 0; i < takipFonlar.length; i++) {
-    var fon = takipFonlar[i];
+  await Promise.all(takipFonlar.map(async function(fon) {
     try {
-      if (typeof setStatus === 'function') setStatus('loading', 'FVT ağırlıkları güncelleniyor... ' + fon + ' (' + (i+1) + '/' + takipFonlar.length + ')');
       var result = await loadFVTPortfolio(fon);
       if (result && result.holdings && result.holdings.length > 0) {
         var eskiAgirliklar = {};
         (FUNDS[fon].holdings || []).forEach(function(h){ eskiAgirliklar[h.code] = h.weight; });
 
+        // FVT verisi ana kaynak kabul edilir. Nakit kalemler de FVT'den geliyorsa güncellenir.
         FUNDS[fon].holdings = result.holdings;
-        if (typeof normalizeAllHoldingTypes === 'function') normalizeAllHoldingTypes();
+      normalizeAllHoldingTypes();
+        normalizeAllHoldingTypes();
         FUNDS[fon].aciklamaTarihi = result.aciklamaTarihi || FUNDS[fon].aciklamaTarihi || '';
         updated++;
 
@@ -6921,26 +6762,18 @@ async function refreshAllPortfoliosDetay() {
           toplamAgirlik: toplamAgirlik,
           degisiklikler: degisiklikler
         });
-        if (window.ORKA) window.ORKA.log('FVT başarılı:', fon, result.holdings.length + ' kalem', '%' + toplamAgirlik.toFixed(1));
       } else {
         failed++;
-        hatalar.push(fon + ': boş veri');
-        if (window.ORKA) window.ORKA.warn('FVT portföy boş/başarısız:', fon);
+        console.warn('FVT portföy boş/başarısız:', fon);
       }
     } catch(e) {
       failed++;
-      hatalar.push(fon + ': ' + (e && e.message ? e.message : e));
-      if (window.ORKA) window.ORKA.warn('FVT portföy hatası:', fon, e);
+      console.warn('FVT portfoy hatasi:', fon, e);
     }
-    // Endpoint'i ve proxy'leri boğmamak için kısa bekleme.
-    if (i < takipFonlar.length - 1) await new Promise(function(resolve){ setTimeout(resolve, 450); });
-  }
+  }));
 
-  if (updated > 0) {
-    saveFVTPortfolioOverrides();
-    try { if (typeof fonFirebaseSave === 'function') fonFirebaseSave(true); } catch(e) {}
-  }
-  return { updated: updated, failed: failed, detay: detay, hatalar: hatalar };
+  if (updated > 0) saveFVTPortfolioOverrides();
+  return { updated: updated, failed: failed, detay: detay };
 }
 
 async function refreshAllPortfolios() {
@@ -10249,196 +10082,6 @@ function yeniHisseEkle() {
 
 <!-- Veri Taşıma Wizard -->
 
-
-
-<script>
-/* ORKA ENGINE Phase 3.1 — FVT Browser JSON Importer: inline fixed integration */
-(function(){
-  function toastSafe(msg, type){
-    if (typeof toast === "function") toast(msg, type || "ok");
-    else if (typeof setStatus === "function") setStatus(type === "err" ? "error" : "live", msg);
-    else console.log("[ORKA FVT IMPORT]", msg);
-  }
-
-  function normalizeHolding(h){
-    return {
-      code: String(h.code || "").trim().toUpperCase(),
-      name: String(h.name || h.code || "").trim(),
-      weight: Number(h.weight || 0),
-      oldWeight: Number(h.oldWeight || 0),
-      diff: Number(h.diff || 0),
-      change: Number(h.change || 0),
-      type: h.type || "bist",
-      sector: h.sector || ""
-    };
-  }
-
-  function ensureFund(code){
-    code = String(code || "").trim().toUpperCase();
-    if (!code) return null;
-
-    if (typeof ensureFundDefinition === "function") {
-      try { return ensureFundDefinition(code); } catch(e) {}
-    }
-
-    if (typeof FUNDS === "object") {
-      if (!FUNDS[code]) {
-        FUNDS[code] = {
-          id: code,
-          code: code,
-          name: code,
-          color: "#38bdf8",
-          holdings: [],
-          custom: true
-        };
-      }
-      return FUNDS[code];
-    }
-
-    return null;
-  }
-
-  function saveAfterImport(){
-    try { if (typeof saveCustomFundsFromRegistry === "function") saveCustomFundsFromRegistry(); } catch(e){}
-    try { if (typeof saveFVTPortfolios === "function") saveFVTPortfolios(); } catch(e){}
-    try { if (typeof fonFirebaseSave === "function") fonFirebaseSave(true); } catch(e){}
-    try { if (typeof renderFunds === "function") renderFunds(); } catch(e){}
-    try { if (typeof updateUI === "function") updateUI(); } catch(e){}
-    try { if (typeof renderGercekPanel === "function") renderGercekPanel(); } catch(e){}
-    try { if (typeof renderKiyasTablosu === "function") renderKiyasTablosu(); } catch(e){}
-  }
-
-  async function importJsonObject(payload){
-    if (!payload || payload.source !== "orka-browser-provider" || !payload.funds) {
-      throw new Error("Bu dosya ORKA Browser Provider JSON formatında değil.");
-    }
-
-    var imported = 0;
-    var failed = [];
-
-    Object.keys(payload.funds).forEach(function(code){
-      var item = payload.funds[code];
-      if (!item || !item.ok || !Array.isArray(item.holdings) || item.holdings.length === 0) {
-        failed.push(code);
-        return;
-      }
-
-      var fund = ensureFund(code);
-      if (!fund) {
-        failed.push(code);
-        return;
-      }
-
-      fund.holdings = item.holdings.map(normalizeHolding).filter(function(h){ return h.code; });
-      fund.aciklamaTarihi = item.aciklamaTarihi || "";
-      fund.assetChart = item.assetChart || null;
-      fund.custom = fund.custom || false;
-
-      try {
-        if (typeof window.FVT_PORTFOYLER === "object") {
-          window.FVT_PORTFOYLER[code] = {
-            holdings: fund.holdings,
-            aciklamaTarihi: fund.aciklamaTarihi,
-            assetChart: fund.assetChart,
-            updatedAt: new Date().toISOString(),
-            source: "browser-provider-import"
-          };
-        }
-      } catch(e){}
-
-      imported++;
-    });
-
-    saveAfterImport();
-
-    if (imported > 0) {
-      toastSafe("✅ FVT Browser JSON içe aktarıldı: " + imported + " fon güncellendi.", "ok");
-    } else {
-      toastSafe("FVT Browser JSON okundu ama güncellenecek fon bulunamadı.", "err");
-    }
-
-    if (failed.length) {
-      console.warn("[ORKA FVT IMPORT] Atlanan fonlar:", failed);
-    }
-
-    return { imported: imported, failed: failed };
-  }
-
-  async function importFile(file){
-    var text = await file.text();
-    var payload = JSON.parse(text);
-    return importJsonObject(payload);
-  }
-
-  function pickFile(){
-    var input = document.getElementById("orkaFvtBrowserJsonInput");
-    if (!input) {
-      input = document.createElement("input");
-      input.id = "orkaFvtBrowserJsonInput";
-      input.type = "file";
-      input.accept = ".json,application/json";
-      input.style.display = "none";
-      document.body.appendChild(input);
-    }
-
-    input.onchange = async function(){
-      try {
-        if (!input.files || !input.files[0]) return;
-        await importFile(input.files[0]);
-      } catch(e) {
-        console.error("[ORKA FVT IMPORT]", e);
-        toastSafe("FVT JSON içe aktarma hatası: " + e.message, "err");
-      } finally {
-        input.value = "";
-      }
-    };
-
-    input.click();
-  }
-
-  function injectPanel(){
-    if (document.getElementById("orkaFvtBrowserImportPanel")) return;
-
-    var panel = document.createElement("div");
-    panel.id = "orkaFvtBrowserImportPanel";
-    panel.style.cssText = "margin:12px 0;padding:12px;border:1px solid var(--border);border-radius:12px;background:rgba(255,255,255,.03);";
-    panel.innerHTML =
-      '<div style="font-weight:700;margin-bottom:6px;">ORKA FVT Browser Provider</div>' +
-      '<div style="font-size:12px;color:var(--muted);margin-bottom:8px;">FVT Browser Provider JSON dosyasını içe aktarır ve fon ağırlıklarını günceller.</div>' +
-      '<input id="orkaFvtBrowserJsonInput" type="file" accept=".json,application/json" style="display:none" />' +
-      '<button type="button" onclick="ORKA_FVT_IMPORT.pickFile()" class="abtn fvt visible">📥 FVT Browser JSON İçe Aktar</button>';
-
-    var target =
-      document.querySelector("#panel-tahmin .status-bar") ||
-      document.querySelector("#panel-takip .status-bar") ||
-      document.querySelector(".status-bar") ||
-      document.querySelector("#panel-tahmin .app") ||
-      document.querySelector("#panel-tahmin") ||
-      document.body;
-
-    if (target && target.parentNode && target.classList && target.classList.contains("status-bar")) {
-      target.parentNode.insertBefore(panel, target.nextSibling);
-    } else if (target && target !== document.body) {
-      target.insertBefore(panel, target.firstChild);
-    } else {
-      document.body.appendChild(panel);
-    }
-  }
-
-  window.ORKA_FVT_IMPORT = {
-    pickFile: pickFile,
-    importFile: importFile,
-    importJsonObject: importJsonObject,
-    injectPanel: injectPanel
-  };
-
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", injectPanel);
-  } else {
-    injectPanel();
-  }
-})();
-</script>
 
 </body>
 </html>
