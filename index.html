@@ -2401,7 +2401,7 @@ window.addEventListener('unhandledrejection', function(ev){
     <button class="nav-action-btn takip visible" id="refresh-btn" onclick="fetchAllFunds();">⟳ TEFAS</button>
     <button class="nav-action-btn yabanci" onclick="yabanciVerileriKaydet()">💾 YABANCI KAYDET</button>
     <button class="nav-action-btn yabanci" onclick="openYabanciPortfoyModal()">⚙ PORTFÖY</button>
-    <button class="nav-action-btn tahmin fvt" id="refreshBtnFVT" onclick="fvtPortfoyGuncelle()">↺ AĞIRLIKLARI GÜNCELLE</button>
+    <button class="nav-action-btn takip tahmin fvt" id="refreshBtnFVT" onclick="fvtPortfoyGuncelle()">↺ AĞIRLIKLARI GÜNCELLE</button>
     <button class="nav-action-btn tahmin" id="refreshBtn" onclick="fetchAll()"><span id="refreshIcon">⟳</span> VERİLERİ GÜNCELLE</button>
   </div>
   <div class="nav-ofset-status">
@@ -2686,6 +2686,9 @@ window.addEventListener('unhandledrejection', function(ev){
       <div class="date-badge" id="dateBadge">—</div>
       <button class="auto-refresh-btn" id="autoRefreshBtn" onclick="toggleAutoRefresh()">
         <span id="autoIcon">⏱</span> <span id="autoLabel">OTOMATİK GÜNCELLE</span>
+      </button>
+      <button class="manual-btn" id="refreshBtnFVTHeader" onclick="fvtPortfoyGuncelle()" style="border-color:rgba(255,204,68,0.65);color:#ffcc44;background:linear-gradient(135deg,#2a2010,#1a1508);">
+        ↺ AĞIRLIKLARI GÜNCELLE
       </button>
       <button class="manual-btn" onclick="openManualModal()">
         ✎ MANUEL GİR
@@ -6680,7 +6683,9 @@ async function loadFVTPortfolio(fonKodu) {
 async function fvtPortfoyGuncelle() {
   setStatus('loading', 'FVT portfoy agirliklari guncelleniyor...');
   var btn = document.getElementById('refreshBtnFVT');
+  var btnHeader = document.getElementById('refreshBtnFVTHeader');
   if (btn) btn.disabled = true;
+  if (btnHeader) btnHeader.disabled = true;
   try {
     var sonuc = await refreshAllPortfoliosDetay();
     renderFunds();
@@ -6715,6 +6720,7 @@ async function fvtPortfoyGuncelle() {
     setStatus('error', 'Portfoy guncelleme hatasi: ' + e.message);
   } finally {
     if (btn) btn.disabled = false;
+    if (btnHeader) btnHeader.disabled = false;
   }
 }
 
