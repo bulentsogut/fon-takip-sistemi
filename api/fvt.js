@@ -1,299 +1,219 @@
-// ORKA ENGINE Phase 2.3 — FVT App Token + Distribution Provider
-// Put this file at: /api/fvt.js
-//
-// Goal:
-// Browser'da çalışan gerçek FVT akışını Vercel backend tarafında taklit eder:
-// 1) /api/app-token ile fvt_at cookie alır
-// 2) /api/funds/{CODE}/distribution çağırır
-// 3) FVT JSON'unu ORKA holdings formatına normalize eder
+export default async function handler(req, res) {
+  setCors(res);
+  if (req.method === 'OPTIONS') return res.status(204).end();
 
-const FVT_ORIGIN = "https://fvt.com.tr";
+  const code = String(req.query.code || req.query.kod || req.query.fon || '').trim().toUpperCase();
+  if (!code) return res.status(400).json({ ok: false, error: 'code required' });
 
-function cleanCode(value) {
-  return String(value || "")
-    .trim()
-    .toUpperCase()
-    .replace(/[^A-Z0-9]/g, "")
-    .slice(0, 12);
-}
-
-function randomDeviceId() {
-  // FVT tarayıcı akışında x-device-id istiyor. Kalıcı olmasına gerek yok.
-  return Math.random().toString(16).slice(2, 10) + Date.now().toString(16).slice(-8);
-}
-
-function pickSetCookie(headers) {
-  // Vercel/Node fetch ortamına göre set-cookie erişimi değişebilir.
-  try {
-    if (typeof headers.getSetCookie === "function") {
-      return headers.getSetCookie().join("; ");
-    }
-  } catch (_) {}
-  try {
-    return headers.get("set-cookie") || "";
-  } catch (_) {
-    return "";
-  }
-}
-
-function extractFvtCookie(setCookieHeader) {
-  const raw = String(setCookieHeader || "");
-  const m = raw.match(/fvt_at=([^;,\s]+)/i);
-  return m ? `fvt_at=${m[1]}` : "";
-}
-
-function makeBaseHeaders(deviceId) {
-  return {
-    "accept": "application/json, text/plain, */*",
-    "accept-language": "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7",
-    "cache-control": "no-cache",
-    "pragma": "no-cache",
-    "priority": "u=1, i",
-    "referer": `${FVT_ORIGIN}/fonlar/yatirim-fonlari/TLY`,
-    "sec-ch-ua": "\"Google Chrome\";v=\"149\", \"Chromium\";v=\"149\", \"Not)A;Brand\";v=\"24\"",
-    "sec-ch-ua-mobile": "?0",
-    "sec-ch-ua-platform": "\"Windows\"",
-    "sec-fetch-dest": "empty",
-    "sec-fetch-mode": "cors",
-    "sec-fetch-site": "same-origin",
-    "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
-    "x-device-id": deviceId
-  };
-}
-
-async function fetchText(url, options = {}, timeoutMs = 20000) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const res = await fetch(url, { ...options, signal: controller.signal });
-    const text = await res.text();
-    return { res, text };
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-function safeJson(text) {
-  try { return JSON.parse(text); } catch (_) { return null; }
-}
-
-function looksHtml(text) {
-  const t = String(text || "").trim().slice(0, 200).toLowerCase();
-  return t.startsWith("<!doctype") || t.startsWith("<html") || t.includes("<html");
-}
-
-function n(v) {
-  if (v === null || v === undefined || v === "") return 0;
-  if (typeof v === "number") return Number.isFinite(v) ? v : 0;
-  const s = String(v).replace("%", "").replace(",", ".").trim();
-  const x = Number(s);
-  return Number.isFinite(x) ? x : 0;
-}
-
-function normalizeDistribution(code, json) {
-  const data = json && json.data ? json.data : json;
-  const items = Array.isArray(data && data.items) ? data.items : Array.isArray(data) ? data : [];
-
-  const holdings = items.map((it) => {
-    const holdingCode = String(it.hisseKodu || it.code || it.kod || "").trim().toUpperCase();
-    const isFund = !!String(it.fonAdi2 || "").trim();
-    const name = String(it.sirketAdi || it.fonAdi2 || it.name || holdingCode).trim();
-    const weight = n(it.agirlik ?? it.value ?? it.weight);
-    const oldWeight = n(it.eskiAgirlik);
-    const diff = n(it.fark);
-    const liveChange = n(it.degisimCanli ?? it.degisim ?? it.oranCanli ?? it.oran);
-
-    let type = "bist";
-    if (isFund) type = "fund";
-    if (it.yabanci === 1 || it.yabanci === "1") type = "us";
-    if (it.etf === 1 || it.etf === "1") type = "fund";
-
-    return {
-      code: holdingCode,
-      name,
-      weight,
-      oldWeight,
-      diff,
-      change: liveChange,
-      type,
-      sector: String(it.sektorAdi || "").trim(),
-      raw: it
-    };
-  }).filter((h) => h.code && Number.isFinite(h.weight));
-
-  const meta = data && data.meta ? data.meta : {};
-  return {
-    ok: true,
-    source: "fvt-app-token-distribution",
-    code,
-    holdings,
-    aciklamaTarihi: meta.aciklamaTarihi || "",
-    meta,
-    raw: json
-  };
-}
-
-async function getAppToken(deviceId, attempts) {
-  const url = `${FVT_ORIGIN}/api/app-token`;
-  const headers = makeBaseHeaders(deviceId);
-  headers.referer = `${FVT_ORIGIN}/fonlar/yatirim-fonlari/TLY`;
-
-  const { res, text } = await fetchText(url, {
-    method: "GET",
-    headers,
-    redirect: "follow"
-  });
-
-  const setCookie = pickSetCookie(res.headers);
-  const cookie = extractFvtCookie(setCookie);
-
-  attempts.push({
-    step: "app-token",
-    url,
-    status: res.status,
-    contentType: res.headers.get("content-type") || "",
-    setCookieFound: !!setCookie,
-    fvtAtFound: !!cookie,
-    preview: text.slice(0, 160)
-  });
-
-  // Bazı ortamlarda cookie header görünmezse body içinde token olabilir.
-  let bodyToken = "";
-  const j = safeJson(text);
-  if (j) {
-    const possible = j.token || j.appToken || j.accessToken || (j.data && (j.data.token || j.data.appToken || j.data.accessToken));
-    if (possible) bodyToken = `fvt_at=${possible}`;
-  }
-
-  return cookie || bodyToken;
-}
-
-async function fetchDistribution(code, deviceId, cookie, attempts) {
-  const url = `${FVT_ORIGIN}/api/funds/${encodeURIComponent(code)}/distribution`;
-  const headers = makeBaseHeaders(deviceId);
-  headers.referer = `${FVT_ORIGIN}/fonlar/yatirim-fonlari/${encodeURIComponent(code)}`;
-  if (cookie) headers.cookie = cookie;
-
-  const { res, text } = await fetchText(url, {
-    method: "GET",
-    headers,
-    redirect: "follow"
-  });
-
-  attempts.push({
-    step: "distribution",
-    url,
-    status: res.status,
-    contentType: res.headers.get("content-type") || "",
-    len: text.length,
-    html: looksHtml(text),
-    preview: text.slice(0, 180)
-  });
-
-  return { res, text };
-}
-
-async function fetchAssetChart(code, deviceId, cookie, attempts) {
-  const url = `${FVT_ORIGIN}/api/funds/${encodeURIComponent(code)}/asset-chart`;
-  const headers = makeBaseHeaders(deviceId);
-  headers.referer = `${FVT_ORIGIN}/fonlar/yatirim-fonlari/${encodeURIComponent(code)}`;
-  if (cookie) headers.cookie = cookie;
-
-  const { res, text } = await fetchText(url, { method: "GET", headers, redirect: "follow" });
-
-  attempts.push({
-    step: "asset-chart-fallback",
-    url,
-    status: res.status,
-    contentType: res.headers.get("content-type") || "",
-    len: text.length,
-    html: looksHtml(text),
-    preview: text.slice(0, 180)
-  });
-
-  return { res, text };
-}
-
-module.exports = async function handler(req, res) {
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Accept");
-  res.setHeader("Cache-Control", "s-maxage=600, stale-while-revalidate=3600");
-
-  if (req.method === "OPTIONS") {
-    res.status(204).end();
-    return;
-  }
-
-  const code = cleanCode(req.query.code || req.query.kod || req.query.fon || req.query.fund);
-  const type = String(req.query.type || "distribution").trim();
-
-  if (!code) {
-    res.status(400).json({
-      ok: false,
-      source: "fvt-app-token-distribution",
-      error: "missing fund code",
-      usage: "/api/fvt?code=TLY&type=distribution"
-    });
-    return;
-  }
-
-  const deviceId = String(req.query.deviceId || req.headers["x-device-id"] || randomDeviceId());
   const attempts = [];
+  const urls = candidateUrls(code);
 
-  try {
-    const cookie = await getAppToken(deviceId, attempts);
+  for (const url of urls) {
+    try {
+      const r = await fetch(url, { headers: fvtHeaders(code), redirect: 'follow' });
+      const text = await r.text();
+      attempts.push({ url, status: r.status, len: text.length, contentType: r.headers.get('content-type') || '' });
 
-    const dist = await fetchDistribution(code, deviceId, cookie, attempts);
-    const distJson = safeJson(dist.text);
+      if (!r.ok || !text) continue;
 
-    if (dist.res.ok && distJson && !looksHtml(dist.text)) {
-      const normalized = normalizeDistribution(code, distJson);
-      normalized.deviceIdUsed = deviceId;
-      normalized.cookieUsed = !!cookie;
-      normalized.attempts = attempts;
-      res.status(200).json(normalized);
-      return;
+      const parsed = parseFvtResponse(text, code, r.headers.get('content-type') || '');
+      if (parsed.holdings.length > 0) {
+        return res.status(200).json({
+          ok: true,
+          code,
+          source: url,
+          holdings: parsed.holdings,
+          aciklamaTarihi: parsed.aciklamaTarihi || '',
+          attempts
+        });
+      }
+    } catch (e) {
+      attempts.push({ url, error: e.message || String(e) });
     }
-
-    // Fallback: ana portföy sınıf dağılımı. Detay hisse verisi değil ama temiz JSON döner.
-    const asset = await fetchAssetChart(code, deviceId, cookie, attempts);
-    const assetJson = safeJson(asset.text);
-
-    if (asset.res.ok && assetJson && !looksHtml(asset.text)) {
-      res.status(200).json({
-        ok: true,
-        source: "fvt-app-token-asset-chart-fallback",
-        code,
-        holdings: [],
-        assetChart: assetJson,
-        aciklamaTarihi: "",
-        deviceIdUsed: deviceId,
-        cookieUsed: !!cookie,
-        attempts
-      });
-      return;
-    }
-
-    res.status(502).json({
-      ok: false,
-      source: "fvt-app-token-distribution",
-      code,
-      type,
-      error: "FVT distribution data unavailable",
-      deviceIdUsed: deviceId,
-      cookieUsed: !!cookie,
-      attempts
-    });
-  } catch (e) {
-    attempts.push({ step: "handler-error", error: e && e.message ? e.message : String(e) });
-    res.status(500).json({
-      ok: false,
-      source: "fvt-app-token-distribution",
-      code,
-      type,
-      error: e && e.message ? e.message : String(e),
-      attempts
-    });
   }
-};
+
+  return res.status(502).json({
+    ok: false,
+    error: 'FVT portfolio data unavailable after recovery attempts',
+    code,
+    holdings: [],
+    attempts
+  });
+}
+
+function candidateUrls(code) {
+  const c = encodeURIComponent(code);
+  return [
+    `https://fvt.com.tr/api/funds/${c}/distribution`,
+    `https://fvt.com.tr/api/funds/${c}?include=distribution`,
+    `https://fvt.com.tr/api/fon/${c}/distribution`,
+    `https://fvt.com.tr/api/fonlar/${c}/distribution`,
+    `https://fvt.com.tr/api/portfolio-distribution?code=${c}`,
+    `https://fvt.com.tr/api/portfolio-distribution?kod=${c}`,
+    `https://fvt.com.tr/api/fund/portfolio?code=${c}`,
+    `https://fvt.com.tr/api/fund/portfolio?kod=${c}`,
+    `https://fvt.com.tr/fon-detay/${c}`,
+    `https://fvt.com.tr/fon/${c}`,
+    `https://fvt.com.tr/fonlar/${c}`,
+    `https://fvt.com.tr/yatirim-fonlari/${c}`,
+    `https://fvt.com.tr/terminal/fon/${c}`
+  ];
+}
+
+function parseFvtResponse(text, code, contentType) {
+  const jsonCandidates = [];
+
+  if (contentType.includes('json') || /^[\s\[{]/.test(text)) {
+    try { jsonCandidates.push(JSON.parse(text)); } catch (_) {}
+  }
+
+  for (const m of text.matchAll(/<script[^>]+type=["']application\/json["'][^>]*>([\s\S]*?)<\/script>/gi)) {
+    try { jsonCandidates.push(JSON.parse(htmlDecode(m[1].trim()))); } catch (_) {}
+  }
+
+  for (const m of text.matchAll(/__NEXT_DATA__[^>]*>([\s\S]*?)<\/script>/gi)) {
+    try { jsonCandidates.push(JSON.parse(htmlDecode(m[1].trim()))); } catch (_) {}
+  }
+
+  for (const obj of jsonCandidates) {
+    const found = findHoldingArrays(obj);
+    for (const arr of found) {
+      const holdings = normalizeHoldings(arr);
+      if (holdings.length > 0) return { holdings, aciklamaTarihi: findDate(obj) };
+    }
+  }
+
+  const tableHoldings = parseHtmlTables(text);
+  if (tableHoldings.length > 0) return { holdings: tableHoldings, aciklamaTarihi: '' };
+
+  return { holdings: [], aciklamaTarihi: '' };
+}
+
+function findHoldingArrays(root) {
+  const out = [];
+  const seen = new Set();
+  function walk(v, depth = 0) {
+    if (!v || depth > 12) return;
+    if (Array.isArray(v)) {
+      if (v.length && v.some(looksLikeHolding)) out.push(v);
+      return;
+    }
+    if (typeof v === 'object') {
+      if (seen.has(v)) return;
+      seen.add(v);
+      for (const key of Object.keys(v)) {
+        const lower = key.toLowerCase();
+        const val = v[key];
+        if (Array.isArray(val) && /(holding|portfoy|portfolio|distribution|dagilim|varlik|position|asset|items|data)/i.test(lower)) {
+          if (val.some(looksLikeHolding)) out.push(val);
+        }
+        walk(val, depth + 1);
+      }
+    }
+  }
+  walk(root);
+  return out.sort((a, b) => b.length - a.length);
+}
+
+function looksLikeHolding(x) {
+  if (!x || typeof x !== 'object') return false;
+  const keys = Object.keys(x).map(k => k.toLowerCase());
+  const hasCode = keys.some(k => /(hisse|kod|code|symbol|varlik|asset|ticker|menkul)/.test(k));
+  const hasWeight = keys.some(k => /(agirlik|ağırlık|weight|oran|percentage|yuzde|yüzde|ratio|pay)/.test(k));
+  return hasCode && hasWeight;
+}
+
+function normalizeHoldings(arr) {
+  return arr.map(it => {
+    const code = firstString(it, ['hisseKodu','hisse_kodu','kod','code','assetCode','symbol','varlikKodu','varlıkKodu','ticker','menkulKodu']);
+    const name = firstString(it, ['sirketAdi','şirketAdı','ad','name','assetName','varlikAdi','varlıkAdı','unvan','title']) || code;
+    const weightRaw = firstValue(it, ['agirlik','ağırlık','weight','oran','agirlikYuzde','ağırlıkYüzde','percentage','yuzde','yüzde','ratio','pay']);
+    const weight = parseNumber(weightRaw);
+    if (!code || !Number.isFinite(weight) || Math.abs(weight) <= 0.01) return null;
+    return { code: String(code).trim().toUpperCase(), name: String(name || code).trim(), weight, type: inferType(code, name, it) };
+  }).filter(Boolean).sort((a, b) => b.weight - a.weight);
+}
+
+function parseHtmlTables(html) {
+  const rows = [...html.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi)].map(m => m[1]);
+  const items = [];
+  for (const row of rows) {
+    const cells = [...row.matchAll(/<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/gi)].map(m => cleanHtml(m[1]));
+    if (cells.length < 2) continue;
+    const joined = cells.join(' ');
+    const code = (joined.match(/\b[A-Z]{2,6}[A-Z0-9]{0,4}\b/) || [])[0];
+    const pctCell = cells.find(c => /%|\d+[,.]\d+/.test(c));
+    const weight = parseNumber(pctCell);
+    if (code && Number.isFinite(weight) && weight > 0.01) items.push({ code, name: cells.find(c => c !== code && !/%/.test(c)) || code, weight, type: inferType(code, '', {}) });
+  }
+  return items.sort((a, b) => b.weight - a.weight);
+}
+
+function firstString(obj, keys) {
+  const v = firstValue(obj, keys);
+  return v == null ? '' : String(v).trim();
+}
+
+function firstValue(obj, keys) {
+  for (const k of keys) if (obj[k] !== undefined && obj[k] !== null && obj[k] !== '') return obj[k];
+  const lower = Object.fromEntries(Object.keys(obj).map(k => [k.toLowerCase(), k]));
+  for (const k of keys) {
+    const real = lower[k.toLowerCase()];
+    if (real && obj[real] !== undefined && obj[real] !== null && obj[real] !== '') return obj[real];
+  }
+  return undefined;
+}
+
+function parseNumber(v) {
+  if (typeof v === 'number') return v;
+  if (v == null) return NaN;
+  let s = String(v).replace(/<[^>]+>/g, '').replace('%', '').trim();
+  if (s.includes(',') && s.includes('.')) s = s.replace(/\./g, '').replace(',', '.');
+  else s = s.replace(',', '.');
+  return parseFloat(s);
+}
+
+function inferType(code, name, raw) {
+  const c = String(code || '').toUpperCase();
+  const n = String(name || '').toUpperCase();
+  const byf = ['GLDTRF','GMSTRF','ZPX3GF','ZPX30F','TPKGY','TPKGYF1','HMV','T3B','PKZ','PQS','PFS','ABG','TI1','RPP','CFO','RS1','PNU','PRY','CPU','PBR'];
+  if (byf.includes(c)) return c.includes('TRF') ? 'cash' : 'fund';
+  if (raw?.etf === true || raw?.etf === 1) return 'fund';
+  if (raw?.yabanci === true || raw?.yabanci === 1 || /USD|NASDAQ|NYSE|US /.test(n)) return 'us';
+  if (/TL|PARA PIYASASI|MEVDUAT|REPO|NAKIT|LİKİT|LIKIT/.test(n)) return 'cash';
+  return 'bist';
+}
+
+function findDate(obj) {
+  let found = '';
+  function walk(v, depth = 0) {
+    if (found || !v || depth > 8) return;
+    if (typeof v === 'object') {
+      for (const [k, val] of Object.entries(v)) {
+        if (/tarih|date|aciklama|açıklama/i.test(k) && typeof val === 'string') { found = val; return; }
+        walk(val, depth + 1);
+      }
+    }
+  }
+  walk(obj);
+  return found;
+}
+
+function cleanHtml(s) { return htmlDecode(String(s).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()); }
+function htmlDecode(s) { return String(s).replace(/&quot;/g, '"').replace(/&#x27;/g, "'").replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>'); }
+
+function setCors(res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Accept');
+}
+
+function fvtHeaders(code) {
+  return {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36',
+    'Accept': 'application/json,text/html,text/plain,*/*',
+    'Accept-Language': 'tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7',
+    'Referer': `https://fvt.com.tr/`,
+    'Origin': 'https://fvt.com.tr'
+  };
+}
