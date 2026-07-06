@@ -6598,6 +6598,45 @@ async function fetchTefasFon(fonKodu) {
 
 // Ekofin.net portföy dağılımı ana kaynağı
 // Örnek sayfa: https://ekofin.net/fonlar/detay/TLY/fon-portfoy
+
+async function loadKAPPortfolio(fonKodu) {
+  fonKodu = String(fonKodu || '').trim().toUpperCase();
+  if (!fonKodu) return null;
+  var urls = ['/api/kap?code=' + encodeURIComponent(fonKodu)];
+  for (var i = 0; i < urls.length; i++) {
+    try {
+      var resp = await fetchWithTimeout(urls[i], { headers: { 'Accept': 'application/json,text/plain,*/*' } }, 18000);
+      if (!resp.ok) {
+        console.warn('KAP PDF HTTP', fonKodu, resp.status, urls[i]);
+        continue;
+      }
+      var data = await resp.json();
+      var items = (data && Array.isArray(data.holdings) && data.holdings) || [];
+      if (!items.length) {
+        console.warn('KAP PDF boş portföy', fonKodu, data);
+        continue;
+      }
+      var holdings = items.map(function(it){
+        var kod = String(it.code || it.symbol || '').trim().toUpperCase();
+        var agirlik = parseFloat(it.weight);
+        if (!kod || isNaN(agirlik) || Math.abs(agirlik) <= 0.005) return null;
+        var obj = { code: kod, name: it.name || kod, weight: agirlik, type: it.type || it.tip || 'bist' };
+        obj.type = normalizeAssetType(obj);
+        return obj;
+      }).filter(Boolean).sort(function(a,b){ return b.weight - a.weight; });
+      if (!holdings.length) continue;
+      return {
+        holdings: holdings,
+        aciklamaTarihi: data.aciklamaTarihi || data.latestDate || '',
+        source: data.source || 'KAP PDF'
+      };
+    } catch(e) {
+      console.warn('KAP PDF portföy okuma hatası:', fonKodu, e);
+    }
+  }
+  return null;
+}
+
 async function loadEkofinPortfolio(fonKodu) {
   fonKodu = String(fonKodu || '').trim().toUpperCase();
   if (!fonKodu) return null;
@@ -6755,7 +6794,20 @@ async function loadEkofinPortfolio(fonKodu) {
 }
 
 async function loadPortfolioAnySource(fonKodu) {
-  // Ana kaynak FVT. Bulamazsa veya eksik/boş dönerse Ekofin'e geçilir.
+  fonKodu = String(fonKodu || '').trim().toUpperCase();
+
+  // IJC/CPT gibi yurtdışı hisse taşıyan fonlarda Ekofin eksik kalıyor.
+  // Bu fonlarda önce KAP/PDF kaynağı denenir; başarılı olmazsa eski akış korunur.
+  if (['IJC','CPT'].indexOf(fonKodu) !== -1) {
+    var kap = null;
+    try { kap = await loadKAPPortfolio(fonKodu); } catch(e) { console.warn('KAP PDF kaynak hatası:', fonKodu, e); }
+    if (kap && kap.holdings && kap.holdings.length > 0) {
+      kap.source = kap.source || 'KAP PDF';
+      return kap;
+    }
+  }
+
+  // Diğer fonlarda mevcut çalışan akış korunur.
   var fvt = null;
   try { fvt = await loadFVTPortfolio(fonKodu); } catch(e) { console.warn('FVT kaynak hatası:', fonKodu, e); }
   if (fvt && fvt.holdings && fvt.holdings.length > 0) {
