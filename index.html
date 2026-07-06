@@ -2401,7 +2401,7 @@ window.addEventListener('unhandledrejection', function(ev){
     <button class="nav-action-btn takip visible" id="refresh-btn" onclick="fetchAllFunds();">⟳ TEFAS</button>
     <button class="nav-action-btn yabanci" onclick="yabanciVerileriKaydet()">💾 YABANCI KAYDET</button>
     <button class="nav-action-btn yabanci" onclick="openYabanciPortfoyModal()">⚙ PORTFÖY</button>
-    <button class="nav-action-btn takip tahmin fvt" id="refreshBtnFVT" onclick="fvtPortfoyGuncelle()">↺ AĞIRLIKLARI GÜNCELLE</button>
+    <button class="nav-action-btn takip tahmin fvt" id="refreshBtnFVT" onclick="fvtPortfoyGuncelle()">↺ EKOFİN AĞIRLIKLARI GÜNCELLE</button>
     <button class="nav-action-btn tahmin" id="refreshBtn" onclick="fetchAll()"><span id="refreshIcon">⟳</span> VERİLERİ GÜNCELLE</button>
   </div>
   <div class="nav-ofset-status">
@@ -6596,7 +6596,7 @@ async function fetchTefasFon(fonKodu) {
 }
 
 
-// Ekofin.net portföy dağılımı yedek kaynağı
+// Ekofin.net portföy dağılımı ana kaynağı
 // Örnek sayfa: https://ekofin.net/fonlar/detay/TLY/fon-portfoy
 async function loadEkofinPortfolio(fonKodu) {
   fonKodu = String(fonKodu || '').trim().toUpperCase();
@@ -6604,18 +6604,68 @@ async function loadEkofinPortfolio(fonKodu) {
 
   var ekofinUrl = 'https://ekofin.net/fonlar/detay/' + encodeURIComponent(fonKodu) + '/fon-portfoy';
   var urls = [
+    // Vercel/GitHub tarafında ileride küçük bir proxy eklenirse ilk bunu kullanır.
     '/api/ekofin?code=' + encodeURIComponent(fonKodu) + '&type=fon-portfoy',
     '/api/ekofin?kod=' + encodeURIComponent(fonKodu) + '&type=fon-portfoy',
+    // Statik HTML/local kullanım için CORS proxy denemeleri.
     'https://api.allorigins.win/raw?url=' + encodeURIComponent(ekofinUrl),
+    'https://corsproxy.io/?' + encodeURIComponent(ekofinUrl),
+    'https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(ekofinUrl),
+    // Tarayıcı izin verirse doğrudan son çare.
     ekofinUrl
   ];
 
   function trNumber(v) {
     if (v === null || v === undefined) return NaN;
-    var x = String(v).trim().replace('%','').replace(/\s+/g,'');
+    var x = String(v).trim().replace(/%/g,'').replace(/TL|₺/gi,'').replace(/\s+/g,'');
+    if (!x) return NaN;
     if (x.indexOf(',') >= 0 && x.indexOf('.') >= 0) x = x.replace(/\./g,'').replace(',', '.');
     else x = x.replace(',', '.');
     return parseFloat(x);
+  }
+
+  function cleanEkofinCode(kod) {
+    kod = String(kod || '').toUpperCase().trim();
+    kod = kod.replace(/[^A-Z0-9]/g, '');
+    return kod;
+  }
+
+  function addHolding(holdings, seen, kod, ad, agirlik, tip) {
+    kod = cleanEkofinCode(kod);
+    agirlik = trNumber(agirlik);
+    if (!kod || kod === fonKodu || seen[kod]) return;
+    if (isNaN(agirlik) || Math.abs(agirlik) < 0.005 || Math.abs(agirlik) > 100) return;
+    seen[kod] = true;
+    var obj = { code: kod, name: ad || kod, weight: agirlik, type: tip || 'bist' };
+    obj.type = normalizeAssetType(obj);
+    holdings.push(obj);
+  }
+
+  function parseJsonAny(data) {
+    var holdings = [];
+    var seen = {};
+    var items =
+      (data && Array.isArray(data.holdings) && data.holdings) ||
+      (data && data.data && Array.isArray(data.data.holdings) && data.data.holdings) ||
+      (data && data.data && Array.isArray(data.data.items) && data.data.items) ||
+      (data && data.props && data.props.pageProps && Array.isArray(data.props.pageProps.holdings) && data.props.pageProps.holdings) ||
+      (data && data.props && data.props.pageProps && Array.isArray(data.props.pageProps.portfolio) && data.props.pageProps.portfolio) ||
+      (data && Array.isArray(data.portfolio) && data.portfolio) ||
+      (data && Array.isArray(data.items) && data.items) || [];
+
+    items.forEach(function(it){
+      var kod = it.hisseKodu || it.kod || it.code || it.assetCode || it.symbol || it.varlikKodu || it.varlik || it.name;
+      var ad = it.sirketAdi || it.ad || it.title || it.assetName || it.varlikAdi || it.name || kod;
+      var agirlik = it.agirlik;
+      if (agirlik === undefined) agirlik = it.weight;
+      if (agirlik === undefined) agirlik = it.oran;
+      if (agirlik === undefined) agirlik = it.agirlikYuzde;
+      if (agirlik === undefined) agirlik = it.percentage;
+      if (agirlik === undefined) agirlik = it.current;
+      addHolding(holdings, seen, kod, ad, agirlik, it.type || it.tip || 'bist');
+    });
+    holdings.sort(function(a,b){ return b.weight - a.weight; });
+    return holdings;
   }
 
   function parseEkofinText(text, html) {
@@ -6623,43 +6673,65 @@ async function loadEkofinPortfolio(fonKodu) {
     var seen = {};
     var aciklamaTarihi = '';
 
-    var dm = text.match(/veriler\s+([^\.\n]+? tarihinde)\s+yay/i);
+    text = String(text || '').replace(/<script[\s\S]*?<\/script>/gi, ' ');
+    html = String(html || text || '');
+
+    var dm = (text + ' ' + html.replace(/<[^>]+>/g, ' ')).match(/veriler\s+([^\.\n]+? tarihinde)\s+yay/i);
     if (dm) aciklamaTarihi = dm[1].trim();
 
-    // Ekofin portföy satırları genelde link metni olarak gelir:
-    // DSTKF 3585.00 -4.40 % 22.85 %
+    // Ekofin satır örneği: DSTKF 3585.00 -4.40 % 22.85 %
     function addFromLabel(label) {
-      label = String(label || '').replace(/\s+/g, ' ').trim();
+      label = String(label || '')
+        .replace(/&nbsp;/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
       var m = label.match(/^([A-ZÇĞİÖŞÜ0-9]{2,12})\s+(.+)$/i);
       if (!m) return;
-      var kod = String(m[1] || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+      var kod = cleanEkofinCode(m[1]);
       if (!kod || kod === fonKodu || seen[kod]) return;
       var rest = m[2] || '';
       var pctMatches = [];
       rest.replace(/(-?\d+(?:[\.,]\d+)?)\s*%/g, function(_, n){ pctMatches.push(n); return _; });
       if (pctMatches.length < 1) return;
-      var agirlik = trNumber(pctMatches[pctMatches.length - 1]);
-      if (isNaN(agirlik) || Math.abs(agirlik) <= 0.01 || Math.abs(agirlik) > 100) return;
-      seen[kod] = true;
-      var obj = { code: kod, name: kod, weight: agirlik, type: 'bist' };
-      obj.type = normalizeAssetType(obj);
-      holdings.push(obj);
+      // Güncel Portföy satırında son yüzde ağırlık; önceki yüzde günlük değişimdir.
+      var agirlik = pctMatches[pctMatches.length - 1];
+      addHolding(holdings, seen, kod, kod, agirlik, 'bist');
     }
 
     try {
-      var doc = new DOMParser().parseFromString(html || text, 'text/html');
-      Array.prototype.forEach.call(doc.querySelectorAll('a'), function(a){
-        var href = a.getAttribute('href') || '';
-        var label = (a.textContent || '').trim();
-        if (/\/sirket\/detay\//i.test(href) || /\/fonlar\/detay\//i.test(href)) addFromLabel(label);
+      var doc = new DOMParser().parseFromString(html, 'text/html');
+      // Next.js veya gömülü JSON varsa önce onu dene.
+      Array.prototype.forEach.call(doc.querySelectorAll('script[type="application/json"], script#__NEXT_DATA__'), function(sc){
+        try {
+          var data = JSON.parse(sc.textContent || '{}');
+          parseJsonAny(data).forEach(function(h){ addHolding(holdings, seen, h.code, h.name, h.weight, h.type); });
+        } catch(e) {}
       });
-      if (holdings.length === 0) {
-        var area = text.split(/Güncel Portföy/i).pop() || text;
-        area = area.split(/Artırılan Pozisyonlar|Azaltılan Pozisyonlar|Sıkça Sorulan Sorular/i)[0] || area;
-        area.split(/\n|\r|(?=[A-Z0-9]{2,12}\s+\d)/).forEach(addFromLabel);
+
+      // Güncel Portföy bölümünden link/table metinlerini oku.
+      var scopeText = '';
+      var headers = Array.prototype.filter.call(doc.querySelectorAll('h1,h2,h3,h4,div,section'), function(el){
+        return /Güncel\s+Portföy/i.test(el.textContent || '');
+      });
+      if (headers.length) {
+        var root = headers[headers.length - 1].parentElement || doc.body;
+        scopeText = root.textContent || '';
       }
-    } catch(e) {
-      text.split(/\n|\r|(?=[A-Z0-9]{2,12}\s+\d)/).forEach(addFromLabel);
+
+      Array.prototype.forEach.call(doc.querySelectorAll('a, tr, li, [role="row"]'), function(el){
+        var label = (el.textContent || '').trim();
+        if (/\b[A-Z0-9]{2,12}\b/.test(label) && /%/.test(label)) addFromLabel(label);
+      });
+
+      if (holdings.length === 0 && scopeText) {
+        scopeText.split(/\n|\r|(?=[A-Z0-9]{2,12}\s+\d)/).forEach(addFromLabel);
+      }
+    } catch(e) {}
+
+    if (holdings.length === 0) {
+      var area = text.split(/Güncel Portföy/i).pop() || text;
+      area = area.split(/Artırılan Pozisyonlar|Azaltılan Pozisyonlar|Sıkça Sorulan Sorular/i)[0] || area;
+      area.split(/\n|\r|(?=[A-Z0-9]{2,12}\s+\d)/).forEach(addFromLabel);
     }
 
     holdings.sort(function(a,b){ return b.weight - a.weight; });
@@ -6676,34 +6748,11 @@ async function loadEkofinPortfolio(fonKodu) {
       var raw = await resp.text();
       var data = null;
       try { data = JSON.parse(raw); } catch(e) {}
-
-      // İleride /api/ekofin JSON dönerse onu da kabul et.
       if (data) {
-        var items =
-          (Array.isArray(data.holdings) && data.holdings) ||
-          (data.data && Array.isArray(data.data.holdings) && data.data.holdings) ||
-          (data.data && Array.isArray(data.data.items) && data.data.items) ||
-          (Array.isArray(data.items) && data.items) || [];
-        if (items.length > 0) {
-          var jsonHoldings = items.map(function(it){
-            var kod = String(it.hisseKodu || it.kod || it.code || it.assetCode || it.symbol || it.varlikKodu || '').trim().toUpperCase();
-            var ad = String(it.sirketAdi || it.ad || it.name || it.assetName || it.varlikAdi || kod || '').trim();
-            var agirlikRaw = it.agirlik;
-            if (agirlikRaw === undefined) agirlikRaw = it.weight;
-            if (agirlikRaw === undefined) agirlikRaw = it.oran;
-            if (agirlikRaw === undefined) agirlikRaw = it.agirlikYuzde;
-            if (agirlikRaw === undefined) agirlikRaw = it.percentage;
-            var agirlik = trNumber(agirlikRaw);
-            if (!kod || isNaN(agirlik) || Math.abs(agirlik) <= 0.01) return null;
-            var obj = { code: kod, name: ad || kod, weight: agirlik, type: it.type || it.tip || 'bist' };
-            obj.type = normalizeAssetType(obj);
-            return obj;
-          }).filter(Boolean).sort(function(a,b){ return b.weight - a.weight; });
-          if (jsonHoldings.length > 0) return { holdings: jsonHoldings, aciklamaTarihi: data.aciklamaTarihi || (data.data && data.data.aciklamaTarihi) || '', source: 'Ekofin' };
-        }
+        var jsonHoldings = parseJsonAny(data);
+        if (jsonHoldings.length > 0) return { holdings: jsonHoldings, aciklamaTarihi: data.aciklamaTarihi || (data.data && data.data.aciklamaTarihi) || '', source: 'Ekofin' };
       }
-
-      var parsed = parseEkofinText(raw.replace(/<script[\s\S]*?<\/script>/gi, ' '), raw);
+      var parsed = parseEkofinText(raw, raw);
       if (parsed.holdings && parsed.holdings.length > 0) return parsed;
       console.warn('Ekofin boş portföy', fonKodu);
     } catch(e) {
@@ -6714,17 +6763,19 @@ async function loadEkofinPortfolio(fonKodu) {
 }
 
 async function loadPortfolioAnySource(fonKodu) {
-  var fvt = null;
-  try { fvt = await loadFVTPortfolio(fonKodu); } catch(e) { console.warn('FVT kaynak hatası:', fonKodu, e); }
-  if (fvt && fvt.holdings && fvt.holdings.length > 0) {
-    fvt.source = fvt.source || 'FVT';
-    return fvt;
-  }
+  // Yeni ana kaynak Ekofin. FVT artık sadece yedek kaynak.
   var ekofin = null;
   try { ekofin = await loadEkofinPortfolio(fonKodu); } catch(e) { console.warn('Ekofin kaynak hatası:', fonKodu, e); }
   if (ekofin && ekofin.holdings && ekofin.holdings.length > 0) {
     ekofin.source = ekofin.source || 'Ekofin';
     return ekofin;
+  }
+
+  var fvt = null;
+  try { fvt = await loadFVTPortfolio(fonKodu); } catch(e) { console.warn('FVT kaynak hatası:', fonKodu, e); }
+  if (fvt && fvt.holdings && fvt.holdings.length > 0) {
+    fvt.source = fvt.source || 'FVT';
+    return fvt;
   }
   return null;
 }
@@ -6815,7 +6866,7 @@ async function loadFVTPortfolio(fonKodu) {
 }
 
 async function fvtPortfoyGuncelle() {
-  setStatus('loading', 'FVT/Ekofin portföy ağırlıkları güncelleniyor...');
+  setStatus('loading', 'Ekofin portföy ağırlıkları güncelleniyor...');
   var btn = document.getElementById('refreshBtnFVT');
   var btnHeader = document.getElementById('refreshBtnFVTHeader');
   if (btn) btn.disabled = true;
@@ -6825,7 +6876,7 @@ async function fvtPortfoyGuncelle() {
     renderFunds();
     updateUI();
     if (!sonuc || sonuc.updated === 0) {
-      setStatus('error', 'FVT ve Ekofin ağırlıkları güncellenemedi. Mevcut ağırlıklar korundu.');
+      setStatus('error', 'Ekofin ağırlıkları güncellenemedi. FVT yedek kaynak da sonuç vermedi; mevcut ağırlıklar korundu.');
       return;
     }
     if (sonuc.detay.length > 0) {
@@ -6871,9 +6922,8 @@ async function refreshAllPortfoliosDetay() {
         var eskiAgirliklar = {};
         (FUNDS[fon].holdings || []).forEach(function(h){ eskiAgirliklar[h.code] = h.weight; });
 
-        // FVT/Ekofin verisi ana kaynak kabul edilir. Nakit kalemler de kaynakta geliyorsa güncellenir.
+        // Ekofin verisi ana kaynak kabul edilir. Nakit kalemler de kaynakta geliyorsa güncellenir.
         FUNDS[fon].holdings = result.holdings;
-      normalizeAllHoldingTypes();
         normalizeAllHoldingTypes();
         FUNDS[fon].aciklamaTarihi = result.aciklamaTarihi || FUNDS[fon].aciklamaTarihi || '';
         updated++;
@@ -6900,16 +6950,16 @@ async function refreshAllPortfoliosDetay() {
           fon: fon,
           hisseSay: result.holdings.length,
           toplamAgirlik: toplamAgirlik,
-          source: result.source || 'FVT/Ekofin',
+          source: result.source || 'Ekofin/FVT',
           degisiklikler: degisiklikler
         });
       } else {
         failed++;
-        console.warn('FVT/Ekofin portföy boş/başarısız:', fon);
+        console.warn('Ekofin/FVT portföy boş/başarısız:', fon);
       }
     } catch(e) {
       failed++;
-      console.warn('FVT/Ekofin portfoy hatasi:', fon, e);
+      console.warn('Ekofin/FVT portfoy hatasi:', fon, e);
     }
   }));
 
