@@ -180,8 +180,17 @@ function parseTextRows(html, fundCode) {
 }
 
 function parseEkofin(html, fundCode) {
-  let holdings = parseNextData(html, fundCode);
-  if (!holdings.length) holdings = parseTextRows(html, fundCode);
+  // Ekofin sayfasında gerçek portföy tablosu düz HTML/text içinde görünüyor.
+  // __NEXT_DATA__ içinde benzer alan adları geçtiğinde yanlış/eksik eşleşme verebiliyor.
+  // Bu yüzden ana kaynak olarak sayfadaki "Güncel Portföy" text bölümünü kullanıyoruz.
+  // JSON sadece text parser anlamlı veri çıkaramazsa yedek.
+  const textHoldings = parseTextRows(html, fundCode);
+  const jsonHoldings = parseNextData(html, fundCode);
+
+  let holdings = textHoldings.length >= 3 ? textHoldings : jsonHoldings;
+
+  // Güvenlik: 1-2 hisse çıkması çoğu fon için şüpheli. Text parser 1-2, JSON daha doluysa JSON'a dön.
+  if (holdings.length < 3 && jsonHoldings.length > holdings.length) holdings = jsonHoldings;
 
   const dateText = htmlToText(html);
   const dateMatch = dateText.match(/veriler\s+([^\.\n]+? tarihinde)\s+yay/i) || dateText.match(/(\d{1,2}[\.\/]\d{1,2}[\.\/]\d{4})/);
@@ -225,6 +234,13 @@ export default async function handler(req, res) {
     }
 
     const parsed = parseEkofin(html, code);
+    if (debug) {
+      parsed.debug = {
+        textCount: parseTextRows(html, code).length,
+        jsonCount: parseNextData(html, code).length,
+        textSample: htmlToText(html).slice(0, 1200)
+      };
+    }
     res.setHeader('Cache-Control', 's-maxage=1800, stale-while-revalidate=3600');
 
     if (!parsed.ok) {
