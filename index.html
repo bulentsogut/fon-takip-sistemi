@@ -6755,19 +6755,19 @@ async function loadEkofinPortfolio(fonKodu) {
 }
 
 async function loadPortfolioAnySource(fonKodu) {
-  // Yeni ana kaynak Ekofin. FVT artık sadece yedek kaynak.
-  var ekofin = null;
-  try { ekofin = await loadEkofinPortfolio(fonKodu); } catch(e) { console.warn('Ekofin kaynak hatası:', fonKodu, e); }
-  if (ekofin && ekofin.holdings && ekofin.holdings.length > 0) {
-    ekofin.source = ekofin.source || 'Ekofin';
-    return ekofin;
-  }
-
+  // Ana kaynak FVT. Bulamazsa veya eksik/boş dönerse Ekofin'e geçilir.
   var fvt = null;
   try { fvt = await loadFVTPortfolio(fonKodu); } catch(e) { console.warn('FVT kaynak hatası:', fonKodu, e); }
   if (fvt && fvt.holdings && fvt.holdings.length > 0) {
     fvt.source = fvt.source || 'FVT';
     return fvt;
+  }
+
+  var ekofin = null;
+  try { ekofin = await loadEkofinPortfolio(fonKodu); } catch(e) { console.warn('Ekofin kaynak hatası:', fonKodu, e); }
+  if (ekofin && ekofin.holdings && ekofin.holdings.length > 0) {
+    ekofin.source = ekofin.source || 'Ekofin';
+    return ekofin;
   }
   return null;
 }
