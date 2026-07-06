@@ -2,7 +2,7 @@
 // Ekofin fon-portföy sayfasını sunucu tarafında okur ve HTML'e temiz JSON döndürür.
 // Not: Node 16/18 uyumu için global fetch yerine https modülü kullanır.
 
-const https = require('https');
+import https from 'node:https';
 
 function setCors(res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -197,7 +197,7 @@ function parseEkofin(html, fundCode) {
   };
 }
 
-module.exports = async function handler(req, res) {
+export default async function handler(req, res) {
   setCors(res);
   if (req.method === 'OPTIONS') return res.status(204).end();
   if (req.method !== 'GET') return res.status(405).json({ ok: false, error: 'Only GET is supported' });
@@ -247,4 +247,4 @@ module.exports = async function handler(req, res) {
       url
     });
   }
-};
+}
