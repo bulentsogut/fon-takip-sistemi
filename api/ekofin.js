@@ -1,6 +1,6 @@
 // Vercel Serverless Function: /api/ekofin?code=TLY
 // Ekofin gerçek JSON kaynağı: historical-distribution?fonKodu=...
-// HTML/RSC parse YOK. Sadece Ekofin'in sayfanın kendisinin kullandığı JSON endpoint'i okunur.
+// Not: Ekofin bu isteği fon sayfasının relative path'i altında çalıştırıyor.
 
 import https from 'node:https';
 
@@ -37,7 +37,7 @@ function httpsGet(url) {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126 Safari/537.36',
         'Accept': 'application/json,text/plain,*/*',
         'Accept-Language': 'tr-TR,tr;q=0.9,en-US;q=0.7,en;q=0.6',
-        'Referer': 'https://ekofin.net/',
+        'Referer': `https://ekofin.net/`,
         'Cache-Control': 'no-cache'
       }
     }, (res) => {
@@ -110,9 +110,7 @@ function parseJsonBody(text) {
 
 function endpointCandidates(code) {
   const c = encodeURIComponent(code);
-  // DevTools'ta çalışan istek sayfa path'ine göre relatif geliyor:
-  // /fonlar/detay/TLY/historical-distribution?fonKodu=TLY
-  // Önce bunu deniyoruz; diğerleri sadece emniyet yedeği.
+  // Çalışan Ekofin sayfasında görülen relative endpoint'in gerçek çözülmüş hali ilk sırada.
   return [
     `https://ekofin.net/fonlar/detay/${c}/historical-distribution?fonKodu=${c}`,
     `https://ekofin.net/fonlar/detay/${c}/fon-portfoy/historical-distribution?fonKodu=${c}`,
@@ -135,7 +133,7 @@ export default async function handler(req, res) {
   for (const url of endpointCandidates(code)) {
     try {
       const upstream = await httpsGet(url);
-      attempts.push({ url, status: upstream.status, contentType: upstream.headers['content-type'] || '', len: (upstream.body || '').length });
+      attempts.push({ url, status: upstream.status, contentType: upstream.headers['content-type'] || '', len: (upstream.body || '').length, sample: debug ? String(upstream.body || '').slice(0, 120) : undefined });
 
       if (upstream.status < 200 || upstream.status >= 300) continue;
 
@@ -177,6 +175,8 @@ export default async function handler(req, res) {
     ok: false,
     source: 'ekofin-historical-distribution',
     code,
+    count: 0,
+    holdings: [],
     error: 'Ekofin historical-distribution endpoint failed or returned empty data',
     attempts: debug ? attempts : undefined
   });
