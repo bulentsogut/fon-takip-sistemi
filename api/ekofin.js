@@ -110,7 +110,12 @@ function parseJsonBody(text) {
 
 function endpointCandidates(code) {
   const c = encodeURIComponent(code);
+  // DevTools'ta çalışan istek sayfa path'ine göre relatif geliyor:
+  // /fonlar/detay/TLY/historical-distribution?fonKodu=TLY
+  // Önce bunu deniyoruz; diğerleri sadece emniyet yedeği.
   return [
+    `https://ekofin.net/fonlar/detay/${c}/historical-distribution?fonKodu=${c}`,
+    `https://ekofin.net/fonlar/detay/${c}/fon-portfoy/historical-distribution?fonKodu=${c}`,
     `https://ekofin.net/api/historical-distribution?fonKodu=${c}`,
     `https://ekofin.net/historical-distribution?fonKodu=${c}`
   ];
