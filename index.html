@@ -6602,17 +6602,9 @@ async function loadEkofinPortfolio(fonKodu) {
   fonKodu = String(fonKodu || '').trim().toUpperCase();
   if (!fonKodu) return null;
 
-  var ekofinUrl = 'https://ekofin.net/fonlar/detay/' + encodeURIComponent(fonKodu) + '/fon-portfoy';
   var urls = [
-    // Vercel/GitHub tarafında ileride küçük bir proxy eklenirse ilk bunu kullanır.
-    '/api/ekofin?code=' + encodeURIComponent(fonKodu) + '&type=fon-portfoy',
-    '/api/ekofin?kod=' + encodeURIComponent(fonKodu) + '&type=fon-portfoy',
-    // Statik HTML/local kullanım için CORS proxy denemeleri.
-    'https://api.allorigins.win/raw?url=' + encodeURIComponent(ekofinUrl),
-    'https://corsproxy.io/?' + encodeURIComponent(ekofinUrl),
-    'https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(ekofinUrl),
-    // Tarayıcı izin verirse doğrudan son çare.
-    ekofinUrl
+    // Ana kaynak: Vercel Serverless API. Tarayıcı Ekofin'e doğrudan gitmez; CORS/proxy sorunlarını Vercel çözer.
+    '/api/ekofin?code=' + encodeURIComponent(fonKodu)
   ];
 
   function trNumber(v) {
