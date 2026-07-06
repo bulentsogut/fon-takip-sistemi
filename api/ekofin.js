@@ -1,6 +1,6 @@
 // Vercel Serverless Function: /api/ekofin?code=TLY
-// Ekofin fon-portföy sayfasını sunucu tarafında okur ve HTML'e temiz JSON döndürür.
-// Not: Node 16/18 uyumu için global fetch yerine https modülü kullanır.
+// Ekofin gerçek JSON kaynağı: historical-distribution?fonKodu=...
+// HTML/RSC parse YOK. Sadece Ekofin'in sayfanın kendisinin kullandığı JSON endpoint'i okunur.
 
 import https from 'node:https';
 
@@ -14,8 +14,9 @@ function cleanCode(code) {
   return String(code || '').toUpperCase().trim().replace(/[^A-Z0-9]/g, '');
 }
 
-function trNumber(value) {
+function toNumber(value) {
   if (value === null || value === undefined) return NaN;
+  if (typeof value === 'number') return value;
   let x = String(value)
     .replace(/&nbsp;/gi, ' ')
     .replace(/%/g, '')
@@ -28,42 +29,15 @@ function trNumber(value) {
   return Number.parseFloat(x);
 }
 
-function decodeHtml(s) {
-  return String(s || '')
-    .replace(/&nbsp;/gi, ' ')
-    .replace(/&amp;/gi, '&')
-    .replace(/&quot;/gi, '"')
-    .replace(/&#39;/gi, "'")
-    .replace(/&lt;/gi, '<')
-    .replace(/&gt;/gi, '>')
-    .replace(/\\u003c/gi, '<')
-    .replace(/\\u003e/gi, '>')
-    .replace(/\\u0026/gi, '&');
-}
-
-function htmlToText(html) {
-  return decodeHtml(String(html || ''))
-    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
-    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
-    .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<\/tr>/gi, '\n')
-    .replace(/<\/li>/gi, '\n')
-    .replace(/<\/div>/gi, '\n')
-    .replace(/<\/p>/gi, '\n')
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/[ \t]+/g, ' ')
-    .replace(/\n\s+/g, '\n')
-    .trim();
-}
-
 function httpsGet(url) {
   return new Promise((resolve, reject) => {
     const req = https.get(url, {
       timeout: 20000,
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept': 'application/json,text/plain,*/*',
         'Accept-Language': 'tr-TR,tr;q=0.9,en-US;q=0.7,en;q=0.6',
+        'Referer': 'https://ekofin.net/',
         'Cache-Control': 'no-cache'
       }
     }, (res) => {
@@ -77,133 +51,69 @@ function httpsGet(url) {
   });
 }
 
-function normalizeHolding(raw, fundCode, seen, holdings) {
-  const code = cleanCode(raw.code || raw.kod || raw.symbol || raw.sembol || raw.varlik || raw.hisseKodu || raw.assetCode || raw.name);
-  if (!code || code === fundCode || seen.has(code)) return;
-
-  let weight = raw.weight;
-  if (weight === undefined) weight = raw.agirlik;
-  if (weight === undefined) weight = raw.ağırlık;
-  if (weight === undefined) weight = raw.oran;
-  if (weight === undefined) weight = raw.percentage;
-  if (weight === undefined) weight = raw.agirlikYuzde;
-  if (weight === undefined) weight = raw.portfoyOrani;
-  if (weight === undefined) weight = raw.portföyOrani;
-
-  weight = trNumber(weight);
-  if (!Number.isFinite(weight) || Math.abs(weight) < 0.005 || Math.abs(weight) > 100) return;
-
-  seen.add(code);
-  holdings.push({
-    code,
-    symbol: code,
-    name: raw.name || raw.ad || raw.title || raw.varlikAdi || raw.varlıkAdi || code,
-    weight: Number(weight.toFixed(4)),
-    type: raw.type || raw.tip || 'bist'
-  });
+function dateKey(row) {
+  return String(row && (row.DONEM_TARIHI || row.donem_tarihi || row.donemTarihi || row.date || '') || '');
 }
 
-function walkJson(value, fundCode, seen, holdings, depth = 0) {
-  if (!value || depth > 12) return;
-  if (Array.isArray(value)) {
-    for (const item of value) {
-      if (item && typeof item === 'object') {
-        const hasCode = item.code || item.kod || item.symbol || item.sembol || item.varlik || item.hisseKodu || item.assetCode;
-        const hasWeight = item.weight !== undefined || item.agirlik !== undefined || item.ağırlık !== undefined || item.oran !== undefined || item.percentage !== undefined || item.agirlikYuzde !== undefined || item.portfoyOrani !== undefined;
-        if (hasCode && hasWeight) normalizeHolding(item, fundCode, seen, holdings);
-        walkJson(item, fundCode, seen, holdings, depth + 1);
-      }
-    }
-    return;
-  }
-  if (typeof value === 'object') {
-    for (const k of Object.keys(value)) walkJson(value[k], fundCode, seen, holdings, depth + 1);
-  }
-}
+function normalizeRows(rows, fundCode) {
+  if (!Array.isArray(rows)) return { latestDate: '', holdings: [], totalRows: 0 };
 
-function parseNextData(html, fundCode) {
-  const holdings = [];
+  const validRows = rows.filter(r => r && String(r.FON_KODU || r.fon_kodu || r.fonKodu || '').toUpperCase() === fundCode);
+  const sourceRows = validRows.length ? validRows : rows.filter(r => r && (r.HISSE_ADI || r.hisse_adi || r.hisseAdi || r.code || r.symbol));
+
+  const dates = sourceRows.map(dateKey).filter(Boolean).sort();
+  const latestDate = dates.length ? dates[dates.length - 1] : '';
+  const latestRows = latestDate ? sourceRows.filter(r => dateKey(r) === latestDate) : sourceRows;
+
   const seen = new Set();
-  const scripts = [];
-  const nextMatch = String(html || '').match(/<script[^>]+id=["']__NEXT_DATA__["'][^>]*>([\s\S]*?)<\/script>/i);
-  if (nextMatch) scripts.push(nextMatch[1]);
-
-  const jsonScriptRegex = /<script[^>]+type=["']application\/json["'][^>]*>([\s\S]*?)<\/script>/gi;
-  let m;
-  while ((m = jsonScriptRegex.exec(html)) !== null) scripts.push(m[1]);
-
-  for (const raw of scripts) {
-    try {
-      const data = JSON.parse(decodeHtml(raw));
-      walkJson(data, fundCode, seen, holdings);
-    } catch (_) {}
-  }
-  return holdings;
-}
-
-function parseTextRows(html, fundCode) {
-  const text = htmlToText(html);
   const holdings = [];
-  const seen = new Set();
 
-  let area = text;
-  const idx = area.search(/Güncel\s+Portföy|Portföy\s+Dağılımı|Fon\s+Portföy/i);
-  if (idx >= 0) area = area.slice(idx);
-  area = area.split(/Artırılan Pozisyonlar|Azaltılan Pozisyonlar|Sıkça Sorulan Sorular|Fonun Diğer Bilgileri|Yorumlar/i)[0] || area;
-
-  // Ekofin satırları çoğunlukla: KOD fiyat günlük% ağırlık%
-  // Tek satıra yığılmış HTML için her KOD + sayı başlangıcına satır kırıyoruz.
-  const chunks = area
-    .replace(/([A-Z0-9]{2,12})\s+(?=\d+[\.,]?\d*)/g, '\n$1 ')
-    .split(/\n|\r/)
-    .map(s => s.trim())
-    .filter(Boolean);
-
-  for (const line of chunks) {
-    const codeMatch = line.match(/^([A-Z0-9]{2,12})\b/);
-    if (!codeMatch) continue;
-    const code = cleanCode(codeMatch[1]);
+  for (const r of latestRows) {
+    const code = cleanCode(r.HISSE_ADI || r.hisse_adi || r.hisseAdi || r.KOD || r.kod || r.code || r.symbol);
     if (!code || code === fundCode || seen.has(code)) continue;
 
-    const pcts = [];
-    line.replace(/(-?\d+(?:[\.,]\d+)?)\s*%/g, (_, n) => { pcts.push(n); return _; });
-    if (!pcts.length) continue;
-
-    const weight = trNumber(pcts[pcts.length - 1]);
+    const weight = toNumber(r.PORTFOY_ORAN ?? r.portfoy_oran ?? r.portfoyOran ?? r.weight ?? r.agirlik ?? r.oran);
     if (!Number.isFinite(weight) || Math.abs(weight) < 0.005 || Math.abs(weight) > 100) continue;
 
+    const rawType = String(r.TYPE || r.type || '').toUpperCase();
+    let type = 'bist';
+    if (rawType === 'FUND') type = 'fund';
+    else if (rawType === 'CASH' || rawType === 'MONEY') type = 'cash';
+    else if (rawType === 'STOCK' || rawType === 'EQUITY') type = 'bist';
+
     seen.add(code);
-    holdings.push({ code, symbol: code, name: code, weight: Number(weight.toFixed(4)), type: 'bist' });
+    holdings.push({
+      code,
+      symbol: code,
+      name: code,
+      weight: Number(weight.toFixed(4)),
+      type,
+      tip: type,
+      nominal: toNumber(r.NOMINAL_DEGER ?? r.nominal_deger ?? r.nominalDeger),
+      value: toNumber(r.TOPLAM_DEGER ?? r.toplam_deger ?? r.toplamDeger)
+    });
   }
 
-  return holdings;
+  holdings.sort((a, b) => b.weight - a.weight);
+  return { latestDate, holdings, totalRows: rows.length };
 }
 
-function parseEkofin(html, fundCode) {
-  // Ekofin sayfasında gerçek portföy tablosu düz HTML/text içinde görünüyor.
-  // __NEXT_DATA__ içinde benzer alan adları geçtiğinde yanlış/eksik eşleşme verebiliyor.
-  // Bu yüzden ana kaynak olarak sayfadaki "Güncel Portföy" text bölümünü kullanıyoruz.
-  // JSON sadece text parser anlamlı veri çıkaramazsa yedek.
-  const textHoldings = parseTextRows(html, fundCode);
-  const jsonHoldings = parseNextData(html, fundCode);
+function parseJsonBody(text) {
+  const data = JSON.parse(text);
+  if (Array.isArray(data)) return data;
+  if (data && Array.isArray(data.data)) return data.data;
+  if (data && Array.isArray(data.result)) return data.result;
+  if (data && Array.isArray(data.items)) return data.items;
+  if (data && data.data && Array.isArray(data.data.items)) return data.data.items;
+  return [];
+}
 
-  let holdings = textHoldings.length >= 3 ? textHoldings : jsonHoldings;
-
-  // Güvenlik: 1-2 hisse çıkması çoğu fon için şüpheli. Text parser 1-2, JSON daha doluysa JSON'a dön.
-  if (holdings.length < 3 && jsonHoldings.length > holdings.length) holdings = jsonHoldings;
-
-  const dateText = htmlToText(html);
-  const dateMatch = dateText.match(/veriler\s+([^\.\n]+? tarihinde)\s+yay/i) || dateText.match(/(\d{1,2}[\.\/]\d{1,2}[\.\/]\d{4})/);
-
-  holdings.sort((a, b) => b.weight - a.weight);
-  return {
-    ok: holdings.length > 0,
-    source: 'ekofin',
-    code: fundCode,
-    count: holdings.length,
-    aciklamaTarihi: dateMatch ? String(dateMatch[1]).trim() : '',
-    holdings
-  };
+function endpointCandidates(code) {
+  const c = encodeURIComponent(code);
+  return [
+    `https://ekofin.net/api/historical-distribution?fonKodu=${c}`,
+    `https://ekofin.net/historical-distribution?fonKodu=${c}`
+  ];
 }
 
 export default async function handler(req, res) {
@@ -211,56 +121,58 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(204).end();
   if (req.method !== 'GET') return res.status(405).json({ ok: false, error: 'Only GET is supported' });
 
-  const code = cleanCode((req.query && (req.query.code || req.query.kod || req.query.fon)) || '');
+  const code = cleanCode((req.query && (req.query.code || req.query.kod || req.query.fon || req.query.fonKodu)) || '');
+  const debug = String((req.query && req.query.debug) || '') === '1';
   if (!code) return res.status(400).json({ ok: false, error: 'Missing code parameter' });
 
-  const debug = String((req.query && req.query.debug) || '') === '1';
-  const url = `https://ekofin.net/fonlar/detay/${encodeURIComponent(code)}/fon-portfoy`;
+  const attempts = [];
 
-  try {
-    const upstream = await httpsGet(url);
-    const html = upstream.body || '';
+  for (const url of endpointCandidates(code)) {
+    try {
+      const upstream = await httpsGet(url);
+      attempts.push({ url, status: upstream.status, contentType: upstream.headers['content-type'] || '', len: (upstream.body || '').length });
 
-    if (upstream.status < 200 || upstream.status >= 300) {
-      return res.status(200).json({
-        ok: false,
-        source: 'ekofin',
+      if (upstream.status < 200 || upstream.status >= 300) continue;
+
+      let rows;
+      try { rows = parseJsonBody(upstream.body || '[]'); }
+      catch (e) {
+        attempts[attempts.length - 1].jsonError = e.message;
+        continue;
+      }
+
+      const normalized = normalizeRows(rows, code);
+      const payload = {
+        ok: normalized.holdings.length > 0,
+        source: 'ekofin-historical-distribution',
         code,
-        status: upstream.status,
-        error: 'Ekofin HTTP error',
-        url,
-        sample: debug ? htmlToText(html).slice(0, 1000) : undefined
-      });
-    }
-
-    const parsed = parseEkofin(html, code);
-    if (debug) {
-      parsed.debug = {
-        textCount: parseTextRows(html, code).length,
-        jsonCount: parseNextData(html, code).length,
-        textSample: htmlToText(html).slice(0, 1200)
+        count: normalized.holdings.length,
+        latestDate: normalized.latestDate,
+        aciklamaTarihi: normalized.latestDate ? normalized.latestDate.slice(0, 10) : '',
+        holdings: normalized.holdings
       };
-    }
-    res.setHeader('Cache-Control', 's-maxage=1800, stale-while-revalidate=3600');
 
-    if (!parsed.ok) {
-      return res.status(200).json({
-        ...parsed,
-        error: 'Ekofin portfolio not parsed',
-        url,
-        sample: htmlToText(html).slice(0, debug ? 1500 : 500)
-      });
-    }
+      if (debug) {
+        payload.debug = {
+          endpoint: url,
+          totalRows: normalized.totalRows,
+          attempts,
+          firstRows: Array.isArray(rows) ? rows.slice(0, 3) : []
+        };
+      }
 
-    return res.status(200).json(parsed);
-  } catch (err) {
-    // Önemli: Burada 500 dönmüyoruz. HTML tarafı gerçek hata mesajını okuyabilsin diye 200 + ok:false dönüyoruz.
-    return res.status(200).json({
-      ok: false,
-      source: 'ekofin',
-      code,
-      error: err && err.message ? err.message : String(err),
-      url
-    });
+      res.setHeader('Cache-Control', 's-maxage=1800, stale-while-revalidate=3600');
+      return res.status(200).json(payload);
+    } catch (err) {
+      attempts.push({ url, error: err && err.message ? err.message : String(err) });
+    }
   }
+
+  return res.status(200).json({
+    ok: false,
+    source: 'ekofin-historical-distribution',
+    code,
+    error: 'Ekofin historical-distribution endpoint failed or returned empty data',
+    attempts: debug ? attempts : undefined
+  });
 }
