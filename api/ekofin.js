@@ -1,10 +1,17 @@
 // Vercel Serverless Function: /api/ekofin?code=TLY
 // Ekofin fon-portföy sayfasını sunucu tarafında okur ve HTML'e temiz JSON döndürür.
+// Not: Node 16/18 uyumu için global fetch yerine https modülü kullanır.
+
+const https = require('https');
 
 function setCors(res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Accept');
+}
+
+function cleanCode(code) {
+  return String(code || '').toUpperCase().trim().replace(/[^A-Z0-9]/g, '');
 }
 
 function trNumber(value) {
@@ -21,10 +28,6 @@ function trNumber(value) {
   return Number.parseFloat(x);
 }
 
-function cleanCode(code) {
-  return String(code || '').toUpperCase().trim().replace(/[^A-Z0-9]/g, '');
-}
-
 function decodeHtml(s) {
   return String(s || '')
     .replace(/&nbsp;/gi, ' ')
@@ -32,7 +35,10 @@ function decodeHtml(s) {
     .replace(/&quot;/gi, '"')
     .replace(/&#39;/gi, "'")
     .replace(/&lt;/gi, '<')
-    .replace(/&gt;/gi, '>');
+    .replace(/&gt;/gi, '>')
+    .replace(/\\u003c/gi, '<')
+    .replace(/\\u003e/gi, '>')
+    .replace(/\\u0026/gi, '&');
 }
 
 function htmlToText(html) {
@@ -50,15 +56,39 @@ function htmlToText(html) {
     .trim();
 }
 
+function httpsGet(url) {
+  return new Promise((resolve, reject) => {
+    const req = https.get(url, {
+      timeout: 20000,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'tr-TR,tr;q=0.9,en-US;q=0.7,en;q=0.6',
+        'Cache-Control': 'no-cache'
+      }
+    }, (res) => {
+      let body = '';
+      res.setEncoding('utf8');
+      res.on('data', chunk => { body += chunk; });
+      res.on('end', () => resolve({ status: res.statusCode || 0, headers: res.headers || {}, body }));
+    });
+    req.on('timeout', () => req.destroy(new Error('Ekofin request timeout')));
+    req.on('error', reject);
+  });
+}
+
 function normalizeHolding(raw, fundCode, seen, holdings) {
-  const code = cleanCode(raw.code || raw.kod || raw.symbol || raw.varlik || raw.hisseKodu || raw.assetCode || raw.name);
+  const code = cleanCode(raw.code || raw.kod || raw.symbol || raw.sembol || raw.varlik || raw.hisseKodu || raw.assetCode || raw.name);
   if (!code || code === fundCode || seen.has(code)) return;
 
   let weight = raw.weight;
   if (weight === undefined) weight = raw.agirlik;
+  if (weight === undefined) weight = raw.ağırlık;
   if (weight === undefined) weight = raw.oran;
   if (weight === undefined) weight = raw.percentage;
   if (weight === undefined) weight = raw.agirlikYuzde;
+  if (weight === undefined) weight = raw.portfoyOrani;
+  if (weight === undefined) weight = raw.portföyOrani;
 
   weight = trNumber(weight);
   if (!Number.isFinite(weight) || Math.abs(weight) < 0.005 || Math.abs(weight) > 100) return;
@@ -67,19 +97,19 @@ function normalizeHolding(raw, fundCode, seen, holdings) {
   holdings.push({
     code,
     symbol: code,
-    name: raw.name || raw.ad || raw.title || raw.varlikAdi || code,
+    name: raw.name || raw.ad || raw.title || raw.varlikAdi || raw.varlıkAdi || code,
     weight: Number(weight.toFixed(4)),
     type: raw.type || raw.tip || 'bist'
   });
 }
 
 function walkJson(value, fundCode, seen, holdings, depth = 0) {
-  if (!value || depth > 8) return;
+  if (!value || depth > 12) return;
   if (Array.isArray(value)) {
     for (const item of value) {
       if (item && typeof item === 'object') {
-        const hasCode = item.code || item.kod || item.symbol || item.varlik || item.hisseKodu || item.assetCode;
-        const hasWeight = item.weight !== undefined || item.agirlik !== undefined || item.oran !== undefined || item.percentage !== undefined || item.agirlikYuzde !== undefined;
+        const hasCode = item.code || item.kod || item.symbol || item.sembol || item.varlik || item.hisseKodu || item.assetCode;
+        const hasWeight = item.weight !== undefined || item.agirlik !== undefined || item.ağırlık !== undefined || item.oran !== undefined || item.percentage !== undefined || item.agirlikYuzde !== undefined || item.portfoyOrani !== undefined;
         if (hasCode && hasWeight) normalizeHolding(item, fundCode, seen, holdings);
         walkJson(item, fundCode, seen, holdings, depth + 1);
       }
@@ -97,6 +127,7 @@ function parseNextData(html, fundCode) {
   const scripts = [];
   const nextMatch = String(html || '').match(/<script[^>]+id=["']__NEXT_DATA__["'][^>]*>([\s\S]*?)<\/script>/i);
   if (nextMatch) scripts.push(nextMatch[1]);
+
   const jsonScriptRegex = /<script[^>]+type=["']application\/json["'][^>]*>([\s\S]*?)<\/script>/gi;
   let m;
   while ((m = jsonScriptRegex.exec(html)) !== null) scripts.push(m[1]);
@@ -116,20 +147,20 @@ function parseTextRows(html, fundCode) {
   const seen = new Set();
 
   let area = text;
-  const idx = area.search(/Güncel\s+Portföy/i);
+  const idx = area.search(/Güncel\s+Portföy|Portföy\s+Dağılımı|Fon\s+Portföy/i);
   if (idx >= 0) area = area.slice(idx);
-  area = area.split(/Artırılan Pozisyonlar|Azaltılan Pozisyonlar|Sıkça Sorulan Sorular|Fonun Diğer Bilgileri/i)[0] || area;
+  area = area.split(/Artırılan Pozisyonlar|Azaltılan Pozisyonlar|Sıkça Sorulan Sorular|Fonun Diğer Bilgileri|Yorumlar/i)[0] || area;
 
-  // Ekofin genelde şu akışta metin üretir: KOD fiyat günlük% ağırlık%
-  // Satır bölünmediğinde de yeni KOD + sayı başlangıcından parçalar.
+  // Ekofin satırları çoğunlukla: KOD fiyat günlük% ağırlık%
+  // Tek satıra yığılmış HTML için her KOD + sayı başlangıcına satır kırıyoruz.
   const chunks = area
-    .replace(/([A-ZÇĞİÖŞÜ0-9]{2,12})\s+(?=\d+[\.,]?\d*)/g, '\n$1 ')
+    .replace(/([A-Z0-9]{2,12})\s+(?=\d+[\.,]?\d*)/g, '\n$1 ')
     .split(/\n|\r/)
     .map(s => s.trim())
     .filter(Boolean);
 
   for (const line of chunks) {
-    const codeMatch = line.match(/^([A-ZÇĞİÖŞÜ0-9]{2,12})\b/);
+    const codeMatch = line.match(/^([A-Z0-9]{2,12})\b/);
     if (!codeMatch) continue;
     const code = cleanCode(codeMatch[1]);
     if (!code || code === fundCode || seen.has(code)) continue;
@@ -138,7 +169,6 @@ function parseTextRows(html, fundCode) {
     line.replace(/(-?\d+(?:[\.,]\d+)?)\s*%/g, (_, n) => { pcts.push(n); return _; });
     if (!pcts.length) continue;
 
-    // Son yüzde portföy ağırlığı; önceki yüzde günlük değişim olabilir.
     const weight = trNumber(pcts[pcts.length - 1]);
     if (!Number.isFinite(weight) || Math.abs(weight) < 0.005 || Math.abs(weight) > 100) continue;
 
@@ -154,7 +184,7 @@ function parseEkofin(html, fundCode) {
   if (!holdings.length) holdings = parseTextRows(html, fundCode);
 
   const dateText = htmlToText(html);
-  const dateMatch = dateText.match(/veriler\s+([^\.\n]+? tarihinde)\s+yay/i);
+  const dateMatch = dateText.match(/veriler\s+([^\.\n]+? tarihinde)\s+yay/i) || dateText.match(/(\d{1,2}[\.\/]\d{1,2}[\.\/]\d{4})/);
 
   holdings.sort((a, b) => b.weight - a.weight);
   return {
@@ -162,7 +192,7 @@ function parseEkofin(html, fundCode) {
     source: 'ekofin',
     code: fundCode,
     count: holdings.length,
-    aciklamaTarihi: dateMatch ? dateMatch[1].trim() : '',
+    aciklamaTarihi: dateMatch ? String(dateMatch[1]).trim() : '',
     holdings
   };
 }
@@ -172,33 +202,49 @@ module.exports = async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(204).end();
   if (req.method !== 'GET') return res.status(405).json({ ok: false, error: 'Only GET is supported' });
 
-  const code = cleanCode(req.query.code || req.query.kod || req.query.fon || '');
+  const code = cleanCode((req.query && (req.query.code || req.query.kod || req.query.fon)) || '');
   if (!code) return res.status(400).json({ ok: false, error: 'Missing code parameter' });
 
+  const debug = String((req.query && req.query.debug) || '') === '1';
   const url = `https://ekofin.net/fonlar/detay/${encodeURIComponent(code)}/fon-portfoy`;
-  try {
-    const upstream = await fetch(url, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (compatible; ORKA-Engine/1.0; +https://vercel.com)',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        'Accept-Language': 'tr-TR,tr;q=0.9,en-US;q=0.7,en;q=0.6',
-        'Cache-Control': 'no-cache'
-      }
-    });
 
-    const html = await upstream.text();
-    if (!upstream.ok) {
-      return res.status(upstream.status).json({ ok: false, source: 'ekofin', code, status: upstream.status, error: 'Ekofin HTTP error' });
+  try {
+    const upstream = await httpsGet(url);
+    const html = upstream.body || '';
+
+    if (upstream.status < 200 || upstream.status >= 300) {
+      return res.status(200).json({
+        ok: false,
+        source: 'ekofin',
+        code,
+        status: upstream.status,
+        error: 'Ekofin HTTP error',
+        url,
+        sample: debug ? htmlToText(html).slice(0, 1000) : undefined
+      });
     }
 
     const parsed = parseEkofin(html, code);
+    res.setHeader('Cache-Control', 's-maxage=1800, stale-while-revalidate=3600');
+
     if (!parsed.ok) {
-      return res.status(200).json({ ...parsed, error: 'Ekofin portfolio not parsed', sample: htmlToText(html).slice(0, 500) });
+      return res.status(200).json({
+        ...parsed,
+        error: 'Ekofin portfolio not parsed',
+        url,
+        sample: htmlToText(html).slice(0, debug ? 1500 : 500)
+      });
     }
 
-    res.setHeader('Cache-Control', 's-maxage=1800, stale-while-revalidate=3600');
     return res.status(200).json(parsed);
   } catch (err) {
-    return res.status(500).json({ ok: false, source: 'ekofin', code, error: err && err.message ? err.message : String(err) });
+    // Önemli: Burada 500 dönmüyoruz. HTML tarafı gerçek hata mesajını okuyabilsin diye 200 + ok:false dönüyoruz.
+    return res.status(200).json({
+      ok: false,
+      source: 'ekofin',
+      code,
+      error: err && err.message ? err.message : String(err),
+      url
+    });
   }
 };
