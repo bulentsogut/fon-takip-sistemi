@@ -1,13 +1,6 @@
 {
-  "name": "orka-engine-recovery",
-  "version": "3.0.1-recovery",
-  "private": true,
   "type": "module",
-  "scripts": {
-    "start": "vercel dev",
-    "check": "node --check api/fvt.js && node --check api/yahoo.js"
-  },
-  "engines": {
-    "node": ">=18"
+  "dependencies": {
+    "pdf-parse": "^1.1.1"
   }
 }
