@@ -247,6 +247,51 @@ const STATIC_PDF_SOURCES = {
   ]
 };
 
+const TR_MONTHS_NUM = {
+  'ocak': 1, 'şubat': 2, 'subat': 2, 'mart': 3, 'nisan': 4,
+  'mayıs': 5, 'mayis': 5, 'haziran': 6, 'temmuz': 7, 'ağustos': 8,
+  'agustos': 8, 'eylül': 9, 'eylul': 9, 'ekim': 10, 'kasım': 11,
+  'kasim': 11, 'aralık': 12, 'aralik': 12
+};
+
+function extractEkofinPublishPeriod(html, code) {
+  const text = stripTags(html || '');
+  const re = new RegExp(String(code).replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + "[^.]{0,220}?(\\d{1,2})\\s+([A-Za-zÇĞİÖŞÜçğıöşü]+)\\s+(20\\d{2})\\s+tarihinde", 'i');
+  let m = text.match(re) || text.match(/(\d{1,2})\s+([A-Za-zÇĞİÖŞÜçğıöşü]+)\s+(20\d{2})\s+tarihinde/i);
+  if (!m) return null;
+  let month = TR_MONTHS_NUM[String(m[2] || '').toLowerCase()];
+  let year = Number(m[3]);
+  if (!month || !year) return null;
+  // KAP "3 Temmuz 2026" bildirimi genellikle önceki ayın raporu: 2026.06
+  month -= 1;
+  if (month <= 0) { month = 12; year -= 1; }
+  return `${year}.${String(month).padStart(2, '0')}`;
+}
+
+async function discoverFintablesPdfUrls(code, attempts) {
+  const c = encodeURIComponent(code);
+  const pages = [
+    `https://ekofin.net/fonlar/detay/${c}/fon-portfoy`,
+    `https://ekofin.net/fonlar/detay/${c}`
+  ];
+  const out = [];
+  for (const page of pages) {
+    try {
+      const up = await fetchText(page);
+      attempts.push({ step: 'ekofin-period-page', url: page, status: up.status, len: up.len });
+      if (up.status < 200 || up.status >= 300) continue;
+      const period = extractEkofinPublishPeriod(up.text || '', code);
+      if (period) {
+        out.push(`https://storage.fintables.com/media/uploads/kap-attachments/${code}_${period}.pdf`);
+      }
+    } catch (e) {
+      attempts.push({ step: 'ekofin-period-page', url: page, error: e.message || String(e) });
+    }
+  }
+  return unique(out);
+}
+
+
 async function discoverLegacyKapPdfUrls(code, attempts) {
   const slug = FUND_SLUGS[code];
   if (!slug) return [];
@@ -313,10 +358,36 @@ function symbolFromLine(first, line) {
   return first;
 }
 
+function getLineWeight(line) {
+  const pctMatches = [...line.matchAll(/(-?\d+(?:[.,]\d+)?)\s*%/g)].map(x => x[1]);
+  if (pctMatches.length) return toNumber(pctMatches[pctMatches.length - 1]);
+
+  // İş Portföy/IJC PDF'lerinde oran kolonları çoğu zaman % işaretsiz gelir:
+  // ... TOPLAM DEĞER  GRUP (%)  TOPLAM(FPD)  TOPLAM(FTD)
+  // Bu durumda satırın sonundaki 0-100 arası son ondalıklı değeri ağırlık kabul ediyoruz.
+  const nums = [...String(line || '').matchAll(/(?<![A-Z0-9])(-?\d{1,3}(?:[.,]\d{1,6})|\d{1,3})(?![A-Z0-9])/g)]
+    .map(x => toNumber(x[1]))
+    .filter(n => Number.isFinite(n));
+  const plausible = nums.filter(n => Math.abs(n) >= 0.005 && Math.abs(n) <= 100);
+  if (!plausible.length) return NaN;
+  return plausible[plausible.length - 1];
+}
+
+function lineLooksLikePortfolioHolding(line) {
+  const upper = String(line || '').toUpperCase();
+  if (/TOPLAM|PORTFÖYE ALIŞLAR|PORTFÖYDEN SATIŞLAR|GİDERLER|İTFALAR/.test(upper)) return false;
+  if (/\b[A-Z]{1,5}\s+US\s+EQUITY\b/.test(upper)) return true;
+  if (/\b(?:US|NL|XS|KY|IE|LU)[A-Z0-9]{8,}\b/.test(upper)) return true;
+  if (/^[A-Z0-9]{2,8}\s+/.test(upper) && /\b(TL|USD|EUR)\b/.test(upper)) return true;
+  if (/^[A-Z0-9]{2,8}\s+/.test(upper) && /\d+[.,]\d+/.test(upper)) return true;
+  return false;
+}
+
 function parseHoldingsFromText(text, fundCode) {
   const normalized = String(text || '')
     .replace(/\u00a0/g, ' ')
     .replace(/([A-Z0-9]{2,14}\s+[A-Z0-9]{1,8}\s+US\s+EQUITY)/g, '\n$1')
+    .replace(/\b(Hisse\s+Türk|Hisse\s+Yabancı|HİSSE SENETLERİ|A\)\s*HİSSE SENETLERİ)\b/gi, '\n$1\n')
     .replace(/([A-ZÇĞİÖŞÜ0-9]{2,14}\s+[A-ZÇĞİÖŞÜ0-9 .,&-]{2,80}\s+\d)/g, '\n$1');
   const lines = normalized.split(/\r?\n/).map(x => x.trim()).filter(Boolean);
   const holdings = [];
@@ -326,19 +397,21 @@ function parseHoldingsFromText(text, fundCode) {
 
   for (const line of lines) {
     const upper = line.toUpperCase();
-    if (/FON PORTF[ÖO]Y DE[ĞG]ER[Iİ] TABLOSU|PORTF[ÖO]Y DA[ĞG][Iİ]L[Iİ]M|MENKUL KIYMETLER|H[İI]SSE SENETLER[İI]/.test(upper)) inPortfolio = true;
+    if (/FON PORTF[ÖO]Y DE[ĞG]ER[Iİ] TABLOSU|PORTF[ÖO]Y DA[ĞG][Iİ]L[Iİ]M|MENKUL KIYMETLER|H[İI]SSE SENETLER[İI]|HISSE T[ÜU]RK|HISSE YABANCI/.test(upper)) inPortfolio = true;
     if (!inPortfolio && !/\b(US|NASDAQ|NYSE|EQUITY)\b/.test(upper)) continue;
-    if (/FON TOPLAM DE[ĞG]ER[Iİ] TABLOSU|AY [İI]Ç[İI]NDE YAPILAN G[İI]DERLER|TOPLAM G[İI]DER/.test(upper)) break;
-    if (/^[A-ZÇĞİÖŞÜ]\)/.test(upper)) section = upper;
+    if (/FON TOPLAM DE[ĞG]ER[Iİ] TABLOSU|AY [İI]Ç[İI]NDE YAPILAN G[İI]DERLER|TOPLAM G[İI]DER|PORTF[ÖO]YE AL[Iİ][ŞS]LAR|PORTF[ÖO]YDEN SAT[Iİ][ŞS]LAR/.test(upper)) {
+      if (/PORTF[ÖO]YE AL[Iİ][ŞS]LAR|PORTF[ÖO]YDEN SAT[Iİ][ŞS]LAR/.test(upper)) break;
+      if (/FON TOPLAM/.test(upper)) break;
+    }
+    if (/^[A-ZÇĞİÖŞÜ]\)/.test(upper) || /HISSE T[ÜU]RK|HISSE YABANCI|H[İI]SSE SENETLER[İI]/.test(upper)) section = upper;
 
-    const pctMatches = [...line.matchAll(/(-?\d+(?:[.,]\d+)?)\s*%/g)].map(x => x[1]);
-    if (!pctMatches.length) continue;
-    const weight = toNumber(pctMatches[pctMatches.length - 1]);
+    if (!lineLooksLikePortfolioHolding(line)) continue;
+
+    const weight = getLineWeight(line);
     if (!Number.isFinite(weight) || Math.abs(weight) < 0.005 || Math.abs(weight) > 100) continue;
 
     const first = cleanCode((line.match(/^([A-Z0-9]{2,14})\b/) || [])[1] || '');
     if (!first || first === fundCode || HEADER_WORDS.has(first)) continue;
-    if (/^TOPLAM/.test(upper)) continue;
 
     const symbol = cleanCode(symbolFromLine(first, line));
     const type = inferType(symbol || first, line + ' ' + section);
@@ -369,6 +442,10 @@ async function buildPdfSources(code, attempts, manualPdf) {
   for (const kapUrl of kapNotifications) {
     const attachments = await discoverPdfAttachmentsFromKapNotification(kapUrl, attempts);
     for (const pdfUrl of attachments) pdfSources.push({ url: pdfUrl, via: 'ekofin-kaynak-kap-attachment', notificationUrl: kapUrl });
+  }
+
+  for (const pdfUrl of await discoverFintablesPdfUrls(code, attempts)) {
+    pdfSources.push({ url: pdfUrl, via: 'ekofin-date-fintables-kap-attachment', notificationUrl: '' });
   }
 
   for (const pdfUrl of await discoverLegacyKapPdfUrls(code, attempts)) {
@@ -419,7 +496,7 @@ export default async function handler(req, res) {
       if (!holdings.length) continue;
 
       const pdfFile = fileNameFromUrl(url);
-      const sourceLabel = source.via === 'ekofin-kaynak-kap-attachment'
+      const sourceLabel = (source.via === 'ekofin-kaynak-kap-attachment' || source.via === 'ekofin-date-fintables-kap-attachment')
         ? `KAP PDF (Ekofin Kaynak → ${pdfFile || 'Notification Attachment'})`
         : (source.via === 'manual' ? `KAP PDF (${pdfFile || 'manuel PDF'})` : `KAP PDF (${pdfFile || source.via})`);
 
