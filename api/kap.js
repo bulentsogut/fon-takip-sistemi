@@ -394,6 +394,8 @@ function parseHoldingsFromText(text, fundCode) {
   const seen = new Set();
   let inEquitySection = false;
   let sectionStarted = false;
+  let equitySectionClosed = false;
+  let hardStopReached = false;
   let section = '';
 
   const blocked = new Set([
@@ -406,19 +408,36 @@ function parseHoldingsFromText(text, fundCode) {
     const line = rawLine.replace(/\s+/g, ' ').trim();
     const upper = line.toUpperCase();
 
-    // En kritik koruma: sadece portföy değer tablosundaki A) Hisse Senetleri bölümünü oku.
-    // PDF'in sonraki sayfalarında "Portföye Alışlar/Satışlar" içinde de hisse kodları geçiyor;
-    // bunlar mevcut portföy ağırlığı değildir ve kesinlikle parse edilmemelidir.
-    if (/\bA\)?\s*H[İI]SSE SENETLER[İI]\b|\bA\)?\s*HISSE SENETLERI\b|\bHISSE\s+T[ÜU]RK\b|\bHISSE\s+YABANCI\b/.test(upper)) {
+    // En kritik koruma: sadece 3- FON PORTFÖY DEĞERİ TABLOSU içindeki
+    // hisse senetleri bloğunu oku. Hisse bölümünden çıkıldıktan sonra aynı PDF'in
+    // ilerleyen sayfalarında gelen "Portföye Alışlar/Satışlar" tablosu tekrar
+    // parse edilmemelidir. Bu yüzden equitySectionClosed=true olduktan sonra
+    // Hisse Türk/Yabancı başlıkları dahil hiçbir şey yeniden başlatılmaz.
+    const isEquityStart = /\bA\)?\s*H[İI]SSE SENETLER[İI]\b|\bA\)?\s*HISSE SENETLERI\b|^H[İI]SSE\s+T[ÜU]RK\b|^HISSE\s+T[UÜ]RK\b|^H[İI]SSE\s+YABANCI\b|^HISSE\s+YABANCI\b/.test(upper);
+
+    const isHardStop = /\b4\s*-\s*FON TOPLAM DE[ĞG]ER[Iİ]\b|\b5\s*-\s*AY [İI]Ç[İI]NDE YAPILAN G[İI]DERLER\b|\b7\s*-\s*[İI]TFALAR\b|\b8\s*-?\s*PORTF[ÖO]YDEN SAT[Iİ][ŞS]LAR\b|\b9\s*-?\s*PORTF[ÖO]YE AL[Iİ][ŞS]LAR\b/.test(upper);
+
+    const isNextAssetSection = (
+      /^[B-Z]\)\s+/.test(upper) ||
+      /\bB\)?\s*VARANTLAR\b|\bC\)?\s*DEVLET TAHV[İI]L[İI]\b|\bD\)?\s*BANKA BONOLAR[İI]\b|\bE\)?\s*F[İI]NANSMAN BONOLAR[İI]\b|\bF\)?\s*[ÖO]ZEL SEKT[ÖO]R TAHV[İI]LLER[İI]\b|\bG\)?\s*GEL[İI]R ORTAKLI[ĞG]I\b|\bH\)?\s*GEL[İI]RE ENDEKSL[İI]\b|\bI\)?\s*K[İI]RA SERT[İI]F[İI]KALAR[İI]\b|\bJ\)?\s*VARLI[ĞG]A DAYALI\b|\bK\)?\s*YABANCI SAB[İI]T GET[İI]R[İI]L[İI]\b|\bL\)?\s*ALTIN\b|\bM\)?\s*KATILMA HESAPLAR[İI]\b|\bN\)?\s*KATILMA BELGELER[İI]\b|\bO\)?\s*V[İI]OP\b|\bP\)?\s*OPS[İI]YON\b|\bR\)?\s*V[İI]OP NAK[İI]T\b|\bS\)?\s*D[ÖO]V[İI]ZE ENDEKSL[İI]\b|\bT\)?\s*REPO\b|\bU\)?\s*PARA P[İI]YASAS[İI]\b|\bV\)?\s*MEVDUAT\b|\bY\)?\s*D[İI][ĞG]ER\b/.test(upper)
+    );
+
+    if (isHardStop) {
+      hardStopReached = true;
+      break;
+    }
+
+    if (inEquitySection && isNextAssetSection) {
+      inEquitySection = false;
+      equitySectionClosed = true;
+      continue;
+    }
+
+    if (!equitySectionClosed && !hardStopReached && isEquityStart) {
       inEquitySection = true;
       sectionStarted = true;
       section = upper;
       continue;
-    }
-
-    if (sectionStarted && (/^[B-Z]\)\s+/.test(upper) || /\bB\)?\s*VARANTLAR\b|\bC\)?\s*DEVLET\b|\bFON TOPLAM DE[ĞG]ER[Iİ]\b|\bPORTF[ÖO]YE AL[Iİ][ŞS]LAR\b|\bPORTF[ÖO]YDEN SAT[Iİ][ŞS]LAR\b|\bAY [İI]Ç[İI]NDE YAPILAN G[İI]DERLER\b/.test(upper))) {
-      inEquitySection = false;
-      if (/\bPORTF[ÖO]YE AL[Iİ][ŞS]LAR\b|\bPORTF[ÖO]YDEN SAT[Iİ][ŞS]LAR\b|\bFON TOPLAM\b/.test(upper)) break;
     }
 
     if (!inEquitySection) continue;
