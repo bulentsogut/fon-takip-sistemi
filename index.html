@@ -6596,6 +6596,51 @@ async function fetchTefasFon(fonKodu) {
 }
 
 
+
+// KAP PDF portföy dağılımı ana kaynağı
+// Özellikle IJC/CPT gibi yabancı hisse içeren fonlarda Ekofin eksik kaldığı için önce KAP denenir.
+async function loadKAPPortfolio(fonKodu) {
+  fonKodu = String(fonKodu || '').trim().toUpperCase();
+  if (!fonKodu) return null;
+
+  var urls = [
+    '/api/kap?code=' + encodeURIComponent(fonKodu)
+  ];
+
+  for (var i = 0; i < urls.length; i++) {
+    try {
+      var resp = await fetchWithTimeout(urls[i], { headers: { 'Accept': 'application/json,text/plain,*/*' } }, 30000);
+      if (!resp.ok) {
+        console.warn('KAP PDF HTTP', fonKodu, resp.status, urls[i]);
+        continue;
+      }
+      var data = await resp.json();
+      var items = (data && Array.isArray(data.holdings) && data.holdings) || [];
+      if (!items.length) {
+        console.warn('KAP PDF boş portföy', fonKodu, data);
+        continue;
+      }
+      var holdings = items.map(function(it){
+        var kod = String(it.code || it.symbol || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+        var agirlik = parseFloat(String(it.weight).replace(',', '.'));
+        if (!kod || isNaN(agirlik) || Math.abs(agirlik) <= 0.005 || Math.abs(agirlik) > 100) return null;
+        var obj = { code: kod, symbol: kod, name: it.name || kod, weight: agirlik, type: it.type || it.tip || 'bist' };
+        obj.type = normalizeAssetType(obj);
+        return obj;
+      }).filter(Boolean).sort(function(a,b){ return b.weight - a.weight; });
+      if (!holdings.length) continue;
+      return {
+        holdings: holdings,
+        aciklamaTarihi: data.aciklamaTarihi || data.latestDate || '',
+        source: data.source || 'KAP PDF'
+      };
+    } catch(e) {
+      console.warn('KAP PDF portföy okuma hatası:', fonKodu, e);
+    }
+  }
+  return null;
+}
+
 // Ekofin.net portföy dağılımı ana kaynağı
 // Örnek sayfa: https://ekofin.net/fonlar/detay/TLY/fon-portfoy
 async function loadEkofinPortfolio(fonKodu) {
@@ -6755,7 +6800,25 @@ async function loadEkofinPortfolio(fonKodu) {
 }
 
 async function loadPortfolioAnySource(fonKodu) {
-  // Ana kaynak FVT. Bulamazsa veya eksik/boş dönerse Ekofin'e geçilir.
+  fonKodu = String(fonKodu || '').trim().toUpperCase();
+
+  // 1) Ana kaynak: KAP/PDF. Yabancı hisseler Ekofin'de eksik görünebildiği için önce KAP denenir.
+  var kap = null;
+  try { kap = await loadKAPPortfolio(fonKodu); } catch(e) { console.warn('KAP PDF kaynak hatası:', fonKodu, e); }
+  if (kap && kap.holdings && kap.holdings.length > 0) {
+    kap.source = kap.source || 'KAP PDF';
+    return kap;
+  }
+
+  // 2) Yedek kaynak: Ekofin. Yerli ağırlıklı fonlarda hızlı ve temiz çalışır; ama yabancı hisseler eksik olabilir.
+  var ekofin = null;
+  try { ekofin = await loadEkofinPortfolio(fonKodu); } catch(e) { console.warn('Ekofin kaynak hatası:', fonKodu, e); }
+  if (ekofin && ekofin.holdings && ekofin.holdings.length > 0) {
+    ekofin.source = ekofin.source || 'Ekofin';
+    return ekofin;
+  }
+
+  // 3) Son yedek: FVT. Çalışırsa kullanılır, çalışmazsa mevcut portföy korunur.
   var fvt = null;
   try { fvt = await loadFVTPortfolio(fonKodu); } catch(e) { console.warn('FVT kaynak hatası:', fonKodu, e); }
   if (fvt && fvt.holdings && fvt.holdings.length > 0) {
@@ -6763,13 +6826,47 @@ async function loadPortfolioAnySource(fonKodu) {
     return fvt;
   }
 
-  var ekofin = null;
-  try { ekofin = await loadEkofinPortfolio(fonKodu); } catch(e) { console.warn('Ekofin kaynak hatası:', fonKodu, e); }
-  if (ekofin && ekofin.holdings && ekofin.holdings.length > 0) {
-    ekofin.source = ekofin.source || 'Ekofin';
-    return ekofin;
-  }
   return null;
+}
+
+function isLikelyForeignHolding(h) {
+  var code = String((h && (h.code || h.symbol)) || '').toUpperCase();
+  var type = String((h && (h.type || h.tip)) || '').toLowerCase();
+  var usCodes = ['NVDA','AMD','ASML','TSM','AVGO','QCOM','INTC','AMAT','LRCX','MU','ARM','MRVL','KLAC','ADI','TXN','NXPI','ON','MPWR','TER','SNPS','CDNS','MCHP','GFS','STM','INFY','ASX','UMC','SMH','SOXX','SOXL'];
+  return type === 'us' || type === 'foreign' || usCodes.indexOf(code) !== -1;
+}
+
+function portfolioHasForeign(list) {
+  return (list || []).some(isLikelyForeignHolding);
+}
+
+function isCandidateSafeForReplace(fon, currentHoldings, result) {
+  var next = (result && result.holdings) || [];
+  var source = String((result && result.source) || '').toLowerCase();
+  var current = currentHoldings || [];
+
+  if (!next.length) return false;
+  if (source.indexOf('kap') !== -1 || source.indexOf('pdf') !== -1) return true;
+
+  // Ekofin/FVT eksik dönerse, özellikle yabancı hisseleri olan fonlarda mevcut doğru listeyi silme.
+  if (portfolioHasForeign(current) && !portfolioHasForeign(next)) {
+    console.warn('Eksik kaynak koruması: yabancı hisseler kaybolacağı için güncelleme reddedildi', fon, source);
+    return false;
+  }
+
+  // Çok az kayıt gelirse mevcut portföyü ezme. Örnek: 15 kayıtlı fonun 1-2 kayda düşmesi.
+  if (current.length >= 5 && next.length <= 2) {
+    console.warn('Eksik kaynak koruması: çok az kayıt döndüğü için güncelleme reddedildi', fon, source, next.length, '/', current.length);
+    return false;
+  }
+
+  // Mevcut kayıtların yarısından azı geldiyse ve KAP değilse şüpheli kabul et.
+  if (current.length >= 8 && next.length < Math.ceil(current.length * 0.5)) {
+    console.warn('Eksik kaynak koruması: yeni portföy çok eksik göründüğü için güncelleme reddedildi', fon, source, next.length, '/', current.length);
+    return false;
+  }
+
+  return true;
 }
 
 // FVT'den portfoy dagilimini cek (allorigins proxy)
@@ -6858,7 +6955,7 @@ async function loadFVTPortfolio(fonKodu) {
 }
 
 async function fvtPortfoyGuncelle() {
-  setStatus('loading', 'Ekofin portföy ağırlıkları güncelleniyor...');
+  setStatus('loading', 'KAP/Ekofin portföy ağırlıkları güncelleniyor...');
   var btn = document.getElementById('refreshBtnFVT');
   var btnHeader = document.getElementById('refreshBtnFVTHeader');
   if (btn) btn.disabled = true;
@@ -6868,7 +6965,7 @@ async function fvtPortfoyGuncelle() {
     renderFunds();
     updateUI();
     if (!sonuc || sonuc.updated === 0) {
-      setStatus('error', 'Ekofin ağırlıkları güncellenemedi. FVT yedek kaynak da sonuç vermedi; mevcut ağırlıklar korundu.');
+      setStatus('error', 'KAP/Ekofin ağırlıkları güncellenemedi; mevcut ağırlıklar korundu.');
       return;
     }
     if (sonuc.detay.length > 0) {
@@ -6911,10 +7008,17 @@ async function refreshAllPortfoliosDetay() {
     try {
       var result = await loadPortfolioAnySource(fon);
       if (result && result.holdings && result.holdings.length > 0) {
-        var eskiAgirliklar = {};
-        (FUNDS[fon].holdings || []).forEach(function(h){ eskiAgirliklar[h.code] = h.weight; });
+        var mevcutHoldings = (FUNDS[fon].holdings || []).slice();
+        if (!isCandidateSafeForReplace(fon, mevcutHoldings, result)) {
+          failed++;
+          console.warn('Portföy güncelleme atlandı; mevcut ağırlıklar korundu:', fon, result.source || 'kaynak');
+          return;
+        }
 
-        // Ekofin verisi ana kaynak kabul edilir. Nakit kalemler de kaynakta geliyorsa güncellenir.
+        var eskiAgirliklar = {};
+        mevcutHoldings.forEach(function(h){ eskiAgirliklar[h.code] = h.weight; });
+
+        // KAP/PDF ana kaynak; Ekofin/FVT sadece güvenli görünürse mevcut portföyü ezer.
         FUNDS[fon].holdings = result.holdings;
         normalizeAllHoldingTypes();
         FUNDS[fon].aciklamaTarihi = result.aciklamaTarihi || FUNDS[fon].aciklamaTarihi || '';
@@ -6966,6 +7070,10 @@ async function refreshAllPortfolios() {
     var fon = fonlar[i];
     var result = await loadPortfolioAnySource(fon);
     if (result && result.holdings && result.holdings.length > 0) {
+      if (!isCandidateSafeForReplace(fon, FUNDS[fon].holdings || [], result)) {
+        console.warn('Portföy güncelleme atlandı; mevcut ağırlıklar korundu:', fon, result.source || 'kaynak');
+        continue;
+      }
       FUNDS[fon].holdings = result.holdings;
       if (result.aciklamaTarihi) FUNDS[fon].aciklamaTarihi = result.aciklamaTarihi;
       updated++;
