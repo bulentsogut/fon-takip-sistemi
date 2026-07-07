@@ -1,6 +1,7 @@
 // Vercel Serverless Function: /api/kap?code=IJC
 // KAP/PDF kaynaklı portföy ağırlığı okuyucu.
-// Amaç: Ekofin'de eksik kalan yurtdışı hisseleri KAP Portföy Dağılım Raporu PDF'lerinden almak.
+// Kaynak keşfi artık Ekofin'deki "Kaynak" linkinden başlar:
+// Ekofin fon-portföy sayfası -> KAP bildirim sayfası -> Notification Attachments PDF -> PDF metni.
 
 import https from 'node:https';
 import pdfParse from 'pdf-parse';
@@ -20,7 +21,6 @@ function toNumber(value) {
   if (typeof value === 'number') return value;
   let x = String(value).replace(/%/g, '').replace(/TL|₺/gi, '').trim().replace(/\s+/g, '');
   if (!x) return NaN;
-  // KAP PDF'lerinde genelde 1,234.56 veya 1.234,56 gelebilir.
   if (x.includes(',') && x.includes('.')) {
     const lastComma = x.lastIndexOf(',');
     const lastDot = x.lastIndexOf('.');
@@ -40,6 +40,7 @@ function httpsGet(url, accept = '*/*') {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/126 Safari/537.36',
         'Accept': accept,
         'Accept-Language': 'tr-TR,tr;q=0.9,en-US;q=0.7,en;q=0.6',
+        'Referer': 'https://ekofin.net/',
         'Cache-Control': 'no-cache'
       }
     }, (r) => {
@@ -67,24 +68,6 @@ async function fetchBuffer(url) {
   return httpsGet(url, 'application/pdf,application/octet-stream,*/*');
 }
 
-const FUND_SLUGS = {
-  IJC: 'ijc-is-portfoy-yari-iletken-teknolojileri-degisken-fon',
-  CPT: 'cpt-rota-portfoy-cip-teknolojileri-degisken-fon'
-};
-
-// Sabit yedekler. KAP/şirket sayfasından dinamik bulunamazsa kullanılır.
-const STATIC_PDF_SOURCES = {
-  // IJC eski doğrulanmış KAP bildirimi; dinamik arama daha güncelini bulursa önce onu kullanır.
-  IJC: [
-    'https://kap.org.tr/tr/api/BildirimPdf/1554720',
-    'https://kap.org.tr/tr/api/file/download/4028328d9b827483019c416c02ed00a2'
-  ],
-  // CPT için Rota sayfasından dönemsel rapor linki yakalanamazsa yedek.
-  CPT: [
-    'https://www.rotaportfoy.com.tr/media/0aab551g/cpt-mayis-2026-portfoy-dagilim-raporu.pdf'
-  ]
-};
-
 function unique(arr) {
   const out = [];
   const seen = new Set();
@@ -104,7 +87,116 @@ function htmlDecode(s) {
     .replace(/&gt;/g, '>');
 }
 
-async function discoverKapPdfUrls(code, attempts) {
+function stripTags(html) {
+  return htmlDecode(String(html || ''))
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function fileNameFromUrl(url) {
+  try {
+    const clean = decodeURIComponent(String(url || '').split('?')[0]);
+    return clean.split('/').pop() || '';
+  } catch (_) { return ''; }
+}
+
+function normalizeUrl(href, base) {
+  try { return new URL(htmlDecode(href), base).toString(); }
+  catch (_) { return ''; }
+}
+
+// 1) Ekofin'deki mavi "Bilgilendirme / Kaynak" linkini bul.
+async function discoverKapNotificationFromEkofin(code, attempts) {
+  const c = encodeURIComponent(code);
+  const pages = [
+    `https://ekofin.net/fonlar/detay/${c}/fon-portfoy`,
+    `https://ekofin.net/fonlar/detay/${c}`
+  ];
+  const kapLinks = [];
+
+  for (const page of pages) {
+    try {
+      const up = await fetchText(page);
+      attempts.push({ step: 'ekofin-source-page', url: page, status: up.status, len: up.len });
+      if (up.status < 200 || up.status >= 300) continue;
+      const html = htmlDecode(up.text || '');
+
+      // Doğrudan KAP bildirim linkleri.
+      for (const m of html.matchAll(/https?:\/\/(?:www\.)?kap\.org\.tr\/tr\/Bildirim\/\d+/gi)) {
+        kapLinks.push(m[0]);
+      }
+      for (const m of html.matchAll(/href=["']([^"']*\/tr\/Bildirim\/\d+[^"']*)["']/gi)) {
+        kapLinks.push(normalizeUrl(m[1], page));
+      }
+
+      // "Kaynak" metni yakınında gizlenmiş link varsa onu öne al.
+      const sourceRe = /<a\b[^>]*href=["']([^"']+)["'][^>]*>[\s\S]{0,300}?Kaynak[\s\S]{0,80}?<\/a>|Kaynak[\s\S]{0,300}?<a\b[^>]*href=["']([^"']+)["']/gi;
+      for (const m of html.matchAll(sourceRe)) {
+        const u = normalizeUrl(m[1] || m[2], page);
+        if (/kap\.org\.tr\/tr\/Bildirim\/\d+/i.test(u)) kapLinks.unshift(u);
+      }
+    } catch (e) {
+      attempts.push({ step: 'ekofin-source-page', url: page, error: e.message || String(e) });
+    }
+  }
+  return unique(kapLinks);
+}
+
+// 2) KAP bildirim sayfasındaki Notification Attachments PDF linkini bul.
+async function discoverPdfAttachmentsFromKapNotification(kapUrl, attempts) {
+  const pdfs = [];
+  try {
+    const up = await fetchText(kapUrl);
+    attempts.push({ step: 'kap-notification-page', url: kapUrl, status: up.status, len: up.len });
+    if (up.status < 200 || up.status >= 300) return [];
+    const html = htmlDecode(up.text || '');
+
+    // Notification Attachments bölümü özellikle öncelikli.
+    const attachmentAreaMatch = html.match(/Notification Attachments[\s\S]{0,6000}/i) || html.match(/Bildirim Ekleri[\s\S]{0,6000}/i);
+    const areas = attachmentAreaMatch ? [attachmentAreaMatch[0], html] : [html];
+
+    for (const area of areas) {
+      for (const m of area.matchAll(/href=["']([^"']+(?:\.pdf|api\/file\/download|file\/download|DownloadFile|download)[^"']*)["']/gi)) {
+        const u = normalizeUrl(m[1], kapUrl);
+        if (u) pdfs.push(u);
+      }
+      // JSON/Next state içinde URL olarak geçebilir.
+      for (const m of area.matchAll(/https?:\/\/(?:www\.)?kap\.org\.tr\/[^"'\\\s]+(?:\.pdf|api\/file\/download|file\/download)[^"'\\\s]*/gi)) {
+        pdfs.push(htmlDecode(m[0]).replace(/\\u002F/g, '/'));
+      }
+      for (const m of area.matchAll(/\/tr\/api\/file\/download\/[A-Za-z0-9_-]+/gi)) {
+        pdfs.push(normalizeUrl(m[0], kapUrl));
+      }
+    }
+
+    // Son çare: bildirimin kendisinin PDF çıktısı. Ek PDF değil, ama bazen tablo metnini içerir.
+    const id = (kapUrl.match(/\/Bildirim\/(\d+)/) || [])[1];
+    if (id) pdfs.push(`https://kap.org.tr/tr/api/BildirimPdf/${id}`);
+  } catch (e) {
+    attempts.push({ step: 'kap-notification-page', url: kapUrl, error: e.message || String(e) });
+  }
+  return unique(pdfs);
+}
+
+const FUND_SLUGS = {
+  IJC: 'ijc-is-portfoy-yari-iletken-teknolojileri-degisken-fon',
+  CPT: 'cpt-rota-portfoy-cip-teknolojileri-degisken-fon'
+};
+
+const STATIC_PDF_SOURCES = {
+  IJC: [
+    'https://kap.org.tr/tr/api/BildirimPdf/1554720',
+    'https://kap.org.tr/tr/api/file/download/4028328d9b827483019c416c02ed00a2'
+  ],
+  CPT: [
+    'https://www.rotaportfoy.com.tr/media/0aab551g/cpt-mayis-2026-portfoy-dagilim-raporu.pdf'
+  ]
+};
+
+async function discoverLegacyKapPdfUrls(code, attempts) {
   const slug = FUND_SLUGS[code];
   if (!slug) return [];
   const pages = [
@@ -115,18 +207,16 @@ async function discoverKapPdfUrls(code, attempts) {
   for (const page of pages) {
     try {
       const up = await fetchText(page);
-      attempts.push({ step: 'discover-kap-page', url: page, status: up.status, len: up.len });
+      attempts.push({ step: 'legacy-kap-fund-page', url: page, status: up.status, len: up.len });
       if (up.status < 200 || up.status >= 300) continue;
       const html = up.text;
-      // Aynı HTML içinde Portföy Dağılım Raporu yakınındaki bildirimleri öncele.
       const re = /(?:Portf[öo]y\s+Da[ğg][ıi]l[ıi]m\s+Raporu[\s\S]{0,1500}?\/tr\/Bildirim\/(\d+))|(?:\/tr\/Bildirim\/(\d+)[\s\S]{0,1500}?Portf[öo]y\s+Da[ğg][ıi]l[ıi]m\s+Raporu)/gi;
       let m;
       while ((m = re.exec(html))) ids.push(m[1] || m[2]);
-      // Sayfalar bazen tüm bildirimleri tabloyla verir; ilk birkaç id yedek olarak alınır.
       const all = [...html.matchAll(/\/tr\/Bildirim\/(\d+)/g)].map(x => x[1]);
       ids.push(...all.slice(0, 8));
     } catch (e) {
-      attempts.push({ step: 'discover-kap-page', url: page, error: e.message || String(e) });
+      attempts.push({ step: 'legacy-kap-fund-page', url: page, error: e.message || String(e) });
     }
   }
   return unique(ids).map(id => `https://kap.org.tr/tr/api/BildirimPdf/${id}`);
@@ -141,8 +231,7 @@ async function discoverRotaPdfUrls(code, attempts) {
     if (up.status < 200 || up.status >= 300) return [];
     const html = htmlDecode(up.text);
     const hrefs = [...html.matchAll(/href=["']([^"']+\.pdf[^"']*)["']/gi)].map(x => new URL(x[1], page).toString());
-    const pdfs = hrefs.filter(u => /cpt/i.test(u) && /(portfoy|portf%C3%B6y|portf%C3%B6y|da[ğg]ilim|dagilim|dag[ıi]l[ıi]m)/i.test(decodeURIComponent(u)));
-    // Sayfada güncel raporlar genelde üstte/sonda olabilir; hepsini deneyeceğiz ama tekrarları temizleyeceğiz.
+    const pdfs = hrefs.filter(u => /cpt/i.test(u) && /(portfoy|portf%C3%B6y|da[ğg]ilim|dagilim|dag[ıi]l[ıi]m)/i.test(decodeURIComponent(u)));
     return unique(pdfs.reverse());
   } catch (e) {
     attempts.push({ step: 'discover-rota-page', url: page, error: e.message || String(e) });
@@ -151,13 +240,13 @@ async function discoverRotaPdfUrls(code, attempts) {
 }
 
 const HEADER_WORDS = new Set(['TOPLAM', 'TRY', 'USD', 'TL', 'FON', 'PORTFOY', 'PORTFÖY', 'DEGERI', 'DEĞERİ', 'KIYMET', 'MENKUL']);
-const TURKISH_STOCKS = new Set(['ASELS','EKDMR','KAREL','TCELL','VESTL','ALCTL','ALTNY','ARDYZ','ARENA','ATATP','AZTEK','BINBN','DESPC','DOFRB','ESCOM','FONET','FORTE','HTTBT','INDES','KFEIN','KRONT','LINK','LOGO','MTRKS','NETAS','OBASE','PAPIL','PATEK','SMART','MIATK','SDTTR','THYAO','TUPRS','SISE','BIMAS','KCHOL','SAHOL','AKBNK','GARAN','YKBNK','ISCTR']);
-const US_HINTS = new Set(['NVDA','AMD','ASML','TSM','AVGO','QCOM','INTC','AMAT','LRCX','MU','ARM','MRVL','KLAC','ADI','TXN','NXPI','ON','MPWR','TER','SNPS','CDNS','MCHP','GFS','STM','SMCI','AAPL','MSFT','GOOGL','GOOG','META','AMZN','TSLA','NFLX','ORCL']);
+const TURKISH_STOCKS = new Set(['ASELS','EKDMR','KAREL','TCELL','VESTL','ALCTL','ALTNY','ARDYZ','ARENA','ATATP','AZTEK','BINBN','DESPC','DOFRB','ESCOM','FONET','FORTE','HTTBT','INDES','KFEIN','KRONT','LINK','LOGO','MTRKS','NETAS','OBASE','PAPIL','PATEK','SMART','MIATK','SDTTR','THYAO','TUPRS','SISE','BIMAS','KCHOL','SAHOL','AKBNK','GARAN','YKBNK','ISCTR','ODINE','MANAS','NETCD','REEDR','MOBTL','EMPAE','PKART','INGRM']);
+const US_HINTS = new Set(['NVDA','AMD','ASML','TSM','AVGO','QCOM','INTC','AMAT','LRCX','MU','ARM','MRVL','KLAC','ADI','TXN','NXPI','ON','MPWR','TER','SNPS','CDNS','MCHP','GFS','STM','SMCI','AAPL','MSFT','GOOGL','GOOG','META','AMZN','TSLA','NFLX','ORCL','CRM','NOW','SHOP','ADBE','PANW','CRWD','DDOG','SNOW','PLTR','DELL','HPQ','IBM']);
 
 function inferType(code, line) {
   const s = String(line || '').toUpperCase();
   if (US_HINTS.has(code)) return 'us';
-  if (/\b(US|NL|XS|KY|IE|LU)[A-Z0-9]{8,}\b/.test(code)) return 'us';
+  if (/\b(US|NL|XS|KY|IE|LU)[A-Z0-9]{8,}\b/.test(s)) return 'us';
   if (/\b[A-Z]{1,5}\s+US\s+EQUITY\b/.test(s) || /\bNASDAQ\b|\bNYSE\b|\bUS EQUITY\b/.test(s)) return 'us';
   if (TURKISH_STOCKS.has(code)) return 'bist';
   if (/^[A-Z]{2,6}$/.test(code)) return 'bist';
@@ -168,7 +257,6 @@ function symbolFromLine(first, line) {
   const s = String(line || '').toUpperCase();
   const us = s.match(/\b([A-Z]{1,5})\s+US\s+EQUITY\b/);
   if (us) return us[1];
-  // ISIN + ticker yapısı: US67066G1040 NVDA US EQUITY
   const isinTicker = s.match(/\b(?:US|NL|XS|KY|IE|LU)[A-Z0-9]{8,}\s+([A-Z]{1,5})\b/);
   if (isinTicker) return isinTicker[1];
   return first;
@@ -187,7 +275,7 @@ function parseHoldingsFromText(text, fundCode) {
 
   for (const line of lines) {
     const upper = line.toUpperCase();
-    if (/FON PORTF[ÖO]Y DE[ĞG]ER[Iİ] TABLOSU|PORTF[ÖO]Y DA[ĞG][Iİ]L[Iİ]M/.test(upper)) inPortfolio = true;
+    if (/FON PORTF[ÖO]Y DE[ĞG]ER[Iİ] TABLOSU|PORTF[ÖO]Y DA[ĞG][Iİ]L[Iİ]M|MENKUL KIYMETLER|H[İI]SSE SENETLER[İI]/.test(upper)) inPortfolio = true;
     if (!inPortfolio && !/\b(US|NASDAQ|NYSE|EQUITY)\b/.test(upper)) continue;
     if (/FON TOPLAM DE[ĞG]ER[Iİ] TABLOSU|AY [İI]Ç[İI]NDE YAPILAN G[İI]DERLER|TOPLAM G[İI]DER/.test(upper)) break;
     if (/^[A-ZÇĞİÖŞÜ]\)/.test(upper)) section = upper;
@@ -222,6 +310,34 @@ function parseHoldingsFromText(text, fundCode) {
   return holdings;
 }
 
+async function buildPdfSources(code, attempts, manualPdf) {
+  const pdfSources = [];
+  if (manualPdf) pdfSources.push({ url: manualPdf, via: 'manual', notificationUrl: '' });
+
+  const kapNotifications = await discoverKapNotificationFromEkofin(code, attempts);
+  for (const kapUrl of kapNotifications) {
+    const attachments = await discoverPdfAttachmentsFromKapNotification(kapUrl, attempts);
+    for (const pdfUrl of attachments) pdfSources.push({ url: pdfUrl, via: 'ekofin-kaynak-kap-attachment', notificationUrl: kapUrl });
+  }
+
+  for (const pdfUrl of await discoverLegacyKapPdfUrls(code, attempts)) {
+    pdfSources.push({ url: pdfUrl, via: 'kap-fund-page-fallback', notificationUrl: '' });
+  }
+  for (const pdfUrl of await discoverRotaPdfUrls(code, attempts)) {
+    pdfSources.push({ url: pdfUrl, via: 'rota-fallback', notificationUrl: '' });
+  }
+  for (const pdfUrl of (STATIC_PDF_SOURCES[code] || [])) {
+    pdfSources.push({ url: pdfUrl, via: 'static-fallback', notificationUrl: '' });
+  }
+
+  const seen = new Set();
+  return pdfSources.filter(s => {
+    if (!s || !s.url || seen.has(s.url)) return false;
+    seen.add(s.url);
+    return true;
+  });
+}
+
 export default async function handler(req, res) {
   setCors(res);
   if (req.method === 'OPTIONS') return res.status(204).end();
@@ -233,43 +349,50 @@ export default async function handler(req, res) {
   if (!code) return res.status(400).json({ ok:false, error:'Missing code parameter' });
 
   const attempts = [];
-  let sources = [];
-  if (manualPdf) sources.push(manualPdf);
-  sources.push(...await discoverKapPdfUrls(code, attempts));
-  sources.push(...await discoverRotaPdfUrls(code, attempts));
-  sources.push(...(STATIC_PDF_SOURCES[code] || []));
-  sources = unique(sources);
+  const sources = await buildPdfSources(code, attempts, manualPdf);
 
   if (!sources.length) {
-    return res.status(200).json({ ok:false, source:'kap-pdf', code, error:'No KAP/PDF source configured or discovered for this fund', attempts: debug ? attempts : undefined });
+    return res.status(200).json({ ok:false, source:'kap-pdf', code, error:'No KAP/PDF source discovered from Ekofin Kaynak link or fallbacks', attempts: debug ? attempts : undefined });
   }
 
-  for (const url of sources) {
+  for (const source of sources) {
+    const url = source.url;
     try {
       const up = await fetchBuffer(url);
-      attempts.push({ step: 'pdf', url, status: up.status, contentType: up.headers['content-type'] || '', len: up.buffer.length });
+      attempts.push({ step: 'pdf', via: source.via, url, notificationUrl: source.notificationUrl || '', status: up.status, contentType: up.headers['content-type'] || '', len: up.buffer.length });
       if (up.status < 200 || up.status >= 300 || !up.buffer.length) continue;
       const parsed = await pdfParse(up.buffer);
       const text = parsed.text || '';
       const holdings = parseHoldingsFromText(text, code);
       attempts[attempts.length - 1].parsed = holdings.length;
       if (!holdings.length) continue;
+
+      const pdfFile = fileNameFromUrl(url);
+      const sourceLabel = source.via === 'ekofin-kaynak-kap-attachment'
+        ? `KAP PDF (Ekofin Kaynak → ${pdfFile || 'Notification Attachment'})`
+        : (source.via === 'manual' ? `KAP PDF (${pdfFile || 'manuel PDF'})` : `KAP PDF (${pdfFile || source.via})`);
+
       res.setHeader('Cache-Control', 's-maxage=1800, stale-while-revalidate=3600');
       return res.status(200).json({
         ok: true,
-        source: url.includes('rotaportfoy') ? 'rota-pdf' : 'kap-pdf',
+        source: sourceLabel,
+        sourceType: 'kap-pdf',
+        sourcePath: source.via,
         code,
         count: holdings.length,
         holdings,
         latestDate: '',
         aciklamaTarihi: '',
         pdfUrl: url,
+        pdfFile,
+        kapNotificationUrl: source.notificationUrl || '',
+        sourceMessage: `Veriler KAP bildirim ekindeki PDF dosyasından okundu${pdfFile ? ': ' + pdfFile : ''}.`,
         debug: debug ? { attempts, preview: text.slice(0, 4000) } : undefined
       });
     } catch (err) {
-      attempts.push({ step: 'pdf', url, error: err && err.message ? err.message : String(err) });
+      attempts.push({ step: 'pdf', via: source.via, url, notificationUrl: source.notificationUrl || '', error: err && err.message ? err.message : String(err) });
     }
   }
 
-  return res.status(200).json({ ok:false, source:'kap-pdf', code, error:'PDF parsed empty or failed', attempts: debug ? attempts : undefined });
+  return res.status(200).json({ ok:false, source:'kap-pdf', code, error:'PDF sources found but parsed empty or failed', attempts: debug ? attempts : undefined });
 }
