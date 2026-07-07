@@ -337,7 +337,7 @@ async function discoverRotaPdfUrls(code, attempts) {
 
 const HEADER_WORDS = new Set(['TOPLAM', 'TRY', 'USD', 'TL', 'FON', 'PORTFOY', 'PORTFÖY', 'DEGERI', 'DEĞERİ', 'KIYMET', 'MENKUL']);
 const TURKISH_STOCKS = new Set(['ASELS','EKDMR','KAREL','TCELL','VESTL','ALCTL','ALTNY','ARDYZ','ARENA','ATATP','AZTEK','BINBN','DESPC','DOFRB','ESCOM','FONET','FORTE','HTTBT','INDES','KFEIN','KRONT','LINK','LOGO','MTRKS','NETAS','OBASE','PAPIL','PATEK','SMART','MIATK','SDTTR','THYAO','TUPRS','SISE','BIMAS','KCHOL','SAHOL','AKBNK','GARAN','YKBNK','ISCTR','ODINE','MANAS','NETCD','REEDR','MOBTL','EMPAE','PKART','INGRM']);
-const US_HINTS = new Set(['NVDA','AMD','ASML','TSM','AVGO','QCOM','INTC','AMAT','LRCX','MU','ARM','MRVL','KLAC','ADI','TXN','NXPI','ON','MPWR','TER','SNPS','CDNS','MCHP','GFS','STM','SMCI','AAPL','MSFT','GOOGL','GOOG','META','AMZN','TSLA','NFLX','ORCL','CRM','NOW','SHOP','ADBE','PANW','CRWD','DDOG','SNOW','PLTR','DELL','HPQ','IBM']);
+const US_HINTS = new Set(['NVDA','AMD','ASML','TSM','AVGO','QCOM','INTC','AMAT','LRCX','MU','ARM','MRVL','KLAC','ADI','TXN','NXPI','ON','MPWR','TER','SNPS','CDNS','MCHP','GFS','STM','SMCI','POWI','SWKS','MPWR','MTSI','WOLF','COHR','LSCC','QRVO','NXPI','ASX','UMC','OLED','ONTO','ON','INFY','AAPL','MSFT','GOOGL','GOOG','META','AMZN','TSLA','NFLX','ORCL','CRM','NOW','SHOP','ADBE','PANW','CRWD','DDOG','SNOW','PLTR','DELL','HPQ','IBM']);
 
 function inferType(code, line) {
   const s = String(line || '').toUpperCase();
@@ -381,6 +381,48 @@ function lineLooksLikePortfolioHolding(line) {
   if (/^[A-Z0-9]{2,8}\s+/.test(upper) && /\b(TL|USD|EUR)\b/.test(upper)) return true;
   if (/^[A-Z0-9]{2,8}\s+/.test(upper) && /\d+[.,]\d+/.test(upper)) return true;
   return false;
+}
+
+
+function isForbiddenAssetCode(code) {
+  const c = cleanCode(code);
+  if (!c) return true;
+  const forbidden = new Set([
+    'TOPLAM','TRY','USD','EUR','TL','RPP','RS1','CFO','TPP','RTP','RTPP','REPO','TERSREPO','TERSREPO','TERS','VADELITEM','VADELIMEV','VADELI','VADELİ','MEVDUAT','FINBONO','FINANSMAN','TAKASBANK','DOVIZKAMU','DÖVİZKAMU','KIYMADEN','KIYMETLI','KIYMETLİ','GMSTRF','YAPIKREDI','YAPIKREDİ','HAZIT','KIRASERT','KIRASERTF','KATILMA','FON','BORC','BORÇ','NAKIT','NAKİT','TEMINAT','TEMİNAT','SWAP','OPSİYON','OPSIYON','VARANT','EUROBOND','BONO','TAHVIL','TAHVİL'
+  ]);
+  if (forbidden.has(c)) return true;
+  if (/^(REPO|TERS|VADELI|VADELİ|MEVDUAT|FIN|TAKAS|KIRA|HAZI|HAZIT|DOVIZ|DÖVİZ|KIY|BONO|TAHVIL|TAHVİL)/.test(c)) return true;
+  return false;
+}
+
+function cleanParsedHoldings(holdings) {
+  const out = [];
+  const seen = new Set();
+  for (const h of holdings || []) {
+    const code = cleanCode(h && (h.code || h.symbol));
+    if (!code || isForbiddenAssetCode(code) || seen.has(code)) continue;
+    const weight = toNumber(h.weight);
+    if (!Number.isFinite(weight) || Math.abs(weight) < 0.005 || Math.abs(weight) > 100) continue;
+    const type = inferType(code, String(h.name || '') + ' ' + String(h.sourceCode || ''));
+    // Only accept clear equity assets. US names must be recognizable; BIST must be short/known.
+    if (type === 'other') continue;
+    if (type === 'bist' && !TURKISH_STOCKS.has(code) && !/^[A-Z]{3,5}$/.test(code)) continue;
+    seen.add(code);
+    out.push(Object.assign({}, h, { code, symbol: code, weight: Number(weight.toFixed(4)), type, tip: type }));
+  }
+  out.sort((a,b) => b.weight - a.weight);
+  return out;
+}
+
+function validateKapHoldings(holdings) {
+  const list = cleanParsedHoldings(holdings);
+  const bad = (holdings || []).map(h => cleanCode(h && (h.code || h.symbol))).filter(isForbiddenAssetCode);
+  const sum = list.reduce((s,h) => s + (Number(h.weight)||0), 0);
+  const hasForeign = list.some(h => String(h.type).toLowerCase() === 'us');
+  // A clean KAP result can be partial, but must have a meaningful equity block.
+  if (list.length < 3) return { ok:false, holdings:list, reason:'too_few_clean_equities', bad, sum, hasForeign };
+  if (sum < 5 || sum > 115) return { ok:false, holdings:list, reason:'unreasonable_weight_sum', bad, sum, hasForeign };
+  return { ok:true, holdings:list, reason:'ok', bad, sum, hasForeign };
 }
 
 function parseHoldingsFromText(text, fundCode) {
@@ -448,11 +490,11 @@ function parseHoldingsFromText(text, fundCode) {
     if (!Number.isFinite(weight) || Math.abs(weight) < 0.005 || Math.abs(weight) > 100) continue;
 
     const first = cleanCode((line.match(/^([A-Z0-9]{2,14})\b/) || [])[1] || '');
-    if (!first || first === fundCode || HEADER_WORDS.has(first) || blocked.has(first)) continue;
+    if (!first || first === fundCode || HEADER_WORDS.has(first) || blocked.has(first) || isForbiddenAssetCode(first)) continue;
 
     const symbol = cleanCode(symbolFromLine(first, line));
     const code = symbol || first;
-    if (!code || blocked.has(code) || seen.has(code)) continue;
+    if (!code || blocked.has(code) || isForbiddenAssetCode(code) || seen.has(code)) continue;
 
     const type = inferType(code, line + ' ' + section);
     if (!['us','bist'].includes(type)) continue;
@@ -534,9 +576,15 @@ export default async function handler(req, res) {
       if (up.status < 200 || up.status >= 300 || !up.buffer.length) continue;
       const parsed = await pdfParse(up.buffer, { pagerender: renderPageWithLayout });
       const text = parsed.text || '';
-      const holdings = parseHoldingsFromText(text, code);
-      attempts[attempts.length - 1].parsed = holdings.length;
-      if (!holdings.length) continue;
+      const rawHoldings = parseHoldingsFromText(text, code);
+      const validation = validateKapHoldings(rawHoldings);
+      const holdings = validation.holdings;
+      attempts[attempts.length - 1].parsed = rawHoldings.length;
+      attempts[attempts.length - 1].cleanParsed = holdings.length;
+      attempts[attempts.length - 1].validation = validation.reason;
+      attempts[attempts.length - 1].badCodes = (validation.bad || []).slice(0, 12);
+      attempts[attempts.length - 1].weightSum = Number((validation.sum || 0).toFixed(2));
+      if (!validation.ok) continue;
 
       const pdfFile = fileNameFromUrl(url);
       const sourceLabel = (source.via === 'ekofin-kaynak-kap-attachment' || source.via === 'ekofin-date-fintables-kap-attachment')
