@@ -387,37 +387,61 @@ function parseHoldingsFromText(text, fundCode) {
   const normalized = String(text || '')
     .replace(/\u00a0/g, ' ')
     .replace(/([A-Z0-9]{2,14}\s+[A-Z0-9]{1,8}\s+US\s+EQUITY)/g, '\n$1')
-    .replace(/\b(Hisse\s+Türk|Hisse\s+Yabancı|HİSSE SENETLERİ|A\)\s*HİSSE SENETLERİ)\b/gi, '\n$1\n')
+    .replace(/\b(Hisse\s+Türk|Hisse\s+Yabancı|HİSSE SENETLERİ|HISSE SENETLERI|A\)\s*HİSSE SENETLERİ|A\)\s*HISSE SENETLERI)\b/gi, '\n$1\n')
     .replace(/([A-ZÇĞİÖŞÜ0-9]{2,14}\s+[A-ZÇĞİÖŞÜ0-9 .,&-]{2,80}\s+\d)/g, '\n$1');
   const lines = normalized.split(/\r?\n/).map(x => x.trim()).filter(Boolean);
   const holdings = [];
   const seen = new Set();
-  let inPortfolio = false;
+  let inEquitySection = false;
+  let sectionStarted = false;
   let section = '';
 
-  for (const line of lines) {
-    const upper = line.toUpperCase();
-    if (/FON PORTF[ÖO]Y DE[ĞG]ER[Iİ] TABLOSU|PORTF[ÖO]Y DA[ĞG][Iİ]L[Iİ]M|MENKUL KIYMETLER|H[İI]SSE SENETLER[İI]|HISSE T[ÜU]RK|HISSE YABANCI/.test(upper)) inPortfolio = true;
-    if (!inPortfolio && !/\b(US|NASDAQ|NYSE|EQUITY)\b/.test(upper)) continue;
-    if (/FON TOPLAM DE[ĞG]ER[Iİ] TABLOSU|AY [İI]Ç[İI]NDE YAPILAN G[İI]DERLER|TOPLAM G[İI]DER|PORTF[ÖO]YE AL[Iİ][ŞS]LAR|PORTF[ÖO]YDEN SAT[Iİ][ŞS]LAR/.test(upper)) {
-      if (/PORTF[ÖO]YE AL[Iİ][ŞS]LAR|PORTF[ÖO]YDEN SAT[Iİ][ŞS]LAR/.test(upper)) break;
-      if (/FON TOPLAM/.test(upper)) break;
-    }
-    if (/^[A-ZÇĞİÖŞÜ]\)/.test(upper) || /HISSE T[ÜU]RK|HISSE YABANCI|H[İI]SSE SENETLER[İI]/.test(upper)) section = upper;
+  const blocked = new Set([
+    'TOPLAM','TRY','USD','EUR','TL','RPP','RS1','CFO','TPP','RTP','RTPP','REPO','TERSREPO',
+    'VADELITEM','VADELIMEV','MEVDUAT','FINBONO','TAKASBANK','DOVIZKAMU','DÖVİZKAMU',
+    'KIYMADEN','KIYMETLI','GMSTRF','YAPIKREDI','YAPIKREDİ'
+  ]);
 
+  for (const rawLine of lines) {
+    const line = rawLine.replace(/\s+/g, ' ').trim();
+    const upper = line.toUpperCase();
+
+    // En kritik koruma: sadece portföy değer tablosundaki A) Hisse Senetleri bölümünü oku.
+    // PDF'in sonraki sayfalarında "Portföye Alışlar/Satışlar" içinde de hisse kodları geçiyor;
+    // bunlar mevcut portföy ağırlığı değildir ve kesinlikle parse edilmemelidir.
+    if (/\bA\)?\s*H[İI]SSE SENETLER[İI]\b|\bA\)?\s*HISSE SENETLERI\b|\bHISSE\s+T[ÜU]RK\b|\bHISSE\s+YABANCI\b/.test(upper)) {
+      inEquitySection = true;
+      sectionStarted = true;
+      section = upper;
+      continue;
+    }
+
+    if (sectionStarted && (/^[B-Z]\)\s+/.test(upper) || /\bB\)?\s*VARANTLAR\b|\bC\)?\s*DEVLET\b|\bFON TOPLAM DE[ĞG]ER[Iİ]\b|\bPORTF[ÖO]YE AL[Iİ][ŞS]LAR\b|\bPORTF[ÖO]YDEN SAT[Iİ][ŞS]LAR\b|\bAY [İI]Ç[İI]NDE YAPILAN G[İI]DERLER\b/.test(upper))) {
+      inEquitySection = false;
+      if (/\bPORTF[ÖO]YE AL[Iİ][ŞS]LAR\b|\bPORTF[ÖO]YDEN SAT[Iİ][ŞS]LAR\b|\bFON TOPLAM\b/.test(upper)) break;
+    }
+
+    if (!inEquitySection) continue;
+    if (/^TOPLAM\b|^AÇIKLAMA\b|^NOMINAL\b|^RAYIÇ\b|^%$|^İHRAÇÇI\b|^IHRACCI\b/.test(upper)) continue;
     if (!lineLooksLikePortfolioHolding(line)) continue;
 
     const weight = getLineWeight(line);
     if (!Number.isFinite(weight) || Math.abs(weight) < 0.005 || Math.abs(weight) > 100) continue;
 
     const first = cleanCode((line.match(/^([A-Z0-9]{2,14})\b/) || [])[1] || '');
-    if (!first || first === fundCode || HEADER_WORDS.has(first)) continue;
+    if (!first || first === fundCode || HEADER_WORDS.has(first) || blocked.has(first)) continue;
 
     const symbol = cleanCode(symbolFromLine(first, line));
-    const type = inferType(symbol || first, line + ' ' + section);
-    if (!['us','bist'].includes(type)) continue;
     const code = symbol || first;
-    if (!code || seen.has(code)) continue;
+    if (!code || blocked.has(code) || seen.has(code)) continue;
+
+    const type = inferType(code, line + ' ' + section);
+    if (!['us','bist'].includes(type)) continue;
+
+    // Bölüm dışında kalmış karma varlıklar yanlışlıkla yakalanmasın: US için US EQUITY/ISIN,
+    // BIST için kısa hisse kodu gerekir.
+    if (type === 'us' && !(/\b[A-Z]{1,5}\s+US\s+EQUITY\b/.test(upper) || /\b(?:US|NL)[A-Z0-9]{8,}\b/.test(upper))) continue;
+    if (type === 'bist' && !/^[A-Z0-9]{2,6}\b/.test(code)) continue;
 
     seen.add(code);
     holdings.push({
