@@ -7006,7 +7006,7 @@ async function fvtPortfoyGuncelle() {
     renderFunds();
     updateUI();
     if (!sonuc || sonuc.updated === 0) {
-      setStatus('error', 'KAP/Ekofin ağırlıkları güncellenemedi; mevcut ağırlıklar korundu.');
+      setStatus('error', 'KAP temiz okunamadı ve Ekofin/FVT de sonuç döndürmedi; mevcut ağırlıklar korundu.');
       return;
     }
     if (sonuc.detay.length > 0) {
@@ -7079,8 +7079,10 @@ async function refreshAllPortfoliosDetay() {
           }
         });
 
+        // Mevcut portföy merge yöntemiyle korunduğu için gelen kaynakta olmayan eski kodlar
+        // artık silinmiş sayılmaz; bu nedenle yanıltıcı '-ÇIKTI' mesajı üretmiyoruz.
         Object.keys(eskiAgirliklar).forEach(function(kod) {
-          if (!fvtKodlar.has(kod)) degisiklikler.push(kod + ' -ÇIKTI');
+          if (!fvtKodlar.has(kod)) { /* korunuyor */ }
         });
 
         var toplamAgirlik = result.holdings.reduce(function(s,h){ return s + (parseFloat(h.weight)||0); }, 0);
