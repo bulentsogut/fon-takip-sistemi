@@ -6644,7 +6644,11 @@ async function loadKAPPortfolio(fonKodu) {
       return {
         holdings: holdings,
         aciklamaTarihi: data.aciklamaTarihi || data.latestDate || '',
-        source: data.source || 'KAP PDF'
+        source: data.source || 'KAP PDF',
+        sourceMessage: data.sourceMessage || '',
+        pdfUrl: data.pdfUrl || '',
+        pdfFile: data.pdfFile || '',
+        kapNotificationUrl: data.kapNotificationUrl || ''
       };
     } catch(e) {
       console.warn('KAP PDF portföy okuma hatası:', fonKodu, e);
@@ -7021,7 +7025,8 @@ async function fvtPortfoyGuncelle() {
         } else {
           degHtml = ' <span style="color:var(--muted);font-size:0.85em;">(değişiklik yok)</span>';
         }
-        return '<b>' + d.fon + '</b> <span style="color:var(--muted);font-size:0.82em;">(' + (d.source || 'kaynak') + ')</span>: ' + d.hisseSay + ' hisse, %' + d.toplamAgirlik.toFixed(1) + degHtml;
+        var srcInfo = d.sourceMessage ? ' <span style="color:#7dd6ff;font-size:0.82em;">' + d.sourceMessage + '</span>' : '';
+        return '<b>' + d.fon + '</b> <span style="color:var(--muted);font-size:0.82em;">(' + (d.source || 'kaynak') + ')</span>: ' + d.hisseSay + ' hisse, %' + d.toplamAgirlik.toFixed(1) + srcInfo + degHtml;
       }).join(' &nbsp;|&nbsp; ');
       setStatus('live', 'Portföy güncellendi — ' + sonuc.updated + ' fon: ' + detayHtml, true);
     } else {
@@ -7084,6 +7089,9 @@ async function refreshAllPortfoliosDetay() {
           hisseSay: result.holdings.length,
           toplamAgirlik: toplamAgirlik,
           source: result.source || 'Ekofin/FVT',
+          sourceMessage: result.sourceMessage || '',
+          pdfFile: result.pdfFile || '',
+          kapNotificationUrl: result.kapNotificationUrl || '',
           degisiklikler: degisiklikler
         });
       } else {
