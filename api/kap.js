@@ -68,6 +68,57 @@ async function fetchBuffer(url) {
   return httpsGet(url, 'application/pdf,application/octet-stream,*/*');
 }
 
+// pdf-parse default text extraction sometimes returns table columns in blocks
+// (all percentages first, then all values, then all issuer names). For KAP portfolio
+// PDFs we need row layout. This pagerender groups PDF text items by Y coordinate
+// and sorts them by X coordinate so rows become parseable lines such as:
+// US67066G1040 NVDA US EQUITY 7,192.00 70,666,911.20 5.99%
+function renderPageWithLayout(pageData) {
+  const renderOptions = {
+    normalizeWhitespace: false,
+    disableCombineTextItems: false
+  };
+  return pageData.getTextContent(renderOptions).then(function(textContent) {
+    const rows = [];
+    const tolerance = 2.2;
+
+    for (const item of (textContent.items || [])) {
+      const str = String(item.str || '').trim();
+      if (!str) continue;
+      const tr = item.transform || [];
+      const x = Number(tr[4] || 0);
+      const y = Number(tr[5] || 0);
+
+      let row = rows.find(r => Math.abs(r.y - y) <= tolerance);
+      if (!row) {
+        row = { y, items: [] };
+        rows.push(row);
+      }
+      row.items.push({ x, str });
+    }
+
+    rows.sort((a, b) => b.y - a.y);
+    const lines = rows.map(row => {
+      row.items.sort((a, b) => a.x - b.x);
+      let out = '';
+      let lastX = null;
+      for (const it of row.items) {
+        // Keep at least one space; add extra spacing for far columns to avoid
+        // joining ISIN/ticker/numbers into a single token.
+        if (out) {
+          const gap = lastX === null ? 1 : Math.max(1, Math.min(8, Math.round((it.x - lastX) / 18)));
+          out += ' '.repeat(gap);
+        }
+        out += it.str;
+        lastX = it.x + Math.max(10, it.str.length * 5);
+      }
+      return out.replace(/\s+/g, ' ').trim();
+    }).filter(Boolean);
+
+    return lines.join('\n');
+  });
+}
+
 function unique(arr) {
   const out = [];
   const seen = new Set();
@@ -361,7 +412,7 @@ export default async function handler(req, res) {
       const up = await fetchBuffer(url);
       attempts.push({ step: 'pdf', via: source.via, url, notificationUrl: source.notificationUrl || '', status: up.status, contentType: up.headers['content-type'] || '', len: up.buffer.length });
       if (up.status < 200 || up.status >= 300 || !up.buffer.length) continue;
-      const parsed = await pdfParse(up.buffer);
+      const parsed = await pdfParse(up.buffer, { pagerender: renderPageWithLayout });
       const text = parsed.text || '';
       const holdings = parseHoldingsFromText(text, code);
       attempts[attempts.length - 1].parsed = holdings.length;
