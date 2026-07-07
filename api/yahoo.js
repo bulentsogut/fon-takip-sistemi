@@ -1,64 +1,97 @@
-export default async function handler(req, res) {
-  setCors(res);
-  if (req.method === 'OPTIONS') return res.status(204).end();
+// Vercel Serverless Function: /api/yahoo?ticker=SPCX&interval=1d&range=1mo
+// Robust Yahoo Finance chart proxy for ORKA / Hisse Takip
 
-  try {
-    const ticker = String(req.query.ticker || req.query.symbol || '').trim().toUpperCase();
-    const range = String(req.query.range || '5d');
-    const interval = String(req.query.interval || '1d');
-    if (!ticker) return res.status(400).json({ ok: false, error: 'ticker required' });
-
-    const yahooSymbol = normalizeYahooSymbol(ticker);
-    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooSymbol)}?interval=${encodeURIComponent(interval)}&range=${encodeURIComponent(range)}`;
-    const r = await fetch(url, { headers: browserHeaders() });
-    const text = await r.text();
-
-    if (!r.ok) {
-      return res.status(r.status).json({ ok: false, error: 'Yahoo request failed', status: r.status, body: text.slice(0, 400) });
-    }
-
-    let data;
-    try { data = JSON.parse(text); } catch (e) { return res.status(502).json({ ok: false, error: 'Yahoo JSON parse failed' }); }
-
-    const result = data?.chart?.result?.[0];
-    const quote = result?.indicators?.quote?.[0] || {};
-    const meta = result?.meta || {};
-    const closes = Array.isArray(quote.close) ? quote.close.filter(v => typeof v === 'number') : [];
-    const price = typeof meta.regularMarketPrice === 'number' ? meta.regularMarketPrice : closes.at(-1);
-    const prev = typeof meta.chartPreviousClose === 'number' ? meta.chartPreviousClose : closes.at(-2);
-
-    return res.status(200).json({
-      ok: true,
-      ticker,
-      symbol: yahooSymbol,
-      price,
-      previousClose: prev,
-      currency: meta.currency || '',
-      marketTime: meta.regularMarketTime || null,
-      raw: data
-    });
-  } catch (e) {
-    return res.status(500).json({ ok: false, error: e.message || String(e) });
-  }
-}
-
-function normalizeYahooSymbol(ticker) {
-  if (!ticker) return ticker;
-  if (ticker.includes('.') || ticker.includes('-') || ticker.includes('=')) return ticker;
-  const bistLike = /^[A-Z]{3,6}$/.test(ticker) && !['SPCX','AAPL','MSFT','NVDA','TSLA','GOOG','GOOGL','AMZN','META'].includes(ticker);
-  return bistLike ? `${ticker}.IS` : ticker;
-}
+import https from 'node:https';
 
 function setCors(res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Accept');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Accept');
 }
 
-function browserHeaders() {
-  return {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36',
-    'Accept': 'application/json,text/plain,*/*',
-    'Accept-Language': 'tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7'
-  };
+function cleanTicker(v) {
+  return String(v || '').trim().replace(/[^A-Za-z0-9.=-]/g, '');
+}
+
+function httpsGetJson(url) {
+  return new Promise((resolve, reject) => {
+    const req = https.get(url, {
+      timeout: 20000,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126 Safari/537.36',
+        'Accept': 'application/json,text/plain,*/*',
+        'Accept-Language': 'tr-TR,tr;q=0.9,en-US;q=0.7,en;q=0.6',
+        'Cache-Control': 'no-cache'
+      }
+    }, (up) => {
+      let body = '';
+      up.setEncoding('utf8');
+      up.on('data', c => { body += c; });
+      up.on('end', () => {
+        resolve({ status: up.statusCode || 0, headers: up.headers || {}, body });
+      });
+    });
+    req.on('timeout', () => req.destroy(new Error('Yahoo request timeout')));
+    req.on('error', reject);
+  });
+}
+
+function hasChartData(data) {
+  const r = data && data.chart && data.chart.result && data.chart.result[0];
+  const closes = r && r.indicators && r.indicators.adjclose && r.indicators.adjclose[0] && r.indicators.adjclose[0].adjclose;
+  return !!(r && Array.isArray(closes) && closes.some(x => Number(x) > 0));
+}
+
+export default async function handler(req, res) {
+  setCors(res);
+  if (req.method === 'OPTIONS') return res.status(204).end();
+  if (req.method !== 'GET') return res.status(405).json({ ok: false, error: 'Only GET is supported' });
+
+  const ticker = cleanTicker(req.query.ticker || req.query.symbol);
+  const interval = String(req.query.interval || '1d').trim();
+  const range = String(req.query.range || '1mo').trim();
+  const debug = String(req.query.debug || '') === '1';
+
+  if (!ticker) return res.status(400).json({ ok: false, error: 'Missing ticker parameter' });
+
+  const enc = encodeURIComponent(ticker);
+  const qs = `interval=${encodeURIComponent(interval)}&range=${encodeURIComponent(range)}&includePrePost=false&events=div%2Csplits`;
+  const urls = [
+    `https://query1.finance.yahoo.com/v8/finance/chart/${enc}?${qs}`,
+    `https://query2.finance.yahoo.com/v8/finance/chart/${enc}?${qs}`
+  ];
+
+  const attempts = [];
+  for (const url of urls) {
+    try {
+      const up = await httpsGetJson(url);
+      attempts.push({ url, status: up.status, len: (up.body || '').length });
+      if (up.status < 200 || up.status >= 300) continue;
+
+      let data;
+      try { data = JSON.parse(up.body || '{}'); }
+      catch (e) { attempts[attempts.length - 1].jsonError = e.message; continue; }
+
+      if (!hasChartData(data)) {
+        attempts[attempts.length - 1].emptyChart = true;
+        continue;
+      }
+
+      res.setHeader('Cache-Control', 's-maxage=60, stale-while-revalidate=300');
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      if (debug) data.__debug = { ok: true, ticker, attempts };
+      return res.status(200).send(JSON.stringify(data));
+    } catch (err) {
+      attempts.push({ url, error: err && err.message ? err.message : String(err) });
+    }
+  }
+
+  // 200 dönüyoruz ki index.html tarafında 404/500 yüzünden tüm akış kırılmasın;
+  // ama chart.result boş olduğu için uygulama ilgili hisseyi başarısız sayar ve konsola yazar.
+  return res.status(200).json({
+    chart: { result: null, error: { code: 'NO_DATA', description: 'Yahoo data unavailable' } },
+    ok: false,
+    ticker,
+    attempts: debug ? attempts : undefined
+  });
 }
