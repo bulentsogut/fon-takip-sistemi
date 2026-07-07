@@ -5968,7 +5968,19 @@ function loadFVTPortfolioOverrides() {
       if (!c || !FUNDS[c]) return;
       const rec = parsed[code] || {};
       if (Array.isArray(rec.holdings) && rec.holdings.length > 0) {
-        FUNDS[c].holdings = rec.holdings;
+        const baseHoldings = Array.isArray(FUNDS[c].holdings) ? FUNDS[c].holdings.slice() : [];
+        const incoming = rec.holdings;
+        // Güvenlik: Eski hatalı güncellemeler localStorage'a eksik portföy yazmış olabilir.
+        // Bu durumda dosyanın içindeki varsayılan daha geniş listeyi koru; eksik override ile ezme.
+        if (baseHoldings.length >= 5 && incoming.length < Math.ceil(baseHoldings.length * 0.6)) {
+          console.warn('Eksik kayıtlı override yok sayıldı; varsayılan portföy korundu:', c, incoming.length, '/', baseHoldings.length);
+          return;
+        }
+        if (portfolioHasForeign(baseHoldings) && !portfolioHasForeign(incoming)) {
+          console.warn('Yabancı hisse içeren varsayılan portföy korundu; eksik override yok sayıldı:', c);
+          return;
+        }
+        FUNDS[c].holdings = mergeHoldingsPreserveExisting(baseHoldings, incoming);
         FUNDS[c].aciklamaTarihi = rec.aciklamaTarihi || FUNDS[c].aciklamaTarihi || '';
       }
     });
@@ -6829,6 +6841,26 @@ async function loadPortfolioAnySource(fonKodu) {
   return null;
 }
 
+
+function mergeHoldingsPreserveExisting(currentHoldings, incomingHoldings) {
+  var map = {};
+  (currentHoldings || []).forEach(function(h){
+    var code = normalizeFundCode(h && (h.code || h.symbol));
+    if (!code) return;
+    map[code] = Object.assign({}, h, { code: code });
+  });
+  (incomingHoldings || []).forEach(function(h){
+    var code = normalizeFundCode(h && (h.code || h.symbol));
+    if (!code) return;
+    var prev = map[code] || {};
+    map[code] = Object.assign({}, prev, h, { code: code });
+    map[code].type = normalizeAssetType(map[code]);
+  });
+  return Object.values(map).filter(function(h){
+    return h && h.code && isFinite(parseFloat(h.weight));
+  }).sort(function(a,b){ return (parseFloat(b.weight)||0) - (parseFloat(a.weight)||0); });
+}
+
 function isLikelyForeignHolding(h) {
   var code = String((h && (h.code || h.symbol)) || '').toUpperCase();
   var type = String((h && (h.type || h.tip)) || '').toLowerCase();
@@ -6846,7 +6878,12 @@ function isCandidateSafeForReplace(fon, currentHoldings, result) {
   var current = currentHoldings || [];
 
   if (!next.length) return false;
-  if (source.indexOf('kap') !== -1 || source.indexOf('pdf') !== -1) return true;
+
+  // KAP/PDF ana kaynak olsa bile eksik dönebilir. Bu yüzden körlemesine ezme yok.
+  if (current.length >= 5 && next.length < Math.ceil(current.length * 0.6)) {
+    console.warn('Eksik kaynak koruması: KAP dahil yeni liste mevcut listenin çok altında kaldı', fon, source, next.length, '/', current.length);
+    return false;
+  }
 
   // Ekofin/FVT eksik dönerse, özellikle yabancı hisseleri olan fonlarda mevcut doğru listeyi silme.
   if (portfolioHasForeign(current) && !portfolioHasForeign(next)) {
@@ -7018,8 +7055,8 @@ async function refreshAllPortfoliosDetay() {
         var eskiAgirliklar = {};
         mevcutHoldings.forEach(function(h){ eskiAgirliklar[h.code] = h.weight; });
 
-        // KAP/PDF ana kaynak; Ekofin/FVT sadece güvenli görünürse mevcut portföyü ezer.
-        FUNDS[fon].holdings = result.holdings;
+        // Güvenlik: hiçbir kaynak mevcut portföyü eksilterek silmez; yeni gelenler mevcut listeye işlenir.
+        FUNDS[fon].holdings = mergeHoldingsPreserveExisting(mevcutHoldings, result.holdings);
         normalizeAllHoldingTypes();
         FUNDS[fon].aciklamaTarihi = result.aciklamaTarihi || FUNDS[fon].aciklamaTarihi || '';
         updated++;
@@ -7074,7 +7111,7 @@ async function refreshAllPortfolios() {
         console.warn('Portföy güncelleme atlandı; mevcut ağırlıklar korundu:', fon, result.source || 'kaynak');
         continue;
       }
-      FUNDS[fon].holdings = result.holdings;
+      FUNDS[fon].holdings = mergeHoldingsPreserveExisting(FUNDS[fon].holdings || [], result.holdings);
       if (result.aciklamaTarihi) FUNDS[fon].aciklamaTarihi = result.aciklamaTarihi;
       updated++;
     }
