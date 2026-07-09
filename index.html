@@ -2870,7 +2870,7 @@ window.addEventListener('unhandledrejection', function(ev){
 
   <!-- Footer -->
   <div class="footer-note">
-    ⚠️ TAHMİN NOTU: Bu veriler seans içi/sonu hisse değişimlerine dayalı ağırlıklı ortalama tahminidir. Fonların gerçek NAV değerleri bir sonraki iş günü TEFAS tarafından açıklanır. Portföy dağılımları aylık KAP bildirimleri baz alınmaktadır ve günlük değişebilir. Bu bilgiler yatırım tavsiyesi değildir.
+    ⚠️ TAHMİN NOTU: Bu veriler seans içi/sonu hisse değişimlerine dayalı ağırlıklı ortalama tahminidir. Fonların gerçek NAV değerleri bir sonraki iş günü TEFAS tarafından açıklanır. Portföy dağılımları aylık portföy verileri baz alınmaktadır ve günlük değişebilir. Bu bilgiler yatırım tavsiyesi değildir.
   </div>
 
 </div>
@@ -6609,53 +6609,8 @@ async function fetchTefasFon(fonKodu) {
 
 
 
-// KAP PDF portföy dağılımı ana kaynağı
-// Özellikle IJC/CPT gibi yabancı hisse içeren fonlarda Ekofin eksik kaldığı için önce KAP denenir.
-async function loadKAPPortfolio(fonKodu) {
-  fonKodu = String(fonKodu || '').trim().toUpperCase();
-  if (!fonKodu) return null;
-
-  var urls = [
-    '/api/kap?code=' + encodeURIComponent(fonKodu)
-  ];
-
-  for (var i = 0; i < urls.length; i++) {
-    try {
-      var resp = await fetchWithTimeout(urls[i], { headers: { 'Accept': 'application/json,text/plain,*/*' } }, 30000);
-      if (!resp.ok) {
-        console.warn('KAP PDF HTTP', fonKodu, resp.status, urls[i]);
-        continue;
-      }
-      var data = await resp.json();
-      var items = (data && Array.isArray(data.holdings) && data.holdings) || [];
-      if (!items.length) {
-        console.warn('KAP PDF boş portföy', fonKodu, data);
-        continue;
-      }
-      var holdings = items.map(function(it){
-        var kod = String(it.code || it.symbol || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
-        var agirlik = parseFloat(String(it.weight).replace(',', '.'));
-        if (!kod || isNaN(agirlik) || Math.abs(agirlik) <= 0.005 || Math.abs(agirlik) > 100) return null;
-        var obj = { code: kod, symbol: kod, name: it.name || kod, weight: agirlik, type: it.type || it.tip || 'bist' };
-        obj.type = normalizeAssetType(obj);
-        return obj;
-      }).filter(Boolean).sort(function(a,b){ return b.weight - a.weight; });
-      if (!holdings.length) continue;
-      return {
-        holdings: holdings,
-        aciklamaTarihi: data.aciklamaTarihi || data.latestDate || '',
-        source: data.source || 'KAP PDF',
-        sourceMessage: data.sourceMessage || '',
-        pdfUrl: data.pdfUrl || '',
-        pdfFile: data.pdfFile || '',
-        kapNotificationUrl: data.kapNotificationUrl || ''
-      };
-    } catch(e) {
-      console.warn('KAP PDF portföy okuma hatası:', fonKodu, e);
-    }
-  }
-  return null;
-}
+// Portföy ağırlıkları artık Ekofin ana kaynak, FVT son yedek olarak çalışır.
+// Mevcut nakit/repo/vadeli/ters repo gibi hisse dışı kalemler merge korumasıyla fonda tutulur.
 
 // Ekofin.net portföy dağılımı ana kaynağı
 // Örnek sayfa: https://ekofin.net/fonlar/detay/TLY/fon-portfoy
@@ -6818,15 +6773,8 @@ async function loadEkofinPortfolio(fonKodu) {
 async function loadPortfolioAnySource(fonKodu) {
   fonKodu = String(fonKodu || '').trim().toUpperCase();
 
-  // 1) Ana kaynak: KAP/PDF. Yabancı hisseler Ekofin'de eksik görünebildiği için önce KAP denenir.
-  var kap = null;
-  try { kap = await loadKAPPortfolio(fonKodu); } catch(e) { console.warn('KAP PDF kaynak hatası:', fonKodu, e); }
-  if (kap && kap.holdings && kap.holdings.length > 0) {
-    kap.source = kap.source || 'KAP PDF';
-    return kap;
-  }
-
-  // 2) Yedek kaynak: Ekofin. Yerli ağırlıklı fonlarda hızlı ve temiz çalışır; ama yabancı hisseler eksik olabilir.
+  // Ana kaynak: Ekofin.
+  // Ekofin ABD hisselerini eksik gösterebilir; bu durumda mevcut yabancı hisse / nakit / repo kalemleri merge ile korunur.
   var ekofin = null;
   try { ekofin = await loadEkofinPortfolio(fonKodu); } catch(e) { console.warn('Ekofin kaynak hatası:', fonKodu, e); }
   if (ekofin && ekofin.holdings && ekofin.holdings.length > 0) {
@@ -6834,7 +6782,7 @@ async function loadPortfolioAnySource(fonKodu) {
     return ekofin;
   }
 
-  // 3) Son yedek: FVT. Çalışırsa kullanılır, çalışmazsa mevcut portföy korunur.
+  // Son yedek: FVT. Çalışırsa kullanılır, çalışmazsa mevcut portföy korunur.
   var fvt = null;
   try { fvt = await loadFVTPortfolio(fonKodu); } catch(e) { console.warn('FVT kaynak hatası:', fonKodu, e); }
   if (fvt && fvt.holdings && fvt.holdings.length > 0) {
@@ -6883,9 +6831,9 @@ function isCandidateSafeForReplace(fon, currentHoldings, result) {
 
   if (!next.length) return false;
 
-  // KAP/PDF ana kaynak olsa bile eksik dönebilir. Bu yüzden körlemesine ezme yok.
+  // Ekofin/FVT eksik dönebilir. Bu yüzden körlemesine ezme yok.
   if (current.length >= 5 && next.length < Math.ceil(current.length * 0.6)) {
-    console.warn('Eksik kaynak koruması: KAP dahil yeni liste mevcut listenin çok altında kaldı', fon, source, next.length, '/', current.length);
+    console.warn('Eksik kaynak koruması: yeni liste mevcut listenin çok altında kaldı', fon, source, next.length, '/', current.length);
     return false;
   }
 
@@ -6901,7 +6849,7 @@ function isCandidateSafeForReplace(fon, currentHoldings, result) {
     return false;
   }
 
-  // Mevcut kayıtların yarısından azı geldiyse ve KAP değilse şüpheli kabul et.
+  // Mevcut kayıtların yarısından azı geldiyse şüpheli kabul et.
   if (current.length >= 8 && next.length < Math.ceil(current.length * 0.5)) {
     console.warn('Eksik kaynak koruması: yeni portföy çok eksik göründüğü için güncelleme reddedildi', fon, source, next.length, '/', current.length);
     return false;
@@ -6996,7 +6944,7 @@ async function loadFVTPortfolio(fonKodu) {
 }
 
 async function fvtPortfoyGuncelle() {
-  setStatus('loading', 'KAP/Ekofin portföy ağırlıkları güncelleniyor...');
+  setStatus('loading', 'Ekofin portföy ağırlıkları güncelleniyor...');
   var btn = document.getElementById('refreshBtnFVT');
   var btnHeader = document.getElementById('refreshBtnFVTHeader');
   if (btn) btn.disabled = true;
@@ -7006,7 +6954,7 @@ async function fvtPortfoyGuncelle() {
     renderFunds();
     updateUI();
     if (!sonuc || sonuc.updated === 0) {
-      setStatus('error', 'KAP temiz okunamadı ve Ekofin/FVT de sonuç döndürmedi; mevcut ağırlıklar korundu.');
+      setStatus('error', 'Ekofin/FVT sonuç döndürmedi; mevcut ağırlıklar korundu.');
       return;
     }
     if (sonuc.detay.length > 0) {
@@ -7090,10 +7038,8 @@ async function refreshAllPortfoliosDetay() {
           fon: fon,
           hisseSay: result.holdings.length,
           toplamAgirlik: toplamAgirlik,
-          source: result.source || 'Ekofin/FVT',
+          source: result.source || 'Ekofin',
           sourceMessage: result.sourceMessage || '',
-          pdfFile: result.pdfFile || '',
-          kapNotificationUrl: result.kapNotificationUrl || '',
           degisiklikler: degisiklikler
         });
       } else {
