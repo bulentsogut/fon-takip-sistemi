@@ -9,8 +9,9 @@
 // çekip HTML içinden ağırlık verisini parse etmek.
 //
 // Kullanılan gerçek sayfalar:
-//   https://ekofin.net/fonlar/detay/{KOD}/fon-portfoy   (tam liste)
-//   https://ekofin.net/fonlar/detay/{KOD}                (özet - ilk 5 pozisyon, yedek)
+//   https://ekofin.net/fonlar/detay/{KOD}/fon-portfoy       (hisse portföyü)
+//   https://ekofin.net/fonlar/detay/{KOD}/tasinan-fonlar    (fon içindeki diğer fonlar)
+//   https://ekofin.net/fonlar/detay/{KOD}                    (özet - yedek)
 //
 // NOT: Bu bir HTML scraping çözümüdür. Ekofin sayfa yapısını değiştirirse
 // (örn. hisse linklerinin path'i değişirse) tekrar bozulabilir. ?debug=1
@@ -101,37 +102,69 @@ function extractAciklamaTarihi(html) {
 // <a href="/fonlar/detay/KOD"> bloğu içinde geçiyor. Format değişse bile
 // (TL ayraçlı / ayraçsız / "₺%" biçimli) satırdaki SON yüzdelik değer her
 // zaman "Ağırlık" kolonudur — bu yüzden en sağlam yöntem budur.
+function mergeHoldingInto(out, seen, item) {
+  const code = cleanCode(item && (item.code || item.symbol));
+  if (!code) return;
+  const weight = toNumber(item && item.weight);
+  if (!Number.isFinite(weight) || Math.abs(weight) < 0.005 || Math.abs(weight) > 100) return;
+
+  // Aynı kod farklı sayfalardan gelirse en son gelen ağırlığı kullan, tipi koru/güncelle.
+  if (seen.has(code)) {
+    const old = out.find(x => x.code === code);
+    if (old) {
+      old.weight = Number(weight.toFixed(4));
+      old.type = item.type || old.type || 'bist';
+      old.tip = old.type;
+      old.name = item.name || old.name || code;
+    }
+    return;
+  }
+  seen.add(code);
+  const type = item.type || 'bist';
+  out.push({
+    code,
+    symbol: code,
+    name: item.name || code,
+    weight: Number(weight.toFixed(4)),
+    type,
+    tip: type,
+    nominal: Number.isFinite(toNumber(item.nominal)) ? toNumber(item.nominal) : NaN,
+    value: Number.isFinite(toNumber(item.value)) ? toNumber(item.value) : NaN
+  });
+}
+
 function extractHoldingsFromHtml(html, fundCode) {
   const holdings = [];
   const seen = new Set();
-  const anchorRe = /<a\b[^>]*href="\/(?:sirket|fonlar)\/detay\/([A-Za-z0-9]+)"[^>]*>([\s\S]*?)<\/a>/gi;
+
+  // Ekofin'de hisse satırları /sirket/detay/KOD, taşınan fon satırları /fonlar/detay/KOD olarak gelir.
+  // /fonlar/detay/{ANA_FON}/... gibi ana fon sayfası linklerini dışarıda bırakıyoruz.
+  const anchorRe = /<a\b[^>]*href="\/(sirket|fonlar)\/detay\/([A-Za-z0-9]+)(?:\/[^\"]*)?"[^>]*>([\s\S]*?)<\/a>/gi;
   let m;
   while ((m = anchorRe.exec(html))) {
-    const code = cleanCode(m[1]);
-    if (!code || code === fundCode || seen.has(code)) continue;
+    const kind = String(m[1] || '').toLowerCase();
+    const code = cleanCode(m[2]);
+    if (!code || code === fundCode) continue;
 
-    const inner = stripTags(m[2]);
+    const inner = stripTags(m[3]);
     if (!inner || !/%/.test(inner)) continue;
 
     const pctMatches = [...inner.matchAll(/(-?\d+[.,]\d+)\s*%/g)].map(x => x[1]);
     if (pctMatches.length === 0) continue;
 
+    // Güncel Portföy ve Taşınan Fonlar satırlarında son yüzdelik değer ağırlıktır.
     const weight = toNumber(pctMatches[pctMatches.length - 1]);
     if (!Number.isFinite(weight) || Math.abs(weight) < 0.005 || Math.abs(weight) > 100) continue;
 
-    // Fiyat: satırdaki ilk ondalıklı sayı (varsa)
+    // Fiyat/değer: satırdaki ilk ondalıklı sayı (varsa)
     const priceMatch = inner.match(/(\d+[.,]\d{1,4})/);
     const price = priceMatch ? toNumber(priceMatch[1]) : NaN;
 
-    seen.add(code);
-    holdings.push({
+    mergeHoldingInto(holdings, seen, {
       code,
-      symbol: code,
       name: code,
-      weight: Number(weight.toFixed(4)),
-      type: 'bist',
-      tip: 'bist',
-      nominal: NaN,
+      weight,
+      type: kind === 'fonlar' ? 'fund' : 'bist',
       value: Number.isFinite(price) ? price : NaN
     });
   }
@@ -140,11 +173,21 @@ function extractHoldingsFromHtml(html, fundCode) {
   return holdings;
 }
 
+function mergeHoldings(primary, extra) {
+  const out = [];
+  const seen = new Set();
+  (primary || []).forEach(h => mergeHoldingInto(out, seen, h));
+  (extra || []).forEach(h => mergeHoldingInto(out, seen, h));
+  out.sort((a, b) => b.weight - a.weight);
+  return out;
+}
+
 function pageCandidates(code) {
   const c = encodeURIComponent(code);
   return [
-    `https://ekofin.net/fonlar/detay/${c}/fon-portfoy`, // tam liste (öncelikli)
-    `https://ekofin.net/fonlar/detay/${c}`               // özet rapor - yedek (ilk 5 pozisyon)
+    { url: `https://ekofin.net/fonlar/detay/${c}/fon-portfoy`, kind: 'portfolio' },
+    { url: `https://ekofin.net/fonlar/detay/${c}/tasinan-fonlar`, kind: 'carried-funds' },
+    { url: `https://ekofin.net/fonlar/detay/${c}`, kind: 'summary' }
   ];
 }
 
@@ -158,44 +201,60 @@ export default async function handler(req, res) {
   if (!code) return res.status(400).json({ ok: false, error: 'Missing code parameter' });
 
   const attempts = [];
+  const collected = [];
+  let aciklamaTarihi = '';
+  const usedEndpoints = [];
 
-  for (const url of pageCandidates(code)) {
+  for (const candidate of pageCandidates(code)) {
+    const url = candidate.url;
     try {
       const upstream = await httpsGet(url);
-      attempts.push({ url, status: upstream.status, contentType: upstream.headers['content-type'] || '', len: (upstream.body || '').length });
+      attempts.push({ url, kind: candidate.kind, status: upstream.status, contentType: upstream.headers['content-type'] || '', len: (upstream.body || '').length });
 
       if (upstream.status < 200 || upstream.status >= 300) continue;
 
-      const holdings = extractHoldingsFromHtml(upstream.body || '', code);
-      if (!holdings.length) {
-        attempts[attempts.length - 1].parsed = 0;
-        continue;
+      const html = upstream.body || '';
+      const holdings = extractHoldingsFromHtml(html, code);
+      attempts[attempts.length - 1].parsed = holdings.length;
+
+      const dt = extractAciklamaTarihi(html);
+      if (dt && !aciklamaTarihi) aciklamaTarihi = dt;
+
+      if (holdings.length) {
+        usedEndpoints.push(candidate.kind);
+        holdings.forEach(h => collected.push(h));
       }
 
-      const aciklamaTarihi = extractAciklamaTarihi(upstream.body || '');
-      const payload = {
-        ok: true,
-        source: 'ekofin-html',
-        code,
-        count: holdings.length,
-        latestDate: aciklamaTarihi,
-        aciklamaTarihi,
-        holdings
-      };
-
-      if (debug) {
-        payload.debug = {
-          endpoint: url,
-          attempts,
-          textPreview: stripTags(upstream.body || '').slice(0, 2000)
-        };
-      }
-
-      res.setHeader('Cache-Control', 's-maxage=1800, stale-while-revalidate=3600');
-      return res.status(200).json(payload);
+      // Özet sayfa sadece yedek. Fon-portföy veya taşınan-fonlar veri verdiyse özetten veri ekleyip bozmayalım.
+      if (candidate.kind === 'summary' && collected.length) break;
     } catch (err) {
-      attempts.push({ url, error: err && err.message ? err.message : String(err) });
+      attempts.push({ url, kind: candidate.kind, error: err && err.message ? err.message : String(err) });
     }
+  }
+
+  const holdings = mergeHoldings([], collected);
+  if (holdings.length) {
+    const payload = {
+      ok: true,
+      source: usedEndpoints.includes('carried-funds') ? 'ekofin-html+tasınan-fonlar' : 'ekofin-html',
+      sourceMessage: usedEndpoints.includes('carried-funds') ? 'Taşınan fonlar Ekofin /tasinan-fonlar sayfasından eklendi.' : '',
+      code,
+      count: holdings.length,
+      latestDate: aciklamaTarihi,
+      aciklamaTarihi,
+      holdings
+    };
+
+    if (debug) {
+      payload.debug = {
+        usedEndpoints,
+        attempts,
+        sample: holdings.slice(0, 8)
+      };
+    }
+
+    res.setHeader('Cache-Control', 's-maxage=1800, stale-while-revalidate=3600');
+    return res.status(200).json(payload);
   }
 
   return res.status(200).json({
