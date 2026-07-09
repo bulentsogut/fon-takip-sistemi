@@ -2687,9 +2687,6 @@ window.addEventListener('unhandledrejection', function(ev){
       <button class="auto-refresh-btn" id="autoRefreshBtn" onclick="toggleAutoRefresh()">
         <span id="autoIcon">⏱</span> <span id="autoLabel">OTOMATİK GÜNCELLE</span>
       </button>
-      <button class="manual-btn" id="refreshBtnFVTHeader" onclick="fvtPortfoyGuncelle()" style="border-color:rgba(255,204,68,0.65);color:#ffcc44;background:linear-gradient(135deg,#2a2010,#1a1508);">
-        ↺ AĞIRLIKLARI GÜNCELLE
-      </button>
       <button class="manual-btn" onclick="openManualModal()">
         ✎ MANUEL GİR
       </button>
@@ -3708,14 +3705,18 @@ function ilkFonAlimKaydi(fon, satisTarihi){
   fon=String(fon||'').toUpperCase();
   var satisDate=parseFonDateStr(satisTarihi);
   var aday=[];
-  loadTrx().forEach(function(t){
-    if(String(t.fon||'').toUpperCase()!==fon) return;
+  function addAday(t){
+    if(!t || String(t.fon||'').toUpperCase()!==fon) return;
     var miktar=parseTRNumber(t.miktar);
     if(!miktar || miktar<=0) return;
     var td=parseFonDateStr(t.tarih);
     if(!td || (satisDate && td>satisDate)) return;
     aday.push({tarih:t.tarih,miktar:miktar,ts:td.getTime()});
-  });
+  }
+  loadTrx().forEach(addAday);
+  // IJC gibi BAK/set başlangıcıyla portföye giren fonlar loadTrx içinde görünmeyebilir.
+  // Satış geçmişinde alım tarihi/tutarı boş kalmasın diye bu kaynakları da adaylara ekliyoruz.
+  try{ if(typeof IJC_BASLANGIC_SET!=='undefined') IJC_BASLANGIC_SET.forEach(addAday); }catch(e){}
   aday.sort(function(a,b){ return a.ts-b.ts; });
   return aday[0] || null;
 }
@@ -5094,8 +5095,15 @@ function satFon(fon){
   }
 
   // Satış geçmişi için satış anındaki tutarı sıfır kaydı eklenmeden önce yakala.
-  var satisTutari = getMiktarAtDate(fonTarih, fon);
-  try{ fonSatisGecmisiKaydet(fon, fonTarih, satisTutari); }catch(e){}
+  // Öncelik modal içindeki güncel tutarda. Çünkü bazı fonlar (IJC gibi) BAK/set kaydıyla
+  // başlar ve getMiktarAtDate yalnızca işlem geçmişine bakarsa 0 dönebilir.
+  var modalTutarEl = document.getElementById('pm-'+fon);
+  var modalTutari = modalTutarEl ? parseTRNumber(modalTutarEl.value) : 0;
+  var hesapTutari = getMiktarAtDate(fonTarih, fon);
+  var satisTutari = modalTutari > 0 ? modalTutari : hesapTutari;
+  try{
+    fonSatisGecmisiKaydet(fon, fonTarih, satisTutari);
+  }catch(e){ console.warn('Satış geçmişi kaydedilemedi:', e); }
 
   // Satış varsayılan fonlarda bile kalıcı olmalı; bunun için ekstra işlem kaydına yazılır.
   var extra = [];
@@ -5105,12 +5113,13 @@ function satFon(fon){
   });
   extra.push({tarih: fonTarih, fon: fon, miktar: 0, not:'Portföy yönetimi - sat', ts: Date.now()});
   persistTrxExtra(extra);
+  try{ if(typeof fonFirebaseSave === 'function') fonFirebaseSave(true); }catch(e){}
 
   var modal = document.getElementById('portfoy-modal');
   if(modal) modal.remove();
   renderTefasCardsHTML();
   render();
-  toast(fon+' satıldı. Geçmiş veriler korundu.','ok');
+  toast(fon+' satıldı. Satış kaydı Fon Alım/Satım Geçmişi’ne eklendi.','ok');
 }
 
 function silFon(fon) {
