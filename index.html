@@ -4039,194 +4039,15 @@ async function fetchEkofinFonInfo(fonKodu) {
   return null;
 }
 
-async function fetchAllFunds(){
-  document.getElementById('loading').style.display='flex';
-  document.getElementById('refresh-btn').disabled=true;
-  document.getElementById('error-bar').style.display='none';
-
-  // CORS kontrolu artık tefasPost içinde otomatik yapılıyor (direct → proxy fallback)
-  // Eski manuel test kaldırıldı - proxy ile her ortamda çalışır
-  if (false) {
-    try {
-      const cached = JSON.parse(_lsGet(TKEY));
-      const cachedRates = (cached && cached.rates) ? cached.rates : {...PREFILLED};
-      if (cached) tefasInfo = cached.info||{};
-      // Elle girilen veriler cache'in üzerine yazmalı
-      const storedC = loadR();
-      liveRates = Object.assign({}, cachedRates);
-      Object.keys(storedC).forEach(function(d){
-        if(!liveRates[d]) liveRates[d]={};
-        Object.keys(storedC[d]).forEach(function(f){
-          if(storedC[d][f]!==0 && storedC[d][f]!==null && storedC[d][f]!==undefined)
-            liveRates[d][f]=storedC[d][f];
-        });
-      });
-      if (cached) document.getElementById('last-update').innerHTML =
-        'Cache: <span style="color:var(--gold)">'+new Date(cached.ts).toLocaleTimeString('tr-TR')+'</span>';
-      renderTefasCards(); render();
-    } catch(e2) { liveRates={...PREFILLED}; render(); }
-    return;
-  }
-
-  let ok = false;
-  const newR = {...PREFILLED}, newI = {};
-  var sourceCounts = { EKOFIN: 0, TEFAS: 0, FVT: 0, NONE: 0 };
-  var sourceDetails = [];
-
-  const tumFonlarTefas = getTumFonlar();
-
-  // Tüm fonlar için istekleri paralel at
-  await Promise.all(tumFonlarTefas.map(async function(c) {
-    var ekofinInfo = await fetchEkofinFonInfo(c);
-    var tefasInfoFallback = null;
-    var tefasRatesOk = false;
-
-    try {
-      const [fiyatlar, bilgiler] = await Promise.all([
-        tefasPost('fonFiyatBilgiGetir', {fonKodu: c, periyod: 1}),
-        tefasPost('fonBilgiGetir', {fonKodu: c})
-      ]);
-
-      var latestPrice = 0;
-      var latestDate = '';
-      if (fiyatlar.length) {
-        const sorted = fiyatlar
-          .filter(function(r){ return r.tarih || r.TARIH || r.Tarih || r.date || r.DATE; })
-          .sort(function(a,b){ return new Date(a.tarih||a.TARIH||a.Tarih||a.date||a.DATE) - new Date(b.tarih||b.TARIH||b.Tarih||b.date||b.DATE); });
-
-        if (sorted.length) {
-          var lastRow = sorted[sorted.length-1];
-          latestPrice = pickNumber(lastRow, ['fiyat','FIYAT','Fiyat','fonFiyat','FONFIYAT','price','PRICE']);
-          latestDate = lastRow.tarih || lastRow.TARIH || lastRow.Tarih || lastRow.date || lastRow.DATE || '';
-        }
-
-        for (var i = 1; i < sorted.length; i++) {
-          const prev = pickNumber(sorted[i-1], ['fiyat','FIYAT','Fiyat','fonFiyat','FONFIYAT','price','PRICE']);
-          const cur  = pickNumber(sorted[i],   ['fiyat','FIYAT','Fiyat','fonFiyat','FONFIYAT','price','PRICE']);
-          if (prev > 0 && cur > 0) {
-            const dt = new Date(sorted[i-1].tarih || sorted[i-1].TARIH || sorted[i-1].Tarih || sorted[i-1].date || sorted[i-1].DATE);
-            const k = String(dt.getDate()).padStart(2,'0') + '.' + String(dt.getMonth()+1).padStart(2,'0');
-            if (!newR[k]) newR[k] = {};
-            newR[k][c.toLowerCase()] = parseFloat(((cur - prev) / prev * 100).toFixed(4));
-          }
-        }
-        tefasRatesOk = true;
-        ok = true;
-      }
-
-      let bilgi = bilgiler[0];
-      if (bilgi || latestPrice) {
-        bilgi = bilgi || {};
-        var infoPrice = pickNumber(bilgi, ['fiyat','FIYAT','Fiyat','fonFiyat','FONFIYAT','price','PRICE']) || latestPrice;
-        tefasInfoFallback = {
-          name: bilgi.fonUnvan || bilgi.FONUNVAN || bilgi.FonUnvan || bilgi.unvan || bilgi.name || c,
-          price: infoPrice,
-          dailyReturn: pickNumber(bilgi, ['gunlukGetiri','GUNLUKGETIRI','GunlukGetiri','gunluk','GETIRI']) || 0,
-          weeklyReturn: pickNumber(bilgi, ['haftalikGetiri','HAFTALIKGETIRI','HaftalikGetiri']) || 0,
-          monthlyReturn: pickNumber(bilgi, ['aylikGetiri','AYLIKGETIRI','AylikGetiri']) || 0,
-          size: pickNumber(bilgi, ['portfoyBuyuklugu','portfoyBuyukluk','PORTFOYBUYUKLUK','PORTFOYBUYUKLUGU']) || 0,
-          investors: parseInt(pickNumber(bilgi, ['yatirimciSayisi','YATIRIMCISAYISI','YatirimciSayisi']) || 0, 10),
-          date: bilgi.tarih || bilgi.TARIH || bilgi.Tarih || latestDate || '',
-          source: 'TEFAS'
-        };
-      }
-    } catch(e) {
-      console.warn('TEFAS fiyat yedeği alınamadı: ' + c, e && e.name ? e.name : e);
-    }
-
-    // Öncelik: Ekofin fiyatı. Ekofin yoksa TEFAS. TEFAS da yoksa FVT son yedek.
-    if (ekofinInfo) {
-      // TEFAS'ta dönemsel getiri/portföy büyüklüğü daha dolu gelirse boş alanları tamamla.
-      if (tefasInfoFallback) {
-        ekofinInfo.weeklyReturn = ekofinInfo.weeklyReturn || tefasInfoFallback.weeklyReturn || 0;
-        ekofinInfo.monthlyReturn = ekofinInfo.monthlyReturn || tefasInfoFallback.monthlyReturn || 0;
-        ekofinInfo.size = ekofinInfo.size || tefasInfoFallback.size || 0;
-        ekofinInfo.investors = ekofinInfo.investors || tefasInfoFallback.investors || 0;
-      }
-      newI[c] = ekofinInfo;
-      sourceCounts.EKOFIN++;
-      sourceDetails.push(c + ':EKOFIN' + (ekofinInfo.sourceDetail ? '(' + ekofinInfo.sourceDetail + ')' : ''));
-      ok = true;
-    } else if (tefasInfoFallback && tefasInfoFallback.price) {
-      newI[c] = tefasInfoFallback;
-      sourceCounts.TEFAS++;
-      sourceDetails.push(c + ':TEFAS');
-      ok = true;
-    } else {
-      var fb = await fetchFvtTakipFon(c);
-      if (fb) {
-        Object.keys(fb.rates||{}).forEach(function(k){
-          if(!newR[k]) newR[k]={};
-          newR[k][c.toLowerCase()] = fb.rates[k];
-        });
-        newI[c] = fb.info || {name:c, price:0, dailyReturn:0, source:'FVT'};
-        sourceCounts.FVT++;
-        sourceDetails.push(c + ':FVT');
-        ok = true;
-      } else {
-        console.warn('Fon kapanış verisi alinamadi: ' + c);
-        sourceCounts.NONE++;
-        sourceDetails.push(c + ':YOK');
-        newI[c] = newI[c] || {name:c, price:0, dailyReturn:0};
-      }
-    }
-  }));
-
-  // Bugünün tarihini sil - veriler yarın açıklanacak
-  const todayDt = new Date();
-  const todayK = String(todayDt.getDate()).padStart(2,'0') + '.' + String(todayDt.getMonth()+1).padStart(2,'0');
-  delete newR[todayK];
-
-  if (ok) {
-    // TEFAS verisini ham olarak cache'e kaydet
-    try { _lsSet(TKEY, JSON.stringify({rates:newR, info:newI, ts:Date.now()})); } catch(e) {}
-
-    // Elle kaydedilmis veriler (fon_v5) her zaman TEFAS'in uzerinde onceliklidir.
-    // Birlestirme sirasi: once TEFAS, sonra elle girilen degerler TEFAS'i ezer.
-    const stored = loadR();
-
-    liveRates = Object.assign({}, newR);
-    Object.keys(stored).forEach(function(d) {
-      if (!liveRates[d]) liveRates[d] = {};
-      Object.keys(stored[d]).forEach(function(f) {
-        // Elle girilen her değer (sıfır dahil) TEFAS'ın hesapladığı değerin üzerine yazar
-        // Sıfır da kasıtlı girilebilir (o gün fon işlem görmedi gibi)
-        if (stored[d][f] !== null && stored[d][f] !== undefined) {
-          liveRates[d][f] = stored[d][f];
-        }
-      });
-    });
-
-    tefasInfo = newI;
-    document.getElementById('last-update').innerHTML =
-      'Son guncelleme: <span style="color:var(--green)">'+new Date().toLocaleTimeString('tr-TR')+'</span>' +
-      ' <span style="color:var(--muted)">Kaynak: Ekofin '+sourceCounts.EKOFIN+', TEFAS '+sourceCounts.TEFAS+', FVT '+sourceCounts.FVT+', Yok '+sourceCounts.NONE+'</span>';
-    console.log('ORKA fon kapanış kaynak raporu:', sourceDetails.join(' | '));
-    toast('Fon kapanışları alındı · Ekofin '+sourceCounts.EKOFIN+' · TEFAS '+sourceCounts.TEFAS+' · FVT '+sourceCounts.FVT,'ok');
-  } else {
-    document.getElementById('error-bar').style.display='flex';
-    document.getElementById('error-msg').textContent =
-      'Ekofin/TEFAS otomatik veri alımı tamamlanamadı. Mevcut cache ve elle girilen veriler korunuyor.';
-    try {
-      const cached = JSON.parse(_lsGet(TKEY));
-      const storedFail = loadR();
-      if (cached) {
-        liveRates = Object.assign({}, cached.rates||{});
-        tefasInfo = cached.info||{};
-        Object.keys(storedFail).forEach(function(d){
-          if(!liveRates[d]) liveRates[d]={};
-          Object.keys(storedFail[d]).forEach(function(f){ liveRates[d][f]=storedFail[d][f]; });
-        });
-        document.getElementById('last-update').innerHTML =
-          'Cache: <span style="color:var(--gold)">'+new Date(cached.ts).toLocaleTimeString('tr-TR')+'</span>';
-      } else { liveRates = Object.assign({}, PREFILLED, storedFail); }
-    } catch(e) { liveRates = {...PREFILLED}; }
-  }
-
-  renderTefasCards(); render();
-  document.getElementById('loading').style.display='none';
-  document.getElementById('refresh-btn').disabled=false;
-}
+// NOT: fetchAllFunds artık tek yerde tanımlı (v19, dosya sonunda).
+// Eskiden burada ikinci bir fetchAllFunds tanımı vardı; JS aynı isimli iki
+// global function tanımından SONUNCUSUNU kullanır, bu yüzden bu eski sürüm
+// hiçbir zaman çalışmıyordu ama sessizce dosyada duruyordu. Asıl sorun da
+// buydu: bu eski (silinen) sürüm TEFAS'tan günlük fiyat geçmişini çekip
+// liveRates'i güncelliyordu; dosya sonundaki v19 sürümü ise sadece fiyat
+// kartını (tefasInfo) tazeliyor, liveRates'e hiç dokunmuyordu. Ekofin fiyatı
+// başarıyla gelse bile Fon Takip tablosu (render() -> liveRates) hiç
+// güncellenmiyordu. Düzeltme: v19'a günlük oran hesaplama adımı eklendi.
 // Manuel guncelleme - kullanici fon degerlerini elle girer
 function openManualUpdate(){
   const today=new Date();
@@ -10713,6 +10534,34 @@ async function orkaGetTefasInfoV19(code){
     return null;
   }
 }
+async function orkaGetTefasRatesV19(code, newR){
+  // TEFAS'tan günlük fiyat geçmişini çekip gün-gün % değişimi newR[gg.aa][kod] olarak yazar.
+  code = String(code||'').trim().toUpperCase();
+  if(!code || typeof tefasPost !== 'function') return false;
+  try{
+    var fiyatlar = await tefasPost('fonFiyatBilgiGetir', {fonKodu: code, periyod: 1});
+    if(!fiyatlar || !fiyatlar.length) return false;
+    var sorted = fiyatlar
+      .filter(function(r){ return r.tarih || r.TARIH || r.Tarih || r.date || r.DATE; })
+      .sort(function(a,b){ return new Date(a.tarih||a.TARIH||a.Tarih||a.date||a.DATE) - new Date(b.tarih||b.TARIH||b.Tarih||b.date||b.DATE); });
+    var wrote = false;
+    for(var i=1;i<sorted.length;i++){
+      var prev = orkaPickV19(sorted[i-1], ['fiyat','FIYAT','Fiyat','fonFiyat','FONFIYAT','price','PRICE']);
+      var cur  = orkaPickV19(sorted[i],   ['fiyat','FIYAT','Fiyat','fonFiyat','FONFIYAT','price','PRICE']);
+      if(prev > 0 && cur > 0){
+        var dt = new Date(sorted[i-1].tarih || sorted[i-1].TARIH || sorted[i-1].Tarih || sorted[i-1].date || sorted[i-1].DATE);
+        var k = String(dt.getDate()).padStart(2,'0') + '.' + String(dt.getMonth()+1).padStart(2,'0');
+        if(!newR[k]) newR[k] = {};
+        newR[k][code.toLowerCase()] = parseFloat(((cur - prev) / prev * 100).toFixed(4));
+        wrote = true;
+      }
+    }
+    return wrote;
+  }catch(e){
+    console.warn('ORKA v19 TEFAS oran geçmişi alınamadı:', code, e && e.message ? e.message : e);
+    return false;
+  }
+}
 async function fetchAllFunds(){
   var loading = document.getElementById('loading');
   var btn = document.getElementById('refresh-btn');
@@ -10724,12 +10573,19 @@ async function fetchAllFunds(){
   var sourceCounts = { EKOFIN:0, TEFAS:0, YOK:0 };
   var sourceDetails = [];
   var newI = {};
+  var newR = {};
+  var ratesOk = false;
   var codes = [];
   try{ codes = (typeof getTumFonlar === 'function' ? getTumFonlar() : ['DFI','TLY','PHE','CPT','IJC']); }catch(e){ codes = ['DFI','TLY','PHE','CPT','IJC']; }
 
   for(var i=0;i<codes.length;i++){
     var c = String(codes[i]||'').toUpperCase();
     if(!c) continue;
+
+    // Fon Takip tablosu için günlük % değişim geçmişi (kaynak fiyattan bağımsız, hep TEFAS'tan).
+    var gotRates = await orkaGetTefasRatesV19(c, newR);
+    if(gotRates) ratesOk = true;
+
     var info = await orkaGetEkofinInfoV19(c);
     if(info && info.price){
       newI[c] = info;
@@ -10750,13 +10606,37 @@ async function fetchAllFunds(){
     sourceDetails.push(c + ':YOK');
   }
 
-  // Mevcut oran/geçmiş verilerini bozma; sadece fiyat kart bilgisini yenile.
+  // Bugünün tarihini sil - o günün verisi henüz TEFAS'ta kesinleşmemiş olabilir.
+  var todayDt = new Date();
+  var todayK = String(todayDt.getDate()).padStart(2,'0') + '.' + String(todayDt.getMonth()+1).padStart(2,'0');
+  delete newR[todayK];
+
+  // Fiyat kartlarını (tefasInfo) her zaman güncelle; oran geçmişini (liveRates)
+  // yeni veri geldiyse TEFAS'tan tazele, gelmediyse eski/cache değerleri koru.
+  // Elle girilmiş değerler (fon_v5) her durumda TEFAS hesaplamasının üzerine yazar.
   try{
     var cached = JSON.parse(_lsGet(TKEY) || '{}') || {};
     var oldRates = cached.rates || liveRates || {};
     var oldInfo = cached.info || tefasInfo || {};
     tefasInfo = Object.assign({}, oldInfo, newI);
     liveRates = Object.assign({}, oldRates || {});
+    if(ratesOk){
+      Object.keys(newR).forEach(function(d){
+        if(!liveRates[d]) liveRates[d] = {};
+        Object.assign(liveRates[d], newR[d]);
+      });
+    }
+
+    if(typeof loadR === 'function'){
+      var stored = loadR();
+      Object.keys(stored||{}).forEach(function(d){
+        if(!liveRates[d]) liveRates[d] = {};
+        Object.keys(stored[d]).forEach(function(f){
+          if(stored[d][f] !== null && stored[d][f] !== undefined) liveRates[d][f] = stored[d][f];
+        });
+      });
+    }
+
     _lsSet(TKEY, JSON.stringify({rates: liveRates, info: tefasInfo, ts: Date.now(), sourceReport: sourceDetails}));
   }catch(e){
     tefasInfo = Object.assign({}, tefasInfo || {}, newI);
