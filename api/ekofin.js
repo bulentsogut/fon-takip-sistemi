@@ -175,24 +175,67 @@ function extractAnchorHoldings(html, fundCode, mode) {
 }
 
 function extractPriceInfo(html, fundCode) {
-  const text = stripTags(html || '');
-  const info = { name: fundCode, price: 0, dailyReturn: 0, weeklyReturn: 0, monthlyReturn: 0, size: 0, investors: 0, date: extractDate(html) };
+  const rawHtml = String(html || '');
+  const text = stripTags(rawHtml);
+  const info = {
+    name: fundCode,
+    price: 0,
+    dailyReturn: 0,
+    weeklyReturn: 0,
+    monthlyReturn: 0,
+    size: 0,
+    investors: 0,
+    date: extractDate(html),
+    priceSource: '',
+    priceMethod: '',
+    priceRaw: ''
+  };
 
   const titleRe = new RegExp('\\b' + fundCode + '\\b\\s*[-–—]?\\s*([^|]{8,160}?)(?:Fon Fiyat|Günlük|Portföy|Yatırımcı|$)', 'i');
   const tm = text.match(titleRe);
   if (tm && tm[1]) info.name = (fundCode + ' ' + tm[1]).replace(/\s+/g, ' ').trim().slice(0, 180);
 
-  const pricePatterns = [
-    /(?:Fon\s*Fiyatı|Birim\s*Pay\s*Değeri|Son\s*Fiyat|Fiyat)\s*[:：]?\s*([0-9]+[\.,][0-9]{3,8})/i,
-    /([0-9]+[\.,][0-9]{4,8})\s*(?:TL|₺)\b/i
+  // Kullanıcının inspect ile gönderdiği gerçek Ekofin fiyat bloğu örneği:
+  // <span>7277.9040<!-- -->TL</span><span class="text-sm text-green-600">(<!-- -->0.27<!-- -->%)</span>
+  // Ekofin/Next.js HTML'inde araya <!-- --> yorumları girebildiği için önce ham HTML üzerinde yakalıyoruz.
+  const htmlPricePatterns = [
+    /<span[^>]*>\s*([0-9]+[\.,][0-9]{3,8})\s*(?:<!--\s*-->)?\s*(?:TL|₺)\s*<\/span>/i,
+    />\s*([0-9]+[\.,][0-9]{3,8})\s*(?:<!--\s*-->)?\s*(?:TL|₺)\s*</i
   ];
-  for (const re of pricePatterns) {
-    const m = text.match(re);
+  for (const re of htmlPricePatterns) {
+    const m = rawHtml.match(re);
     if (m) {
       const n = toNumber(m[1]);
-      if (Number.isFinite(n) && n > 0 && n < 100000) { info.price = n; break; }
+      if (Number.isFinite(n) && n > 0 && n < 100000) {
+        info.price = n;
+        info.priceSource = 'EKOFIN';
+        info.priceMethod = 'summary-html-span-tl';
+        info.priceRaw = m[0].replace(/\s+/g, ' ').slice(0, 180);
+        break;
+      }
     }
   }
+
+  if (!info.price) {
+    const pricePatterns = [
+      /(?:Fon\s*Fiyatı|Birim\s*Pay\s*Değeri|Son\s*Fiyat|Fiyat)\s*[:：]?\s*([0-9]+[\.,][0-9]{3,8})/i,
+      /([0-9]+[\.,][0-9]{4,8})\s*(?:TL|₺)\b/i
+    ];
+    for (const re of pricePatterns) {
+      const m = text.match(re);
+      if (m) {
+        const n = toNumber(m[1]);
+        if (Number.isFinite(n) && n > 0 && n < 100000) {
+          info.price = n;
+          info.priceSource = 'EKOFIN';
+          info.priceMethod = 'summary-text-tl';
+          info.priceRaw = m[0].replace(/\s+/g, ' ').slice(0, 180);
+          break;
+        }
+      }
+    }
+  }
+
   function pctNear(re) {
     const idx = text.search(re);
     if (idx < 0) return 0;
@@ -316,6 +359,9 @@ export default async function handler(req, res) {
     aciklamaTarihi: summary.date || '',
     info: summary.info || undefined,
     price: summary.info ? summary.info.price : undefined,
+    priceSource: summary.info ? (summary.info.priceSource || 'EKOFIN') : undefined,
+    priceMethod: summary.info ? (summary.info.priceMethod || '') : undefined,
+    priceRaw: summary.info ? (summary.info.priceRaw || '') : undefined,
     dailyReturn: summary.info ? summary.info.dailyReturn : undefined,
     holdings
   };
