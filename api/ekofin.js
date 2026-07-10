@@ -4,6 +4,7 @@
 // birbirinden bağımsız okunur. Bir bölüm bozulursa diğer bölümler düşmez.
 
 import https from 'node:https';
+import zlib from 'node:zlib';
 
 function setCors(res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -31,22 +32,38 @@ function toNumber(value) {
   return Number.parseFloat(x);
 }
 
-function httpsGet(url, timeoutMs = 18000) {
+function decodeBody(buffer, headers) {
+  const enc = String((headers && headers['content-encoding']) || '').toLowerCase();
+  try {
+    if (enc.includes('br')) return zlib.brotliDecompressSync(buffer).toString('utf8');
+    if (enc.includes('gzip')) return zlib.gunzipSync(buffer).toString('utf8');
+    if (enc.includes('deflate')) return zlib.inflateSync(buffer).toString('utf8');
+  } catch (_) {}
+  return buffer.toString('utf8');
+}
+
+function httpsGet(url, timeoutMs = 18000, extraHeaders = {}) {
   return new Promise((resolve, reject) => {
+    const u = new URL(url);
     const req = https.get(url, {
       timeout: timeoutMs,
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126 Safari/537.36',
+      headers: Object.assign({
+        'User-Agent': 'Mozilla/5.0 (Windows NT 6.3; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109 Safari/537.36',
         'Accept': 'text/html,application/xhtml+xml,application/json,text/plain,*/*',
+        'Accept-Encoding': 'gzip, deflate, br',
         'Accept-Language': 'tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.6',
-        'Referer': 'https://ekofin.net/fonlar',
+        'Origin': 'https://ekofin.net',
+        'Referer': u.hostname === 'api.ekofin.net' ? 'https://ekofin.net/' : 'https://ekofin.net/fonlar',
         'Cache-Control': 'no-cache'
-      }
+      }, extraHeaders || {})
     }, (r) => {
-      let body = '';
-      r.setEncoding('utf8');
-      r.on('data', chunk => { body += chunk; });
-      r.on('end', () => resolve({ status: r.statusCode || 0, headers: r.headers || {}, body }));
+      const chunks = [];
+      r.on('data', chunk => { chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)); });
+      r.on('end', () => {
+        const headers = r.headers || {};
+        const body = decodeBody(Buffer.concat(chunks), headers);
+        resolve({ status: r.statusCode || 0, headers, body });
+      });
     });
     req.on('timeout', () => req.destroy(new Error('Ekofin request timeout')));
     req.on('error', reject);
@@ -172,6 +189,126 @@ function extractAnchorHoldings(html, fundCode, mode) {
   }
   out.sort((a, b) => b.weight - a.weight);
   return out;
+}
+
+
+function walkJson(value, visitor, path = []) {
+  if (Array.isArray(value)) {
+    value.forEach((v, i) => walkJson(v, visitor, path.concat(String(i))));
+    return;
+  }
+  if (value && typeof value === 'object') {
+    visitor(value, path);
+    Object.keys(value).forEach(k => walkJson(value[k], visitor, path.concat(k)));
+  }
+}
+
+function parseDateAny(v) {
+  if (v === null || v === undefined) return 0;
+  if (typeof v === 'number' && v > 1000000000) return v;
+  const s = String(v || '').trim();
+  if (!s) return 0;
+  const t = Date.parse(s);
+  if (Number.isFinite(t)) return t;
+  const dm = s.match(/(\d{1,2})[\.\/\-](\d{1,2})[\.\/\-](\d{2,4})/);
+  if (dm) {
+    const y = Number(dm[3].length === 2 ? '20' + dm[3] : dm[3]);
+    const m = Number(dm[2]);
+    const d = Number(dm[1]);
+    const dt = Date.UTC(y, m - 1, d);
+    return Number.isFinite(dt) ? dt : 0;
+  }
+  return 0;
+}
+
+function extractChartPriceFromJson(data, fundCode) {
+  const candidates = [];
+  const priceKeys = /(^|_)(price|fiyat|deger|value|close|kapanis|kapanış|paydegeri|pay_degeri|son)($|_)/i;
+  const dateKeys = /(date|tarih|time|zaman|created|gun|gün)/i;
+
+  function addCandidate(obj, key, rawPrice) {
+    const price = toNumber(rawPrice);
+    if (!Number.isFinite(price) || price <= 0 || price > 100000) return;
+    let dateRaw = '';
+    let dateScore = 0;
+    Object.keys(obj || {}).forEach(k => {
+      if (!dateKeys.test(k)) return;
+      const score = parseDateAny(obj[k]);
+      if (score >= dateScore) { dateScore = score; dateRaw = obj[k]; }
+    });
+    candidates.push({ price, key, raw: rawPrice, dateRaw, dateScore });
+  }
+
+  walkJson(data, (obj) => {
+    Object.keys(obj || {}).forEach(k => {
+      if (priceKeys.test(k)) addCandidate(obj, k, obj[k]);
+    });
+    // Bazı servislerde veri dizi halinde [tarih, fiyat] / [timestamp, fiyat] gelebilir.
+    Object.keys(obj || {}).forEach(k => {
+      const v = obj[k];
+      if (Array.isArray(v)) {
+        v.forEach(row => {
+          if (Array.isArray(row) && row.length >= 2) {
+            const d0 = parseDateAny(row[0]);
+            const p1 = toNumber(row[1]);
+            if (d0 && Number.isFinite(p1) && p1 > 0) {
+              candidates.push({ price: p1, key: 'array[1]', raw: row[1], dateRaw: row[0], dateScore: d0 });
+            }
+          }
+        });
+      }
+    });
+  });
+
+  candidates.sort((a, b) => (b.dateScore || 0) - (a.dateScore || 0) || b.price - a.price);
+  const best = candidates[0];
+  if (!best) return null;
+  return {
+    price: Number(best.price.toFixed(6)),
+    date: best.dateScore ? new Date(best.dateScore).toISOString().slice(0,10) : '',
+    method: 'api-getFonChartPrice-json-' + best.key,
+    raw: String(best.raw),
+    candidateCount: candidates.length
+  };
+}
+
+async function loadChartPriceInfo(code, attempts) {
+  const url = `https://api.ekofin.net/AppUseFinancialService/AppUseFinancials/getFonChartPrice?fon_kodu=${encodeURIComponent(code)}`;
+  try {
+    const r = await httpsGet(url, 18000, {
+      'Accept': 'application/json, text/plain, */*',
+      'Origin': 'https://ekofin.net',
+      'Referer': 'https://ekofin.net/'
+    });
+    const rec = { step: 'getFonChartPrice', url, status: r.status, contentType: r.headers['content-type'] || '', len: (r.body || '').length };
+    attempts.push(rec);
+    if (r.status < 200 || r.status >= 300) return null;
+    let data = null;
+    try { data = JSON.parse(r.body || 'null'); } catch (e) { rec.error = 'JSON parse failed: ' + e.message; return null; }
+    const found = extractChartPriceFromJson(data, code);
+    rec.parsed = !!found;
+    if (found) {
+      rec.price = found.price;
+      rec.method = found.method;
+      rec.candidateCount = found.candidateCount;
+      return {
+        name: code,
+        price: found.price,
+        dailyReturn: 0,
+        weeklyReturn: 0,
+        monthlyReturn: 0,
+        size: 0,
+        investors: 0,
+        date: found.date || '',
+        priceSource: 'EKOFIN',
+        priceMethod: found.method,
+        priceRaw: found.raw
+      };
+    }
+  } catch (err) {
+    attempts.push({ step: 'getFonChartPrice', url, error: err && err.message ? err.message : String(err) });
+  }
+  return null;
 }
 
 function extractPriceInfo(html, fundCode) {
@@ -307,17 +444,32 @@ async function loadCarriedFunds(code, attempts) {
 }
 
 async function loadSummaryInfo(code, attempts) {
+  // Birincil fiyat kaynağı: Ekofin'in kendi JSON servisi.
+  // Kullanıcının Network'te yakaladığı endpoint: getFonChartPrice?fon_kodu=TLY
+  const chartInfo = await loadChartPriceInfo(code, attempts);
+
   const url = `https://ekofin.net/fonlar/detay/${encodeURIComponent(code)}`;
   try {
     const r = await httpsGet(url, 18000);
     attempts.push({ step: 'summary', url, status: r.status, contentType: r.headers['content-type'] || '', len: (r.body || '').length });
-    if (r.status < 200 || r.status >= 300) return { info: null, date: '' };
-    const info = extractPriceInfo(r.body, code);
-    attempts[attempts.length - 1].hasInfo = !!info;
-    return { info, date: extractDate(r.body) };
+    if (r.status < 200 || r.status >= 300) return { info: chartInfo, date: chartInfo ? chartInfo.date : '' };
+    const htmlInfo = extractPriceInfo(r.body, code);
+    attempts[attempts.length - 1].hasInfo = !!htmlInfo;
+    const date = extractDate(r.body) || (chartInfo ? chartInfo.date : '');
+    if (chartInfo) {
+      // JSON servisi fiyat için daha güvenilir; HTML sadece ad/getiri bilgisi tamamlayıcıdır.
+      const merged = Object.assign({}, htmlInfo || {}, chartInfo);
+      merged.name = (htmlInfo && htmlInfo.name) || chartInfo.name || code;
+      merged.dailyReturn = (htmlInfo && htmlInfo.dailyReturn) || chartInfo.dailyReturn || 0;
+      merged.weeklyReturn = (htmlInfo && htmlInfo.weeklyReturn) || 0;
+      merged.monthlyReturn = (htmlInfo && htmlInfo.monthlyReturn) || 0;
+      merged.date = date;
+      return { info: merged, date };
+    }
+    return { info: htmlInfo, date };
   } catch (err) {
     attempts.push({ step: 'summary', url, error: err && err.message ? err.message : String(err) });
-    return { info: null, date: '' };
+    return { info: chartInfo, date: chartInfo ? chartInfo.date : '' };
   }
 }
 
