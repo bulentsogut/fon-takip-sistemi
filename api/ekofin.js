@@ -353,6 +353,18 @@ function extractPriceInfo(html, fundCode) {
     }
   }
 
+  // Aynı görsel blokta fiyatın hemen yanında günlük değişim yüzdesi bulunur.
+  // Örn: <span>7277.9040<!-- -->TL</span><span class="text-sm text-green-600">(<!-- -->0.27<!-- -->%)</span>
+  if (info.price) {
+    const priceIdx = rawHtml.indexOf(info.priceRaw && info.priceRaw.slice(0, 20));
+    const near = priceIdx >= 0 ? rawHtml.slice(priceIdx, priceIdx + 500) : rawHtml;
+    const pm = near.match(/\(\s*(?:<!--\s*-->)?\s*(-?\d+(?:[\.,]\d+)?)\s*(?:<!--\s*-->)?\s*%\s*\)/i) || near.match(/(-?\d+(?:[\.,]\d+)?)\s*(?:<!--\s*-->)?\s*%/i);
+    if (pm) {
+      const dn = toNumber(pm[1]);
+      if (Number.isFinite(dn) && Math.abs(dn) < 100) info.dailyReturn = dn;
+    }
+  }
+
   if (!info.price) {
     const pricePatterns = [
       /(?:Fon\s*Fiyatı|Birim\s*Pay\s*Değeri|Son\s*Fiyat|Fiyat)\s*[:：]?\s*([0-9]+[\.,][0-9]{3,8})/i,
@@ -444,33 +456,43 @@ async function loadCarriedFunds(code, attempts) {
 }
 
 async function loadSummaryInfo(code, attempts) {
-  // Birincil fiyat kaynağı: Ekofin'in kendi JSON servisi.
-  // Kullanıcının Network'te yakaladığı endpoint: getFonChartPrice?fon_kodu=TLY
-  const chartInfo = await loadChartPriceInfo(code, attempts);
-
+  // ORKA v22: Birincil fiyat kaynağı artık kullanıcının ekranda gördüğü Ekofin özet kartıdır.
+  // Amaç: sol üstte görünen "7277.9040 TL (0.27%)" bloğunu okumak.
+  // Portföy/ağırlık okuyucularına dokunulmadı. Chart JSON sadece yedek kalır.
   const url = `https://ekofin.net/fonlar/detay/${encodeURIComponent(code)}`;
+  let htmlInfo = null;
+  let date = '';
   try {
     const r = await httpsGet(url, 18000);
-    attempts.push({ step: 'summary', url, status: r.status, contentType: r.headers['content-type'] || '', len: (r.body || '').length });
-    if (r.status < 200 || r.status >= 300) return { info: chartInfo, date: chartInfo ? chartInfo.date : '' };
-    const htmlInfo = extractPriceInfo(r.body, code);
-    attempts[attempts.length - 1].hasInfo = !!htmlInfo;
-    const date = extractDate(r.body) || (chartInfo ? chartInfo.date : '');
-    if (chartInfo) {
-      // JSON servisi fiyat için daha güvenilir; HTML sadece ad/getiri bilgisi tamamlayıcıdır.
-      const merged = Object.assign({}, htmlInfo || {}, chartInfo);
-      merged.name = (htmlInfo && htmlInfo.name) || chartInfo.name || code;
-      merged.dailyReturn = (htmlInfo && htmlInfo.dailyReturn) || chartInfo.dailyReturn || 0;
-      merged.weeklyReturn = (htmlInfo && htmlInfo.weeklyReturn) || 0;
-      merged.monthlyReturn = (htmlInfo && htmlInfo.monthlyReturn) || 0;
-      merged.date = date;
-      return { info: merged, date };
+    attempts.push({ step: 'summary-visual-card', url, status: r.status, contentType: r.headers['content-type'] || '', len: (r.body || '').length });
+    if (r.status >= 200 && r.status < 300) {
+      htmlInfo = extractPriceInfo(r.body, code);
+      attempts[attempts.length - 1].hasInfo = !!htmlInfo;
+      if (htmlInfo) attempts[attempts.length - 1].price = htmlInfo.price;
+      date = extractDate(r.body) || (htmlInfo ? htmlInfo.date : '');
+      if (htmlInfo && htmlInfo.price > 0) {
+        htmlInfo.date = date || htmlInfo.date || '';
+        htmlInfo.priceSource = 'EKOFIN';
+        htmlInfo.priceMethod = htmlInfo.priceMethod || 'summary-visual-card';
+        return { info: htmlInfo, date: htmlInfo.date || date || '' };
+      }
     }
-    return { info: htmlInfo, date };
   } catch (err) {
-    attempts.push({ step: 'summary', url, error: err && err.message ? err.message : String(err) });
-    return { info: chartInfo, date: chartInfo ? chartInfo.date : '' };
+    attempts.push({ step: 'summary-visual-card', url, error: err && err.message ? err.message : String(err) });
   }
+
+  // Yedek: Ekofin chart JSON. Bu da olmazsa fiyat boş döner; portföy okuma etkilenmez.
+  const chartInfo = await loadChartPriceInfo(code, attempts);
+  if (chartInfo) {
+    if (htmlInfo) {
+      chartInfo.name = htmlInfo.name || chartInfo.name || code;
+      chartInfo.dailyReturn = htmlInfo.dailyReturn || chartInfo.dailyReturn || 0;
+      chartInfo.weeklyReturn = htmlInfo.weeklyReturn || 0;
+      chartInfo.monthlyReturn = htmlInfo.monthlyReturn || 0;
+    }
+    return { info: chartInfo, date: chartInfo.date || date || '' };
+  }
+  return { info: htmlInfo, date: (htmlInfo && htmlInfo.date) || date || '' };
 }
 
 export default async function handler(req, res) {
