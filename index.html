@@ -4015,7 +4015,9 @@ async function fetchEkofinFonInfo(fonKodu) {
       size: pickNumber(info, ['size','portfoyBuyuklugu','portfoyBuyukluk']) || 0,
       investors: parseInt(pickNumber(info, ['investors','yatirimciSayisi']) || 0, 10),
       date: info.date || data.latestDate || data.aciklamaTarihi || '',
-      source: 'Ekofin'
+      source: data.priceSource || info.priceSource || 'Ekofin',
+      sourceDetail: data.priceMethod || info.priceMethod || '',
+      sourceRaw: data.priceRaw || info.priceRaw || ''
     };
   } catch(e) {
     console.warn('Ekofin fiyat bilgisi alınamadı:', fonKodu, e && e.message ? e.message : e);
@@ -4054,6 +4056,8 @@ async function fetchAllFunds(){
 
   let ok = false;
   const newR = {...PREFILLED}, newI = {};
+  var sourceCounts = { EKOFIN: 0, TEFAS: 0, FVT: 0, NONE: 0 };
+  var sourceDetails = [];
 
   const tumFonlarTefas = getTumFonlar();
 
@@ -4126,9 +4130,13 @@ async function fetchAllFunds(){
         ekofinInfo.investors = ekofinInfo.investors || tefasInfoFallback.investors || 0;
       }
       newI[c] = ekofinInfo;
+      sourceCounts.EKOFIN++;
+      sourceDetails.push(c + ':EKOFIN' + (ekofinInfo.sourceDetail ? '(' + ekofinInfo.sourceDetail + ')' : ''));
       ok = true;
     } else if (tefasInfoFallback && tefasInfoFallback.price) {
       newI[c] = tefasInfoFallback;
+      sourceCounts.TEFAS++;
+      sourceDetails.push(c + ':TEFAS');
       ok = true;
     } else {
       var fb = await fetchFvtTakipFon(c);
@@ -4138,9 +4146,13 @@ async function fetchAllFunds(){
           newR[k][c.toLowerCase()] = fb.rates[k];
         });
         newI[c] = fb.info || {name:c, price:0, dailyReturn:0, source:'FVT'};
+        sourceCounts.FVT++;
+        sourceDetails.push(c + ':FVT');
         ok = true;
       } else {
         console.warn('Fon kapanış verisi alinamadi: ' + c);
+        sourceCounts.NONE++;
+        sourceDetails.push(c + ':YOK');
         newI[c] = newI[c] || {name:c, price:0, dailyReturn:0};
       }
     }
@@ -4173,8 +4185,10 @@ async function fetchAllFunds(){
 
     tefasInfo = newI;
     document.getElementById('last-update').innerHTML =
-      'Son guncelleme: <span style="color:var(--green)">'+new Date().toLocaleTimeString('tr-TR')+'</span>';
-    toast('Fon kapanışları alındı (Ekofin → TEFAS yedek)','ok');
+      'Son guncelleme: <span style="color:var(--green)">'+new Date().toLocaleTimeString('tr-TR')+'</span>' +
+      ' <span style="color:var(--muted)">Kaynak: Ekofin '+sourceCounts.EKOFIN+', TEFAS '+sourceCounts.TEFAS+', FVT '+sourceCounts.FVT+', Yok '+sourceCounts.NONE+'</span>';
+    console.log('ORKA fon kapanış kaynak raporu:', sourceDetails.join(' | '));
+    toast('Fon kapanışları alındı · Ekofin '+sourceCounts.EKOFIN+' · TEFAS '+sourceCounts.TEFAS+' · FVT '+sourceCounts.FVT,'ok');
   } else {
     document.getElementById('error-bar').style.display='flex';
     document.getElementById('error-msg').textContent =
