@@ -4072,8 +4072,6 @@ async function fetchAllFunds(){
   const newR = {...PREFILLED}, newI = {};
   var sourceCounts = { EKOFIN: 0, TEFAS: 0, FVT: 0, NONE: 0 };
   var sourceDetails = [];
-  // ORKA v22: Ekofin özet kartından gelen günlük oranı günlük detaylara yazacağız.
-  var ekofinTodayRateCount = 0;
 
   const tumFonlarTefas = getTumFonlar();
 
@@ -4138,14 +4136,6 @@ async function fetchAllFunds(){
 
     // Öncelik: Ekofin fiyatı. Ekofin yoksa TEFAS. TEFAS da yoksa FVT son yedek.
     if (ekofinInfo) {
-      // ORKA v22: Ekofin sol üst özet kartındaki günlük oranı Günlük Detay'a da yaz.
-      // Böylece fiyat kartı ve günlük tablo aynı Ekofin görsel kaynağından beslenir.
-      var ekofinDaily = Number(ekofinInfo.dailyReturn || 0);
-      if (isFinite(ekofinDaily) && Math.abs(ekofinDaily) > 0.000001) {
-        if (!newR[todayK]) newR[todayK] = {};
-        newR[todayK][c.toLowerCase()] = parseFloat(ekofinDaily.toFixed(4));
-        ekofinTodayRateCount++;
-      }
       // TEFAS'ta dönemsel getiri/portföy büyüklüğü daha dolu gelirse boş alanları tamamla.
       if (tefasInfoFallback) {
         ekofinInfo.weeklyReturn = ekofinInfo.weeklyReturn || tefasInfoFallback.weeklyReturn || 0;
@@ -4182,12 +4172,10 @@ async function fetchAllFunds(){
     }
   }));
 
-  // TEFAS mantığında bugünün verisi genelde yarın açıklanırdı.
-  // Ancak Ekofin özet kartından bugün için görsel olarak fiyat + günlük oran okuyabiliyorsak,
-  // bugünü silmiyoruz; Günlük Detay'a Ekofin oranını yazıyoruz.
+  // Bugünün tarihini sil - veriler yarın açıklanacak
   const todayDt = new Date();
   const todayK = String(todayDt.getDate()).padStart(2,'0') + '.' + String(todayDt.getMonth()+1).padStart(2,'0');
-  if (!ekofinTodayRateCount) delete newR[todayK];
+  delete newR[todayK];
 
   if (ok) {
     // TEFAS verisini ham olarak cache'e kaydet
@@ -10699,6 +10687,35 @@ async function orkaGetEkofinInfoV19(code){
   }
   return null;
 }
+
+function orkaDateKeyV23(dateStr){
+  try{
+    if(!dateStr) return '';
+    var s=String(dateStr).trim();
+    var m=s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+    if(m) return String(parseInt(m[3],10)).padStart(2,'0')+'.'+String(parseInt(m[2],10)).padStart(2,'0');
+    m=s.match(/^(\d{1,2})[\.\/-](\d{1,2})(?:[\.\/-](\d{2,4}))?/);
+    if(m) return String(parseInt(m[1],10)).padStart(2,'0')+'.'+String(parseInt(m[2],10)).padStart(2,'0');
+  }catch(e){}
+  return '';
+}
+function orkaForceWriteFundDomV23(code, info){
+  try{
+    code=String(code||'').toLowerCase();
+    if(!code || !info) return;
+    var priceEl=document.getElementById('fp-'+code);
+    if(priceEl && info.price) priceEl.textContent = (typeof fmtFonBirimFiyat==='function') ? fmtFonBirimFiyat(info.price) : String(info.price);
+    var dayEl=document.getElementById('fd-'+code);
+    if(dayEl){
+      var dr=Number(info.dailyReturn||0);
+      dayEl.className='fday-ret '+(dr>0?'gp':dr<0?'gn':'gz');
+      dayEl.textContent = dr ? ((dr>0?'▲ ':'▼ ')+'%'+Math.abs(dr).toFixed(3)) : '—';
+    }
+    var tcard=document.getElementById('tcard-'+code.toUpperCase());
+    if(tcard && typeof renderTefasCards==='function') renderTefasCards();
+  }catch(e){ console.warn('ORKA v23 DOM yazma hatası:', code, e); }
+}
+
 async function orkaGetTefasInfoV19(code){
   code = String(code||'').trim().toUpperCase();
   if(!code || typeof tefasPost !== 'function') return null;
@@ -10736,6 +10753,7 @@ async function fetchAllFunds(){
   var sourceCounts = { EKOFIN:0, TEFAS:0, YOK:0 };
   var sourceDetails = [];
   var newI = {};
+  var ekofinDailyRates = {};
   var codes = [];
   try{ codes = (typeof getTumFonlar === 'function' ? getTumFonlar() : ['DFI','TLY','PHE','CPT','IJC']); }catch(e){ codes = ['DFI','TLY','PHE','CPT','IJC']; }
 
@@ -10745,8 +10763,14 @@ async function fetchAllFunds(){
     var info = await orkaGetEkofinInfoV19(c);
     if(info && info.price){
       newI[c] = info;
+      var dk = orkaDateKeyV23(info.date);
+      var dr = Number(info.dailyReturn||0);
+      if(dk && isFinite(dr) && Math.abs(dr) > 0.00001){
+        if(!ekofinDailyRates[dk]) ekofinDailyRates[dk] = {};
+        ekofinDailyRates[dk][c.toLowerCase()] = parseFloat(dr.toFixed(4));
+      }
       sourceCounts.EKOFIN++;
-      sourceDetails.push(c + ':EKOFIN(' + (info.sourceDetail||'') + ')=' + info.price);
+      sourceDetails.push(c + ':EKOFIN(' + (info.sourceDetail||'') + ')=' + info.price + (dr ? ' / %'+dr : ''));
       continue;
     }
     info = await orkaGetTefasInfoV19(c);
@@ -10756,20 +10780,23 @@ async function fetchAllFunds(){
       sourceDetails.push(c + ':TEFAS=' + info.price);
       continue;
     }
-    // Hiç alamazsa mevcut kart bilgisini koru.
     if(tefasInfo && tefasInfo[c]) newI[c] = tefasInfo[c];
     sourceCounts.YOK++;
     sourceDetails.push(c + ':YOK');
   }
 
-  // Mevcut oran/geçmiş verilerini bozma; sadece fiyat kart bilgisini yenile.
   try{
     var cached = JSON.parse(_lsGet(TKEY) || '{}') || {};
     var oldRates = cached.rates || liveRates || {};
     var oldInfo = cached.info || tefasInfo || {};
     tefasInfo = Object.assign({}, oldInfo, newI);
     liveRates = Object.assign({}, oldRates || {});
+    Object.keys(ekofinDailyRates).forEach(function(k){
+      if(!liveRates[k]) liveRates[k] = {};
+      Object.assign(liveRates[k], ekofinDailyRates[k]);
+    });
     _lsSet(TKEY, JSON.stringify({rates: liveRates, info: tefasInfo, ts: Date.now(), sourceReport: sourceDetails}));
+    try{ saveR(liveRates); }catch(e){}
   }catch(e){
     tefasInfo = Object.assign({}, tefasInfo || {}, newI);
   }
@@ -10779,11 +10806,16 @@ async function fetchAllFunds(){
     lu.innerHTML = 'Son güncelleme: <span style="color:var(--green)">'+new Date().toLocaleTimeString('tr-TR')+'</span>' +
       ' <span style="color:var(--muted)">Kaynak: Ekofin '+sourceCounts.EKOFIN+', TEFAS '+sourceCounts.TEFAS+', Yok '+sourceCounts.YOK+'</span>';
   }
-  console.log('ORKA v19 fon fiyat kaynak raporu:', sourceDetails.join(' | '));
+  console.log('ORKA v23 fon fiyat kaynak raporu:', sourceDetails.join(' | '));
 
   try{ if(typeof renderTefasCardsHTML === 'function') renderTefasCardsHTML(); }catch(e){}
   try{ if(typeof renderTefasCards === 'function') renderTefasCards(); }catch(e){}
   try{ if(typeof render === 'function') render(); }catch(e){}
+  Object.keys(newI).forEach(function(c){
+    orkaForceWriteFundDomV23(c, newI[c]);
+    setTimeout(function(){ orkaForceWriteFundDomV23(c, newI[c]); }, 600);
+    setTimeout(function(){ orkaForceWriteFundDomV23(c, newI[c]); }, 1600);
+  });
   try{ if(typeof fonFirebaseSave === 'function') fonFirebaseSave(true); }catch(e){}
 
   if(sourceCounts.EKOFIN || sourceCounts.TEFAS){
