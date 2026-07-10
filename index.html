@@ -4039,7 +4039,7 @@ async function fetchEkofinFonInfo(fonKodu) {
   return null;
 }
 
-async function fetchAllFunds(){
+async function fetchAllFunds_LEGACY_TEFASEKOFIN_DISABLED(){
   document.getElementById('loading').style.display='flex';
   document.getElementById('refresh-btn').disabled=true;
   document.getElementById('error-bar').style.display='none';
@@ -10687,35 +10687,6 @@ async function orkaGetEkofinInfoV19(code){
   }
   return null;
 }
-
-function orkaDateKeyV23(dateStr){
-  try{
-    if(!dateStr) return '';
-    var s=String(dateStr).trim();
-    var m=s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
-    if(m) return String(parseInt(m[3],10)).padStart(2,'0')+'.'+String(parseInt(m[2],10)).padStart(2,'0');
-    m=s.match(/^(\d{1,2})[\.\/-](\d{1,2})(?:[\.\/-](\d{2,4}))?/);
-    if(m) return String(parseInt(m[1],10)).padStart(2,'0')+'.'+String(parseInt(m[2],10)).padStart(2,'0');
-  }catch(e){}
-  return '';
-}
-function orkaForceWriteFundDomV23(code, info){
-  try{
-    code=String(code||'').toLowerCase();
-    if(!code || !info) return;
-    var priceEl=document.getElementById('fp-'+code);
-    if(priceEl && info.price) priceEl.textContent = (typeof fmtFonBirimFiyat==='function') ? fmtFonBirimFiyat(info.price) : String(info.price);
-    var dayEl=document.getElementById('fd-'+code);
-    if(dayEl){
-      var dr=Number(info.dailyReturn||0);
-      dayEl.className='fday-ret '+(dr>0?'gp':dr<0?'gn':'gz');
-      dayEl.textContent = dr ? ((dr>0?'▲ ':'▼ ')+'%'+Math.abs(dr).toFixed(3)) : '—';
-    }
-    var tcard=document.getElementById('tcard-'+code.toUpperCase());
-    if(tcard && typeof renderTefasCards==='function') renderTefasCards();
-  }catch(e){ console.warn('ORKA v23 DOM yazma hatası:', code, e); }
-}
-
 async function orkaGetTefasInfoV19(code){
   code = String(code||'').trim().toUpperCase();
   if(!code || typeof tefasPost !== 'function') return null;
@@ -10742,7 +10713,7 @@ async function orkaGetTefasInfoV19(code){
     return null;
   }
 }
-async function fetchAllFunds(){
+async function fetchAllFunds_V19_OVERRIDE_DISABLED(){
   var loading = document.getElementById('loading');
   var btn = document.getElementById('refresh-btn');
   var err = document.getElementById('error-bar');
@@ -10753,7 +10724,6 @@ async function fetchAllFunds(){
   var sourceCounts = { EKOFIN:0, TEFAS:0, YOK:0 };
   var sourceDetails = [];
   var newI = {};
-  var ekofinDailyRates = {};
   var codes = [];
   try{ codes = (typeof getTumFonlar === 'function' ? getTumFonlar() : ['DFI','TLY','PHE','CPT','IJC']); }catch(e){ codes = ['DFI','TLY','PHE','CPT','IJC']; }
 
@@ -10763,14 +10733,8 @@ async function fetchAllFunds(){
     var info = await orkaGetEkofinInfoV19(c);
     if(info && info.price){
       newI[c] = info;
-      var dk = orkaDateKeyV23(info.date);
-      var dr = Number(info.dailyReturn||0);
-      if(dk && isFinite(dr) && Math.abs(dr) > 0.00001){
-        if(!ekofinDailyRates[dk]) ekofinDailyRates[dk] = {};
-        ekofinDailyRates[dk][c.toLowerCase()] = parseFloat(dr.toFixed(4));
-      }
       sourceCounts.EKOFIN++;
-      sourceDetails.push(c + ':EKOFIN(' + (info.sourceDetail||'') + ')=' + info.price + (dr ? ' / %'+dr : ''));
+      sourceDetails.push(c + ':EKOFIN(' + (info.sourceDetail||'') + ')=' + info.price);
       continue;
     }
     info = await orkaGetTefasInfoV19(c);
@@ -10780,23 +10744,20 @@ async function fetchAllFunds(){
       sourceDetails.push(c + ':TEFAS=' + info.price);
       continue;
     }
+    // Hiç alamazsa mevcut kart bilgisini koru.
     if(tefasInfo && tefasInfo[c]) newI[c] = tefasInfo[c];
     sourceCounts.YOK++;
     sourceDetails.push(c + ':YOK');
   }
 
+  // Mevcut oran/geçmiş verilerini bozma; sadece fiyat kart bilgisini yenile.
   try{
     var cached = JSON.parse(_lsGet(TKEY) || '{}') || {};
     var oldRates = cached.rates || liveRates || {};
     var oldInfo = cached.info || tefasInfo || {};
     tefasInfo = Object.assign({}, oldInfo, newI);
     liveRates = Object.assign({}, oldRates || {});
-    Object.keys(ekofinDailyRates).forEach(function(k){
-      if(!liveRates[k]) liveRates[k] = {};
-      Object.assign(liveRates[k], ekofinDailyRates[k]);
-    });
     _lsSet(TKEY, JSON.stringify({rates: liveRates, info: tefasInfo, ts: Date.now(), sourceReport: sourceDetails}));
-    try{ saveR(liveRates); }catch(e){}
   }catch(e){
     tefasInfo = Object.assign({}, tefasInfo || {}, newI);
   }
@@ -10806,16 +10767,11 @@ async function fetchAllFunds(){
     lu.innerHTML = 'Son güncelleme: <span style="color:var(--green)">'+new Date().toLocaleTimeString('tr-TR')+'</span>' +
       ' <span style="color:var(--muted)">Kaynak: Ekofin '+sourceCounts.EKOFIN+', TEFAS '+sourceCounts.TEFAS+', Yok '+sourceCounts.YOK+'</span>';
   }
-  console.log('ORKA v23 fon fiyat kaynak raporu:', sourceDetails.join(' | '));
+  console.log('ORKA v19 fon fiyat kaynak raporu:', sourceDetails.join(' | '));
 
   try{ if(typeof renderTefasCardsHTML === 'function') renderTefasCardsHTML(); }catch(e){}
   try{ if(typeof renderTefasCards === 'function') renderTefasCards(); }catch(e){}
   try{ if(typeof render === 'function') render(); }catch(e){}
-  Object.keys(newI).forEach(function(c){
-    orkaForceWriteFundDomV23(c, newI[c]);
-    setTimeout(function(){ orkaForceWriteFundDomV23(c, newI[c]); }, 600);
-    setTimeout(function(){ orkaForceWriteFundDomV23(c, newI[c]); }, 1600);
-  });
   try{ if(typeof fonFirebaseSave === 'function') fonFirebaseSave(true); }catch(e){}
 
   if(sourceCounts.EKOFIN || sourceCounts.TEFAS){
@@ -10831,6 +10787,200 @@ async function fetchAllFunds(){
   if(loading) loading.style.display='none';
   if(btn) btn.disabled=false;
 }
+
+
+
+/* ═══════════════════════════════════════════════════════
+   ORKA v24 — TEK FİYAT AKIŞI
+   Riskli eski fetchAllFunds akışları pasif edildi.
+   Bu blok tek yetkili fon kapanış güncelleme yoludur.
+   API çalışıyor mu kanıtı: /api/ekofin?code=TLY&mode=info JSON içindeki price alanı.
+   Ağırlık/portföy okuyucularına dokunmaz.
+   ═══════════════════════════════════════════════════════ */
+(function(){
+  function orkaV24Num(v){
+    try{
+      if(v === null || v === undefined || v === '') return 0;
+      if(typeof v === 'number') return isFinite(v) ? v : 0;
+      var s = String(v)
+        .replace(/<!--\s*-->/g,'')
+        .replace(/<[^>]*>/g,'')
+        .replace(/TL|TRY|₺|%/gi,'')
+        .replace(/\s+/g,'')
+        .trim();
+      if(!s) return 0;
+      if(s.indexOf(',') >= 0 && s.indexOf('.') >= 0){
+        if(s.lastIndexOf(',') > s.lastIndexOf('.')) s = s.replace(/\./g,'').replace(',', '.');
+        else s = s.replace(/,/g,'');
+      } else if(s.indexOf(',') >= 0) s = s.replace(',', '.');
+      var n = parseFloat(s);
+      return isFinite(n) ? n : 0;
+    }catch(e){ return 0; }
+  }
+  function orkaV24Pick(obj, keys){
+    if(!obj || typeof obj !== 'object') return 0;
+    for(var i=0;i<keys.length;i++){
+      var k=keys[i];
+      if(obj[k] !== undefined && obj[k] !== null && obj[k] !== ''){
+        var n = orkaV24Num(obj[k]);
+        if(isFinite(n) && n !== 0) return n;
+      }
+    }
+    return 0;
+  }
+  function orkaV24DailyFromText(){
+    for(var a=0; a<arguments.length; a++){
+      var txt = arguments[a];
+      if(!txt) continue;
+      txt = String(txt).replace(/<!--\s*-->/g,' ');
+      var m = txt.match(/\(\s*([+-]?\d+(?:[.,]\d+)?)\s*%\s*\)/);
+      if(m) return orkaV24Num(m[1]);
+    }
+    return 0;
+  }
+  async function orkaV24Json(url, timeoutMs){
+    var controller = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+    var timer = null;
+    try{
+      if(controller) timer = setTimeout(function(){ try{controller.abort();}catch(e){} }, timeoutMs || 18000);
+      var resp = await fetch(url, {headers:{'Accept':'application/json'}, cache:'no-store', signal: controller ? controller.signal : undefined});
+      if(!resp.ok) throw new Error('HTTP ' + resp.status);
+      return await resp.json();
+    } finally { if(timer) clearTimeout(timer); }
+  }
+  async function orkaV24EkofinInfo(code){
+    code = String(code||'').trim().toUpperCase();
+    if(!code) return null;
+    var urls = [
+      '/api/ekofin?code=' + encodeURIComponent(code) + '&mode=info&_=' + Date.now(),
+      '/api/ekofin?code=' + encodeURIComponent(code) + '&_=' + Date.now()
+    ];
+    for(var i=0;i<urls.length;i++){
+      try{
+        var data = await orkaV24Json(urls[i], 20000);
+        var info = (data && data.info) || {};
+        var price = orkaV24Pick(data, ['price','fiyat','fonFiyat','FONFIYAT','PRICE']) || orkaV24Pick(info, ['price','fiyat','fonFiyat','FONFIYAT','PRICE']);
+        if(!price) throw new Error('Ekofin price empty');
+        var daily = orkaV24Pick(data, ['dailyReturn','gunlukGetiri','gunluk','GETIRI']) || orkaV24Pick(info, ['dailyReturn','gunlukGetiri','gunluk','GETIRI']);
+        if(!daily) daily = orkaV24DailyFromText(info.name, data.name, data.priceRaw, info.priceRaw, JSON.stringify(info));
+        return {
+          name: info.name || data.name || info.fonUnvan || info.unvan || code,
+          price: price,
+          dailyReturn: daily || 0,
+          weeklyReturn: orkaV24Pick(info, ['weeklyReturn','haftalikGetiri']) || orkaV24Pick(data, ['weeklyReturn','haftalikGetiri']) || 0,
+          monthlyReturn: orkaV24Pick(info, ['monthlyReturn','aylikGetiri']) || orkaV24Pick(data, ['monthlyReturn','aylikGetiri']) || 0,
+          size: orkaV24Pick(info, ['size','portfoyBuyuklugu','portfoyBuyukluk']) || orkaV24Pick(data, ['size','portfoyBuyuklugu','portfoyBuyukluk']) || 0,
+          investors: parseInt(orkaV24Pick(info, ['investors','yatirimciSayisi']) || orkaV24Pick(data, ['investors','yatirimciSayisi']) || 0, 10),
+          date: info.date || data.latestDate || data.aciklamaTarihi || '',
+          source: data.priceSource || info.priceSource || 'EKOFIN',
+          sourceDetail: data.priceMethod || info.priceMethod || (i===0 ? 'mode-info' : 'full'),
+          sourceRaw: data.priceRaw || info.priceRaw || ''
+        };
+      }catch(e){
+        console.warn('ORKA v24 Ekofin fiyat alınamadı:', code, urls[i], e && e.message ? e.message : e);
+      }
+    }
+    return null;
+  }
+  async function orkaV24TefasInfo(code){
+    code = String(code||'').trim().toUpperCase();
+    if(!code || typeof tefasPost !== 'function') return null;
+    try{
+      var bilgiler = await tefasPost('fonBilgiGetir', {fonKodu: code});
+      var bilgi = Array.isArray(bilgiler) ? bilgiler[0] : null;
+      if(!bilgi) return null;
+      var price = orkaV24Pick(bilgi, ['fiyat','FIYAT','Fiyat','fonFiyat','FONFIYAT','price','PRICE']);
+      if(!price) return null;
+      return {
+        name: bilgi.fonUnvan || bilgi.FONUNVAN || bilgi.FonUnvan || bilgi.unvan || bilgi.name || code,
+        price: price,
+        dailyReturn: orkaV24Pick(bilgi, ['gunlukGetiri','GUNLUKGETIRI','GunlukGetiri','gunluk','GETIRI']) || 0,
+        weeklyReturn: orkaV24Pick(bilgi, ['haftalikGetiri','HAFTALIKGETIRI','HaftalikGetiri']) || 0,
+        monthlyReturn: orkaV24Pick(bilgi, ['aylikGetiri','AYLIKGETIRI','AylikGetiri']) || 0,
+        size: orkaV24Pick(bilgi, ['portfoyBuyuklugu','portfoyBuyukluk','PORTFOYBUYUKLUK','PORTFOYBUYUKLUGU']) || 0,
+        investors: parseInt(orkaV24Pick(bilgi, ['yatirimciSayisi','YATIRIMCISAYISI','YatirimciSayisi']) || 0, 10),
+        date: bilgi.tarih || bilgi.TARIH || bilgi.Tarih || '',
+        source: 'TEFAS',
+        sourceDetail: 'fallback'
+      };
+    }catch(e){
+      console.warn('ORKA v24 TEFAS fallback alınamadı:', code, e && e.message ? e.message : e);
+      return null;
+    }
+  }
+  window.fetchAllFunds = async function fetchAllFunds_ORKA_V24(){
+    var loading = document.getElementById('loading');
+    var btn = document.getElementById('refresh-btn');
+    var err = document.getElementById('error-bar');
+    if(loading) loading.style.display='flex';
+    if(btn) btn.disabled=true;
+    if(err) err.style.display='none';
+
+    var sourceCounts = { EKOFIN:0, TEFAS:0, YOK:0 };
+    var sourceDetails = [];
+    var newI = {};
+    var codes = [];
+    try{ codes = (typeof getTumFonlar === 'function') ? getTumFonlar() : ['DFI','TLY','PHE','CPT','IJC']; }catch(e){ codes = ['DFI','TLY','PHE','CPT','IJC']; }
+
+    for(var i=0;i<codes.length;i++){
+      var c = String(codes[i]||'').toUpperCase();
+      if(!c) continue;
+      var info = await orkaV24EkofinInfo(c);
+      if(info && info.price){
+        newI[c] = info;
+        sourceCounts.EKOFIN++;
+        sourceDetails.push(c + ':EKOFIN(' + (info.sourceDetail||'') + ') fiyat=' + info.price + ' günlük=' + (info.dailyReturn||0));
+        continue;
+      }
+      info = await orkaV24TefasInfo(c);
+      if(info && info.price){
+        newI[c] = info;
+        sourceCounts.TEFAS++;
+        sourceDetails.push(c + ':TEFAS fiyat=' + info.price);
+        continue;
+      }
+      if(tefasInfo && tefasInfo[c]) newI[c] = tefasInfo[c];
+      sourceCounts.YOK++;
+      sourceDetails.push(c + ':YOK');
+    }
+
+    try{
+      var cached = JSON.parse(_lsGet(TKEY) || '{}') || {};
+      var oldRates = cached.rates || liveRates || {};
+      var oldInfo = cached.info || tefasInfo || {};
+      tefasInfo = Object.assign({}, oldInfo, newI);
+      liveRates = Object.assign({}, oldRates || {});
+      _lsSet(TKEY, JSON.stringify({rates: liveRates, info: tefasInfo, ts: Date.now(), sourceReport: sourceDetails, engine:'ORKA_V24'}));
+    }catch(e){
+      tefasInfo = Object.assign({}, tefasInfo || {}, newI);
+    }
+
+    var lu = document.getElementById('last-update');
+    if(lu){
+      lu.innerHTML = 'Son güncelleme: <span style="color:var(--green)">' + new Date().toLocaleTimeString('tr-TR') + '</span>' +
+        ' <span style="color:var(--muted)">Kaynak: Ekofin ' + sourceCounts.EKOFIN + ', TEFAS ' + sourceCounts.TEFAS + ', Yok ' + sourceCounts.YOK + '</span>';
+    }
+    console.log('ORKA_V24_FIYAT_AKISI:', sourceDetails.join(' | '));
+
+    try{ if(typeof renderTefasCardsHTML === 'function') renderTefasCardsHTML(); }catch(e){}
+    try{ if(typeof renderTefasCards === 'function') renderTefasCards(); }catch(e){}
+    try{ if(typeof render === 'function') render(); }catch(e){}
+    try{ if(typeof fonFirebaseSave === 'function') fonFirebaseSave(true); }catch(e){}
+
+    if(sourceCounts.EKOFIN || sourceCounts.TEFAS){
+      if(typeof toast === 'function') toast('Fon fiyatları güncellendi · Ekofin ' + sourceCounts.EKOFIN + ' · TEFAS ' + sourceCounts.TEFAS, 'ok');
+    } else {
+      if(err){
+        err.style.display='flex';
+        var em=document.getElementById('error-msg');
+        if(em) em.textContent='Ekofin/TEFAS fiyatı alınamadı; mevcut veriler korundu.';
+      }
+      if(typeof toast === 'function') toast('Fon fiyatı alınamadı; mevcut veriler korundu', 'info');
+    }
+    if(loading) loading.style.display='none';
+    if(btn) btn.disabled=false;
+  };
+})();
 
 </script>
 
