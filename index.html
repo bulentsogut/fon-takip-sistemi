@@ -2398,7 +2398,7 @@ window.addEventListener('unhandledrejection', function(ev){
     GETİRİ TAHMİN
   </button>
   <div class="nav-actions" id="navActions">
-    <button class="nav-action-btn takip visible" id="refresh-btn" onclick="fetchAllFunds();">⟳ TEFAS</button>
+    <button class="nav-action-btn takip visible" id="refresh-btn" onclick="fetchAllFunds();">⟳ FON VERİLERİNİ GÜNCELLE</button>
     <button class="nav-action-btn yabanci" onclick="yabanciVerileriKaydet()">💾 YABANCI KAYDET</button>
     <button class="nav-action-btn yabanci" onclick="openYabanciPortfoyModal()">⚙ PORTFÖY</button>
     <button class="nav-action-btn takip tahmin fvt" id="refreshBtnFVT" onclick="fvtPortfoyGuncelle()">↺ EKOFİN AĞIRLIKLARI GÜNCELLE</button>
@@ -2420,7 +2420,7 @@ window.addEventListener('unhandledrejection', function(ev){
 </header>
 
 <div class="status-bar">
-  <div class="status-item">Kaynak: <span>TEFAS (Takasbank)</span></div>
+  <div class="status-item">Kaynak: <span>Ekofin → TEFAS yedek</span></div>
   <div class="status-item">Fonlar: <span>DFI · TLY · PHE · CPT</span></div>
   <div class="status-item" id="last-update">Son güncelleme: <span>—</span></div>
   <div class="loading-overlay" id="loading"><div class="spinner"></div> Çekiliyor…</div>
@@ -2533,7 +2533,7 @@ window.addEventListener('unhandledrejection', function(ev){
   <div class="fitem"><div class="finame">Toplam K/Z</div><div class="ficode">= Σ Günlük TL Getirileri</div><div class="fidesc">Tüm günlerin TL getirisinin toplamı</div></div>
 </div></div>
 
-<footer>FON TAKİP &nbsp;·&nbsp; TEFAS Canlı Veri &nbsp;·&nbsp; Veriler Takasbank TEFAS'tan çekilmektedir &nbsp;·&nbsp; Yatırım tavsiyesi değildir</footer>
+<footer>FON TAKİP &nbsp;·&nbsp; Fon Veri Motoru &nbsp;·&nbsp; Kapanış: Ekofin / TEFAS yedek &nbsp;·&nbsp; Yatırım tavsiyesi değildir</footer>
 </div>
 <div id="toast"></div>
   </div>
@@ -3994,6 +3994,35 @@ async function fetchFvtTakipFon(fonKodu){
   return null;
 }
 
+
+async function fetchEkofinFonInfo(fonKodu) {
+  fonKodu = String(fonKodu || '').trim().toUpperCase();
+  if (!fonKodu) return null;
+  try {
+    var resp = await _tk_fwt('/api/ekofin?code=' + encodeURIComponent(fonKodu) + '&mode=info',
+      { headers: { 'Accept': 'application/json' } }, 15000);
+    if (!resp.ok) throw new Error('Ekofin HTTP ' + resp.status);
+    var data = await resp.json();
+    var info = (data && data.info) || data || {};
+    var price = pickNumber(info, ['price','fiyat','fonFiyat','FONFIYAT']) || pickNumber(data, ['price','fiyat','fonFiyat']);
+    if (!price || !isFinite(price)) return null;
+    return {
+      name: info.name || info.fonUnvan || info.unvan || fonKodu,
+      price: price,
+      dailyReturn: pickNumber(info, ['dailyReturn','gunlukGetiri','gunluk','GETIRI']) || pickNumber(data, ['dailyReturn','gunlukGetiri']) || 0,
+      weeklyReturn: pickNumber(info, ['weeklyReturn','haftalikGetiri']) || 0,
+      monthlyReturn: pickNumber(info, ['monthlyReturn','aylikGetiri']) || 0,
+      size: pickNumber(info, ['size','portfoyBuyuklugu','portfoyBuyukluk']) || 0,
+      investors: parseInt(pickNumber(info, ['investors','yatirimciSayisi']) || 0, 10),
+      date: info.date || data.latestDate || data.aciklamaTarihi || '',
+      source: 'Ekofin'
+    };
+  } catch(e) {
+    console.warn('Ekofin fiyat bilgisi alınamadı:', fonKodu, e && e.message ? e.message : e);
+    return null;
+  }
+}
+
 async function fetchAllFunds(){
   document.getElementById('loading').style.display='flex';
   document.getElementById('refresh-btn').disabled=true;
@@ -4030,13 +4059,16 @@ async function fetchAllFunds(){
 
   // Tüm fonlar için istekleri paralel at
   await Promise.all(tumFonlarTefas.map(async function(c) {
+    var ekofinInfo = await fetchEkofinFonInfo(c);
+    var tefasInfoFallback = null;
+    var tefasRatesOk = false;
+
     try {
       const [fiyatlar, bilgiler] = await Promise.all([
         tefasPost('fonFiyatBilgiGetir', {fonKodu: c, periyod: 1}),
         tefasPost('fonBilgiGetir', {fonKodu: c})
       ]);
 
-      // Tarihsel fiyat → günlük getiri hesapla + son açıklanan birim fiyatı yakala
       var latestPrice = 0;
       var latestDate = '';
       if (fiyatlar.length) {
@@ -4060,15 +4092,15 @@ async function fetchAllFunds(){
             newR[k][c.toLowerCase()] = parseFloat(((cur - prev) / prev * 100).toFixed(4));
           }
         }
+        tefasRatesOk = true;
         ok = true;
       }
 
-      // Anlık fon bilgisi. Birim fiyat önce fonBilgiGetir'den, yoksa fiyat geçmişindeki son kayıttan alınır.
       let bilgi = bilgiler[0];
       if (bilgi || latestPrice) {
         bilgi = bilgi || {};
         var infoPrice = pickNumber(bilgi, ['fiyat','FIYAT','Fiyat','fonFiyat','FONFIYAT','price','PRICE']) || latestPrice;
-        newI[c] = {
+        tefasInfoFallback = {
           name: bilgi.fonUnvan || bilgi.FONUNVAN || bilgi.FonUnvan || bilgi.unvan || bilgi.name || c,
           price: infoPrice,
           dailyReturn: pickNumber(bilgi, ['gunlukGetiri','GUNLUKGETIRI','GunlukGetiri','gunluk','GETIRI']) || 0,
@@ -4076,20 +4108,39 @@ async function fetchAllFunds(){
           monthlyReturn: pickNumber(bilgi, ['aylikGetiri','AYLIKGETIRI','AylikGetiri']) || 0,
           size: pickNumber(bilgi, ['portfoyBuyuklugu','portfoyBuyukluk','PORTFOYBUYUKLUK','PORTFOYBUYUKLUGU']) || 0,
           investors: parseInt(pickNumber(bilgi, ['yatirimciSayisi','YATIRIMCISAYISI','YatirimciSayisi']) || 0, 10),
-          date: bilgi.tarih || bilgi.TARIH || bilgi.Tarih || latestDate || ''
+          date: bilgi.tarih || bilgi.TARIH || bilgi.Tarih || latestDate || '',
+          source: 'TEFAS'
         };
       }
     } catch(e) {
+      console.warn('TEFAS fiyat yedeği alınamadı: ' + c, e && e.name ? e.name : e);
+    }
+
+    // Öncelik: Ekofin fiyatı. Ekofin yoksa TEFAS. TEFAS da yoksa FVT son yedek.
+    if (ekofinInfo) {
+      // TEFAS'ta dönemsel getiri/portföy büyüklüğü daha dolu gelirse boş alanları tamamla.
+      if (tefasInfoFallback) {
+        ekofinInfo.weeklyReturn = ekofinInfo.weeklyReturn || tefasInfoFallback.weeklyReturn || 0;
+        ekofinInfo.monthlyReturn = ekofinInfo.monthlyReturn || tefasInfoFallback.monthlyReturn || 0;
+        ekofinInfo.size = ekofinInfo.size || tefasInfoFallback.size || 0;
+        ekofinInfo.investors = ekofinInfo.investors || tefasInfoFallback.investors || 0;
+      }
+      newI[c] = ekofinInfo;
+      ok = true;
+    } else if (tefasInfoFallback && tefasInfoFallback.price) {
+      newI[c] = tefasInfoFallback;
+      ok = true;
+    } else {
       var fb = await fetchFvtTakipFon(c);
       if (fb) {
         Object.keys(fb.rates||{}).forEach(function(k){
           if(!newR[k]) newR[k]={};
           newR[k][c.toLowerCase()] = fb.rates[k];
         });
-        newI[c] = fb.info || {name:c, price:0, dailyReturn:0};
+        newI[c] = fb.info || {name:c, price:0, dailyReturn:0, source:'FVT'};
         ok = true;
       } else {
-        console.warn('Fon verisi alinamadi: ' + c, e && e.name ? e.name : e);
+        console.warn('Fon kapanış verisi alinamadi: ' + c);
         newI[c] = newI[c] || {name:c, price:0, dailyReturn:0};
       }
     }
@@ -4123,11 +4174,11 @@ async function fetchAllFunds(){
     tefasInfo = newI;
     document.getElementById('last-update').innerHTML =
       'Son guncelleme: <span style="color:var(--green)">'+new Date().toLocaleTimeString('tr-TR')+'</span>';
-    toast('TEFAS verileri alindi','ok');
+    toast('Fon kapanışları alındı (Ekofin → TEFAS yedek)','ok');
   } else {
     document.getElementById('error-bar').style.display='flex';
     document.getElementById('error-msg').textContent =
-      'TEFAS/FVT otomatik veri alimi tamamlanamadi. Mevcut cache ve elle girilen veriler korunuyor.';
+      'Ekofin/TEFAS otomatik veri alımı tamamlanamadı. Mevcut cache ve elle girilen veriler korunuyor.';
     try {
       const cached = JSON.parse(_lsGet(TKEY));
       const storedFail = loadR();
@@ -6779,6 +6830,25 @@ async function loadEkofinPortfolio(fonKodu) {
   return null;
 }
 
+
+async function loadTefasNonStockPortfolio(fonKodu) {
+  fonKodu = String(fonKodu || '').trim().toUpperCase();
+  if (!fonKodu) return null;
+  try {
+    var resp = await fetchWithTimeout('/api/tefas?mode=portfolio&code=' + encodeURIComponent(fonKodu),
+      { headers: { 'Accept': 'application/json' } }, 12000);
+    if (!resp.ok) return null;
+    var data = await resp.json();
+    var items = (data && Array.isArray(data.holdings) && data.holdings) || [];
+    items = items.filter(function(h){ return h && h.code && isFinite(parseFloat(h.weight)); }).map(function(h){ h.type = 'cash'; h.tip = 'cash'; return h; });
+    if (!items.length) return null;
+    return { holdings: items, source: 'TEFAS hisse dışı dağılım', sourceMessage: 'Repo/nakit/vadeli gibi hisse dışı kalemler TEFAS yedeğinden eklendi.' };
+  } catch(e) {
+    console.warn('TEFAS hisse dışı portföy okunamadı:', fonKodu, e && e.message ? e.message : e);
+    return null;
+  }
+}
+
 async function loadPortfolioAnySource(fonKodu) {
   fonKodu = String(fonKodu || '').trim().toUpperCase();
 
@@ -6788,6 +6858,13 @@ async function loadPortfolioAnySource(fonKodu) {
   try { ekofin = await loadEkofinPortfolio(fonKodu); } catch(e) { console.warn('Ekofin kaynak hatası:', fonKodu, e); }
   if (ekofin && ekofin.holdings && ekofin.holdings.length > 0) {
     ekofin.source = ekofin.source || 'Ekofin';
+    var tefasExtra = null;
+    try { tefasExtra = await loadTefasNonStockPortfolio(fonKodu); } catch(e) { console.warn('TEFAS hisse dışı kaynak hatası:', fonKodu, e); }
+    if (tefasExtra && tefasExtra.holdings && tefasExtra.holdings.length > 0) {
+      ekofin.holdings = mergeHoldingsPreserveExisting(ekofin.holdings, tefasExtra.holdings);
+      ekofin.source = 'Ekofin + TEFAS';
+      ekofin.sourceMessage = tefasExtra.sourceMessage || '';
+    }
     return ekofin;
   }
 
