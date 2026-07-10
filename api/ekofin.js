@@ -182,6 +182,41 @@ function mergeHoldings(primary, extra) {
   return out;
 }
 
+
+function extractEkofinPriceInfo(html, fundCode) {
+  const text = stripTags(html || '');
+  const out = { name: fundCode, price: 0, dailyReturn: 0, weeklyReturn: 0, monthlyReturn: 0, size: 0, investors: 0, date: '' };
+
+  // Fon adı: sayfada genelde "TLY - ..." veya başlık içinde geçer. Yoksa kod kullanılır.
+  const nameMatch = text.match(new RegExp('\\b' + fundCode + '\\b\\s*[-–—]?\\s*([^|]{8,120}?)(?:Fon Fiyat|Günlük|Portföy|Yatırımcı|$)', 'i'));
+  if (nameMatch && nameMatch[1]) out.name = (fundCode + ' ' + nameMatch[1]).replace(/\s+/g, ' ').trim().slice(0, 160);
+
+  // Fiyatı bulmak için önce etiketli alanları deneriz.
+  const pricePatterns = [
+    /(?:Fon\s*Fiyatı|Birim\s*Pay\s*Değeri|Son\s*Fiyat|Fiyat)\s*[:：]?\s*([0-9]+[\.,][0-9]{3,8})/i,
+    /([0-9]+[\.,][0-9]{3,8})\s*(?:TL|₺)\b/i
+  ];
+  for (const re of pricePatterns) {
+    const m = text.match(re);
+    if (m) { const n = toNumber(m[1]); if (Number.isFinite(n) && n > 0 && n < 100000) { out.price = n; break; } }
+  }
+
+  function pctNear(labelRe) {
+    const idx = text.search(labelRe);
+    if (idx < 0) return 0;
+    const part = text.slice(idx, idx + 250);
+    const m = part.match(/(-?\d+[\.,]\d+)\s*%/);
+    return m ? toNumber(m[1]) : 0;
+  }
+  out.dailyReturn = pctNear(/Günlük|1\s*Gün/i);
+  out.weeklyReturn = pctNear(/Haftalık|1\s*Hafta/i);
+  out.monthlyReturn = pctNear(/Aylık|1\s*Ay/i);
+
+  const dt = extractAciklamaTarihi(html || '');
+  out.date = dt || '';
+  return out.price > 0 || out.dailyReturn || out.weeklyReturn || out.monthlyReturn ? out : null;
+}
+
 function pageCandidates(code) {
   const c = encodeURIComponent(code);
   return [
@@ -203,6 +238,7 @@ export default async function handler(req, res) {
   const attempts = [];
   const collected = [];
   let aciklamaTarihi = '';
+  let priceInfo = null;
   const usedEndpoints = [];
 
   for (const candidate of pageCandidates(code)) {
@@ -216,6 +252,8 @@ export default async function handler(req, res) {
       const html = upstream.body || '';
       const holdings = extractHoldingsFromHtml(html, code);
       attempts[attempts.length - 1].parsed = holdings.length;
+      const pi = extractEkofinPriceInfo(html, code);
+      if (pi && !priceInfo) priceInfo = pi;
 
       const dt = extractAciklamaTarihi(html);
       if (dt && !aciklamaTarihi) aciklamaTarihi = dt;
@@ -242,6 +280,9 @@ export default async function handler(req, res) {
       count: holdings.length,
       latestDate: aciklamaTarihi,
       aciklamaTarihi,
+      info: priceInfo || undefined,
+      price: priceInfo ? priceInfo.price : undefined,
+      dailyReturn: priceInfo ? priceInfo.dailyReturn : undefined,
       holdings
     };
 
@@ -255,6 +296,22 @@ export default async function handler(req, res) {
 
     res.setHeader('Cache-Control', 's-maxage=1800, stale-while-revalidate=3600');
     return res.status(200).json(payload);
+  }
+
+  if (priceInfo) {
+    return res.status(200).json({
+      ok: true,
+      source: 'ekofin-info',
+      code,
+      count: 0,
+      latestDate: aciklamaTarihi,
+      aciklamaTarihi,
+      info: priceInfo,
+      price: priceInfo.price,
+      dailyReturn: priceInfo.dailyReturn,
+      holdings: [],
+      debug: debug ? { usedEndpoints, attempts, priceInfo } : undefined
+    });
   }
 
   return res.status(200).json({
