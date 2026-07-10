@@ -3998,31 +3998,45 @@ async function fetchFvtTakipFon(fonKodu){
 async function fetchEkofinFonInfo(fonKodu) {
   fonKodu = String(fonKodu || '').trim().toUpperCase();
   if (!fonKodu) return null;
-  try {
-    var resp = await _tk_fwt('/api/ekofin?code=' + encodeURIComponent(fonKodu) + '&mode=info',
-      { headers: { 'Accept': 'application/json' } }, 15000);
-    if (!resp.ok) throw new Error('Ekofin HTTP ' + resp.status);
-    var data = await resp.json();
-    var info = (data && data.info) || data || {};
-    var price = pickNumber(info, ['price','fiyat','fonFiyat','FONFIYAT']) || pickNumber(data, ['price','fiyat','fonFiyat']);
-    if (!price || !isFinite(price)) return null;
-    return {
-      name: info.name || info.fonUnvan || info.unvan || fonKodu,
-      price: price,
-      dailyReturn: pickNumber(info, ['dailyReturn','gunlukGetiri','gunluk','GETIRI']) || pickNumber(data, ['dailyReturn','gunlukGetiri']) || 0,
-      weeklyReturn: pickNumber(info, ['weeklyReturn','haftalikGetiri']) || 0,
-      monthlyReturn: pickNumber(info, ['monthlyReturn','aylikGetiri']) || 0,
-      size: pickNumber(info, ['size','portfoyBuyuklugu','portfoyBuyukluk']) || 0,
-      investors: parseInt(pickNumber(info, ['investors','yatirimciSayisi']) || 0, 10),
-      date: info.date || data.latestDate || data.aciklamaTarihi || '',
-      source: data.priceSource || info.priceSource || 'Ekofin',
-      sourceDetail: data.priceMethod || info.priceMethod || '',
-      sourceRaw: data.priceRaw || info.priceRaw || ''
-    };
-  } catch(e) {
-    console.warn('Ekofin fiyat bilgisi alınamadı:', fonKodu, e && e.message ? e.message : e);
-    return null;
+
+  // Önce tam Ekofin cevabını deneriz. Çünkü /api/ekofin?code=TLY testinde fiyatın
+  // priceSource=EKOFIN ve priceMethod=summary-html-span-tl ile doğru geldiğini doğruladık.
+  // Eğer ileride tam mod ağırlaşırsa mode=info ikinci deneme olarak kalır.
+  var urls = [
+    '/api/ekofin?code=' + encodeURIComponent(fonKodu),
+    '/api/ekofin?code=' + encodeURIComponent(fonKodu) + '&mode=info'
+  ];
+
+  for (var ui = 0; ui < urls.length; ui++) {
+    try {
+      var resp = await _tk_fwt(urls[ui], { headers: { 'Accept': 'application/json' } }, 18000);
+      if (!resp.ok) throw new Error('Ekofin HTTP ' + resp.status);
+      var data = await resp.json();
+      var info = (data && data.info) || data || {};
+      var price = pickNumber(data, ['price','fiyat','fonFiyat','FONFIYAT']) || pickNumber(info, ['price','fiyat','fonFiyat','FONFIYAT']);
+      if (!price || !isFinite(price)) throw new Error('Ekofin price empty');
+
+      var out = {
+        name: info.name || info.fonUnvan || info.unvan || data.name || fonKodu,
+        price: price,
+        dailyReturn: pickNumber(data, ['dailyReturn','gunlukGetiri']) || pickNumber(info, ['dailyReturn','gunlukGetiri','gunluk','GETIRI']) || 0,
+        weeklyReturn: pickNumber(info, ['weeklyReturn','haftalikGetiri']) || pickNumber(data, ['weeklyReturn','haftalikGetiri']) || 0,
+        monthlyReturn: pickNumber(info, ['monthlyReturn','aylikGetiri']) || pickNumber(data, ['monthlyReturn','aylikGetiri']) || 0,
+        size: pickNumber(info, ['size','portfoyBuyuklugu','portfoyBuyukluk']) || pickNumber(data, ['size','portfoyBuyuklugu','portfoyBuyukluk']) || 0,
+        investors: parseInt(pickNumber(info, ['investors','yatirimciSayisi']) || pickNumber(data, ['investors','yatirimciSayisi']) || 0, 10),
+        date: info.date || data.latestDate || data.aciklamaTarihi || '',
+        source: data.priceSource || info.priceSource || 'EKOFIN',
+        sourceDetail: data.priceMethod || info.priceMethod || (ui === 0 ? 'full-ekofin' : 'info-ekofin'),
+        sourceRaw: data.priceRaw || info.priceRaw || '',
+        sourceUrl: urls[ui]
+      };
+      console.log('ORKA Ekofin kapanış alındı:', fonKodu, out.price, out.sourceDetail);
+      return out;
+    } catch(e) {
+      console.warn('Ekofin fiyat denemesi başarısız:', fonKodu, urls[ui], e && e.message ? e.message : e);
+    }
   }
+  return null;
 }
 
 async function fetchAllFunds(){
@@ -4314,6 +4328,7 @@ function renderTefasCards(){
     el.innerHTML=`<div class="tcard-head"><div class="tcard-code ${getFonCss(code)}">${code}</div><div class="tcard-date">${info.date?new Date(info.date).toLocaleDateString('tr-TR'):'—'}</div></div>
       <div class="tcard-name">${info.name||code}</div>
       <div class="tcard-price ${getFonCss(code)}">${fb(info.price)}</div>
+      <div style="font-size:0.58rem;color:#5a7499;margin-top:3px;font-family:DM Mono,monospace;">Kaynak: ${info.source||'—'}${info.sourceDetail?' · '+info.sourceDetail:''}</div>
       <div class="tcard-change"><span class="tcard-pct ${pc}">${ps} %${Math.abs(pct).toFixed(3)}</span><span style="font-size:0.65rem;color:var(--muted)">günlük</span></div>
       <div class="tcard-divider"></div>
       <div class="tcard-stats">
