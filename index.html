@@ -10908,7 +10908,7 @@ async function fetchAllFunds_V19_OVERRIDE_DISABLED(){
       return null;
     }
   }
-  window.fetchAllFunds = async function fetchAllFunds_ORKA_V24(){
+  window.fetchAllFunds_ORKA_V24_DISABLED = async function fetchAllFunds_ORKA_V24_DISABLED(){
     var loading = document.getElementById('loading');
     var btn = document.getElementById('refresh-btn');
     var err = document.getElementById('error-bar');
@@ -11001,7 +11001,7 @@ async function fetchAllFunds_V19_OVERRIDE_DISABLED(){
     } catch(e) { return tefasInfo || {}; }
   }
 
-  window.fetchAllFunds = async function fetchAllFunds_ORKA_V25_FVT_DIRECT(){
+  window.fetchAllFunds_ORKA_V25_DISABLED = async function fetchAllFunds_ORKA_V25_DISABLED(){
     var loading=document.getElementById('loading');
     var btn=document.getElementById('refresh-btn');
     var err=document.getElementById('error-bar');
@@ -11084,5 +11084,264 @@ async function fetchAllFunds_V19_OVERRIDE_DISABLED(){
   };
 })();
 </script>
+
+<script>
+/* ═══════════════════════════════════════════════════════
+   ORKA V26 — TEFAS TEK KAPANIŞ MOTORU
+   Tek yetkili fetchAllFunds akışıdır.
+   Fon kapanışlarını yalnızca:
+     /api/tefas?mode=price&code=FON
+   adresinden alır.
+   Ekofin ve FVT kapanış akışları kullanılmaz.
+   Portföy dağılımı motorlarına dokunmaz.
+   ═══════════════════════════════════════════════════════ */
+(function () {
+  function orkaV26Number(value) {
+    var n = Number(value);
+    return isFinite(n) ? n : 0;
+  }
+
+  function orkaV26DateKey(dateValue) {
+    if (!dateValue) return '';
+    var parts = String(dateValue).slice(0, 10).split('-');
+    if (parts.length === 3) return parts[2] + '.' + parts[1];
+    var d = new Date(dateValue);
+    if (isNaN(d.getTime())) return '';
+    return String(d.getDate()).padStart(2, '0') + '.' +
+      String(d.getMonth() + 1).padStart(2, '0');
+  }
+
+  function orkaV26PeriodReturn(history, tradingDayCount) {
+    if (!Array.isArray(history) || history.length < 2) return 0;
+    var lastIndex = history.length - 1;
+    var baseIndex = Math.max(0, lastIndex - tradingDayCount);
+    var latest = orkaV26Number(history[lastIndex] && history[lastIndex].fiyat);
+    var base = orkaV26Number(history[baseIndex] && history[baseIndex].fiyat);
+    if (!(latest > 0) || !(base > 0)) return 0;
+    return ((latest / base) - 1) * 100;
+  }
+
+  async function orkaV26FetchFund(code) {
+    var controller = new AbortController();
+    var timer = setTimeout(function () { controller.abort(); }, 25000);
+
+    try {
+      var response = await fetch(
+        '/api/tefas?mode=price&code=' + encodeURIComponent(code) + '&_=' + Date.now(),
+        {
+          method: 'GET',
+          headers: { 'Accept': 'application/json' },
+          cache: 'no-store',
+          signal: controller.signal
+        }
+      );
+
+      if (!response.ok) throw new Error('HTTP ' + response.status);
+
+      var data = await response.json();
+      if (!data || data.ok !== true || !data.latest) {
+        throw new Error((data && data.error) || 'TEFAS veri boş');
+      }
+
+      return data;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  window.fetchAllFunds = async function fetchAllFunds_ORKA_V26_TEFAS_ONLY() {
+    var loading = document.getElementById('loading');
+    var button = document.getElementById('refresh-btn');
+    var errorBar = document.getElementById('error-bar');
+
+    if (loading) loading.style.display = 'flex';
+    if (button) button.disabled = true;
+    if (errorBar) errorBar.style.display = 'none';
+
+    var codes;
+    try {
+      codes = typeof getTumFonlar === 'function'
+        ? getTumFonlar()
+        : ['DFI', 'TLY', 'PHE', 'CPT', 'IJC'];
+    } catch (e) {
+      codes = ['DFI', 'TLY', 'PHE', 'CPT', 'IJC'];
+    }
+
+    codes = Array.from(new Set(
+      (codes || [])
+        .map(function (code) { return String(code || '').trim().toUpperCase(); })
+        .filter(Boolean)
+    ));
+
+    var newInfo = {};
+    var calculatedRates = {};
+    var details = [];
+    var successCount = 0;
+    var errorCount = 0;
+
+    var results = await Promise.all(codes.map(async function (code) {
+      try {
+        return { code: code, data: await orkaV26FetchFund(code), error: null };
+      } catch (error) {
+        return { code: code, data: null, error: error };
+      }
+    }));
+
+    results.forEach(function (result) {
+      var code = result.code;
+      var data = result.data;
+
+      if (!data || !data.latest) {
+        errorCount++;
+        details.push(code + ':HATA ' +
+          (result.error && result.error.message ? result.error.message : 'veri yok'));
+        return;
+      }
+
+      var history = Array.isArray(data.history) ? data.history.slice() : [];
+      history.sort(function (a, b) {
+        return String(a.tarih || '').localeCompare(String(b.tarih || ''));
+      });
+
+      var latestPrice = orkaV26Number(data.latest.fiyat);
+      if (!(latestPrice > 0)) {
+        errorCount++;
+        details.push(code + ':HATA fiyat boş');
+        return;
+      }
+
+      newInfo[code] = {
+        name: data.latest.fonUnvan || code,
+        price: latestPrice,
+        dailyReturn: orkaV26Number(data.dailyReturn),
+        weeklyReturn: orkaV26PeriodReturn(history, 5),
+        monthlyReturn: orkaV26PeriodReturn(history, 21),
+        size: 0,
+        investors: 0,
+        date: data.latest.tarih || '',
+        source: 'TEFAS',
+        sourceDetail: 'api/tefas mode=price'
+      };
+
+      // ORKA'nın mevcut günlük detay mantığını koru:
+      // Bir kapanıştan sonraki kapanışa oluşan değişim önceki işlem gününün satırına yazılır.
+      for (var i = 1; i < history.length; i++) {
+        var previousPrice = orkaV26Number(history[i - 1] && history[i - 1].fiyat);
+        var currentPrice = orkaV26Number(history[i] && history[i].fiyat);
+        var dayKey = orkaV26DateKey(history[i - 1] && history[i - 1].tarih);
+
+        if (!dayKey || !(previousPrice > 0) || !(currentPrice > 0)) continue;
+        if (!calculatedRates[dayKey]) calculatedRates[dayKey] = {};
+
+        calculatedRates[dayKey][code.toLowerCase()] =
+          Number((((currentPrice / previousPrice) - 1) * 100).toFixed(4));
+      }
+
+      successCount++;
+      details.push(
+        code + ':TEFAS fiyat=' + latestPrice +
+        ' günlük=' + orkaV26Number(data.dailyReturn).toFixed(4) +
+        ' tarih=' + (data.latest.tarih || '')
+      );
+    });
+
+    try {
+      var cached = JSON.parse(_lsGet(TKEY) || '{}') || {};
+      var previousInfo = cached.info || tefasInfo || {};
+      var previousRates = cached.rates || liveRates || {};
+
+      tefasInfo = Object.assign({}, previousInfo, newInfo);
+      liveRates = Object.assign({}, previousRates, calculatedRates);
+
+      // Kullanıcının elle girdiği değerler otomatik veriden daha önceliklidir.
+      try {
+        if (typeof loadR === 'function') {
+          var manualRates = loadR() || {};
+          Object.keys(manualRates).forEach(function (dayKey) {
+            if (!liveRates[dayKey]) liveRates[dayKey] = {};
+            Object.keys(manualRates[dayKey] || {}).forEach(function (fundKey) {
+              var manualValue = manualRates[dayKey][fundKey];
+              if (
+                manualValue !== null &&
+                manualValue !== undefined &&
+                manualValue !== '' &&
+                Number(manualValue) !== 0
+              ) {
+                liveRates[dayKey][fundKey] = Number(manualValue);
+              }
+            });
+          });
+        }
+      } catch (manualError) {
+        console.warn('ORKA V26 manuel veri birleştirme uyarısı:', manualError);
+      }
+
+      _lsSet(TKEY, JSON.stringify({
+        rates: liveRates,
+        info: tefasInfo,
+        ts: Date.now(),
+        sourceReport: details,
+        engine: 'ORKA_V26_TEFAS_ONLY'
+      }));
+    } catch (cacheError) {
+      tefasInfo = Object.assign({}, tefasInfo || {}, newInfo);
+      liveRates = Object.assign({}, liveRates || {}, calculatedRates);
+      console.warn('ORKA V26 cache kayıt uyarısı:', cacheError);
+    }
+
+    var lastUpdate = document.getElementById('last-update');
+    if (lastUpdate) {
+      lastUpdate.innerHTML =
+        'Son güncelleme: <span style="color:var(--green)">' +
+        new Date().toLocaleTimeString('tr-TR') +
+        '</span> <span style="color:var(--muted)">Kaynak: TEFAS ' +
+        successCount + ', Hata ' + errorCount + '</span>';
+    }
+
+    console.log('ORKA_V26_TEFAS_ONLY:', details.join(' | '));
+
+    try {
+      if (typeof renderTefasCardsHTML === 'function') renderTefasCardsHTML();
+    } catch (e) {}
+    try {
+      if (typeof renderTefasCards === 'function') renderTefasCards();
+    } catch (e) {}
+    try {
+      if (typeof render === 'function') render();
+    } catch (e) {}
+    try {
+      if (typeof fonFirebaseSave === 'function') fonFirebaseSave(true);
+    } catch (e) {}
+
+    if (successCount > 0) {
+      if (typeof toast === 'function') {
+        toast(
+          'Fon kapanışları TEFAS’tan alındı · Başarılı ' +
+          successCount + ' · Hata ' + errorCount,
+          'ok'
+        );
+      }
+    } else {
+      if (errorBar) {
+        errorBar.style.display = 'flex';
+        var errorMessage = document.getElementById('error-msg');
+        if (errorMessage) {
+          errorMessage.textContent =
+            'TEFAS kapanışları alınamadı; mevcut kayıtlar korundu.';
+        }
+      }
+      if (typeof toast === 'function') {
+        toast('TEFAS verisi alınamadı; mevcut kayıtlar korundu', 'info');
+      }
+    }
+
+    if (loading) loading.style.display = 'none';
+    if (button) button.disabled = false;
+  };
+
+  console.log('ORKA V26 hazır: Fon kapanış kaynağı yalnızca TEFAS.');
+})();
+</script>
+
 </body>
 </html>
