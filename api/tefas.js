@@ -512,45 +512,6 @@ export default async function handler(req, res) {
     ''
   );
 
-  if (mode === 'price') {
-    if (!code) {
-      return res.status(400).json({
-        ok: false,
-        error: 'Missing code'
-      });
-    }
-
-    const result = await proxyEndpoint('fonFiyatBilgiGetir', {
-      fonKodu: code,
-      dil: 'TR',
-      periyod: 12
-    });
-
-    const rows = Array.isArray(result.data) ? result.data : [];
-    const sorted = rows
-      .filter(row => row && row.tarih && Number.isFinite(Number(row.fiyat)))
-      .sort((a, b) => String(a.tarih).localeCompare(String(b.tarih)));
-
-    const latest = sorted.length ? sorted[sorted.length - 1] : null;
-    const previous = sorted.length > 1 ? sorted[sorted.length - 2] : null;
-    const dailyReturn =
-      latest && previous && Number(previous.fiyat) !== 0
-        ? ((Number(latest.fiyat) / Number(previous.fiyat)) - 1) * 100
-        : null;
-
-    return res.status(result.ok ? 200 : 502).json({
-      ok: result.ok,
-      source: 'TEFAS',
-      code,
-      count: sorted.length,
-      latest,
-      previous,
-      dailyReturn,
-      history: sorted,
-      debug: debug ? { attempts: result.attempts } : undefined
-    });
-  }
-
   if (mode === 'portfolio') {
     if (!code) {
       return res.status(400).json({
@@ -575,10 +536,6 @@ export default async function handler(req, res) {
 
   return res.status(400).json({
     ok: false,
-    error: 'Unsupported TEFAS request',
-    examples: [
-      '/api/tefas?mode=price&code=TLY',
-      '/api/tefas?mode=portfolio&code=TLY'
-    ]
+    error: 'Unsupported TEFAS request'
   });
 }
