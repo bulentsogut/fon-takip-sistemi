@@ -11087,7 +11087,7 @@ async function fetchAllFunds_V19_OVERRIDE_DISABLED(){
 
 <script>
 /* ═══════════════════════════════════════════════════════
-   ORKA V26 — TEFAS TEK KAPANIŞ MOTORU
+   ORKA V27 — TEFAS TARİH DÜZELTMESİ
    Tek yetkili fetchAllFunds akışıdır.
    Fon kapanışlarını yalnızca:
      /api/tefas?mode=price&code=FON
@@ -11149,7 +11149,7 @@ async function fetchAllFunds_V19_OVERRIDE_DISABLED(){
     }
   }
 
-  window.fetchAllFunds = async function fetchAllFunds_ORKA_V26_TEFAS_ONLY() {
+  window.fetchAllFunds = async function fetchAllFunds_ORKA_V27_TEFAS_DATE_FIX() {
     var loading = document.getElementById('loading');
     var button = document.getElementById('refresh-btn');
     var errorBar = document.getElementById('error-bar');
@@ -11228,7 +11228,15 @@ async function fetchAllFunds_V19_OVERRIDE_DISABLED(){
       for (var i = 1; i < history.length; i++) {
         var previousPrice = orkaV26Number(history[i - 1] && history[i - 1].fiyat);
         var currentPrice = orkaV26Number(history[i] && history[i].fiyat);
-        var dayKey = orkaV26DateKey(history[i - 1] && history[i - 1].tarih);
+        var currentDateText = String(history[i] && history[i].tarih || '');
+        var latestYear = String(data.latest.tarih || '').slice(0, 4);
+        var currentYear = currentDateText.slice(0, 4);
+
+        // TEFAS 12 aylık geçmiş döndürüyor. ORKA'nın günlük tablosu dd.mm
+        // anahtarı kullandığı için önceki yılın aynı ay günleri yeni yıla karışmasın.
+        if (!latestYear || currentYear !== latestYear) continue;
+
+        var dayKey = orkaV26DateKey(currentDateText);
 
         if (!dayKey || !(previousPrice > 0) || !(currentPrice > 0)) continue;
         if (!calculatedRates[dayKey]) calculatedRates[dayKey] = {};
@@ -11248,10 +11256,13 @@ async function fetchAllFunds_V19_OVERRIDE_DISABLED(){
     try {
       var cached = JSON.parse(_lsGet(TKEY) || '{}') || {};
       var previousInfo = cached.info || tefasInfo || {};
-      var previousRates = cached.rates || liveRates || {};
 
       tefasInfo = Object.assign({}, previousInfo, newInfo);
-      liveRates = Object.assign({}, previousRates, calculatedRates);
+
+      // Eski V24/V25/V26 denemelerinden kalmış, geleceğe taşınmış otomatik
+      // kayıtları tamamen temizle. TEFAS'tan bu çalıştırmada hesaplanan temiz
+      // oranları temel al; manuel değerler aşağıda yeniden üstüne yazılır.
+      liveRates = Object.assign({}, calculatedRates);
 
       // Kullanıcının elle girdiği değerler otomatik veriden daha önceliklidir.
       try {
@@ -11281,7 +11292,7 @@ async function fetchAllFunds_V19_OVERRIDE_DISABLED(){
         info: tefasInfo,
         ts: Date.now(),
         sourceReport: details,
-        engine: 'ORKA_V26_TEFAS_ONLY'
+        engine: 'ORKA_V27_TEFAS_DATE_FIX'
       }));
     } catch (cacheError) {
       tefasInfo = Object.assign({}, tefasInfo || {}, newInfo);
@@ -11298,7 +11309,7 @@ async function fetchAllFunds_V19_OVERRIDE_DISABLED(){
         successCount + ', Hata ' + errorCount + '</span>';
     }
 
-    console.log('ORKA_V26_TEFAS_ONLY:', details.join(' | '));
+    console.log('ORKA_V27_TEFAS_DATE_FIX:', details.join(' | '));
 
     try {
       if (typeof renderTefasCardsHTML === 'function') renderTefasCardsHTML();
@@ -11339,7 +11350,7 @@ async function fetchAllFunds_V19_OVERRIDE_DISABLED(){
     if (button) button.disabled = false;
   };
 
-  console.log('ORKA V26 hazır: Fon kapanış kaynağı yalnızca TEFAS.');
+  console.log('ORKA V27 hazır: TEFAS tarih eşleştirmesi düzeltildi.');
 })();
 </script>
 
