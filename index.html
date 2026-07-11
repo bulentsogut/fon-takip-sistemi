@@ -10982,6 +10982,93 @@ async function fetchAllFunds_V19_OVERRIDE_DISABLED(){
   };
 })();
 
+
+/* ═══════════════════════════════════════════════════════
+   ORKA v25 — FVT GÜN SONU KAPANIŞ MOTORU
+   Tek yetkili Fon Takip güncelleme akışı.
+   Ekofin fiyat akışını tamamen devre dışı bırakır.
+   ═══════════════════════════════════════════════════════ */
+(function(){
+  function v25DateKey(value){
+    if(!value) return '';
+    var s=String(value).trim(), m=s.match(/^(\d{1,2})[.\/-](\d{1,2})[.\/-](\d{4})/);
+    if(m) return String(m[1]).padStart(2,'0')+'.'+String(m[2]).padStart(2,'0');
+    m=s.match(/^(\d{4})[.\/-](\d{1,2})[.\/-](\d{1,2})/);
+    if(m) return String(m[3]).padStart(2,'0')+'.'+String(m[2]).padStart(2,'0');
+    var d=new Date(s);
+    if(isNaN(d.getTime())) return '';
+    return String(d.getDate()).padStart(2,'0')+'.'+String(d.getMonth()+1).padStart(2,'0');
+  }
+  async function v25Fvt(code){
+    var controller=typeof AbortController!=='undefined'?new AbortController():null;
+    var timer=controller?setTimeout(function(){controller.abort();},20000):null;
+    try{
+      var url='/api/fvt?mode=price&code='+encodeURIComponent(code)+'&_='+Date.now();
+      var r=await fetch(url,{headers:{Accept:'application/json'},cache:'no-store',signal:controller?controller.signal:undefined});
+      if(!r.ok) throw new Error('HTTP '+r.status);
+      var data=await r.json();
+      if(!data || !data.ok) throw new Error((data&&data.error)||'FVT boş cevap');
+      return data;
+    }finally{ if(timer) clearTimeout(timer); }
+  }
+  window.fetchAllFunds=async function fetchAllFunds_ORKA_V25_FVT(){
+    var loading=document.getElementById('loading'), btn=document.getElementById('refresh-btn'), err=document.getElementById('error-bar');
+    if(loading) loading.style.display='flex';
+    if(btn) btn.disabled=true;
+    if(err) err.style.display='none';
+    var codes=[];
+    try{ codes=typeof getTumFonlar==='function'?getTumFonlar():['DFI','TLY','PHE','CPT','IJC']; }catch(e){ codes=['DFI','TLY','PHE','CPT','IJC']; }
+    var newInfo={}, receivedRates={}, report=[], okCount=0, failCount=0;
+    for(var i=0;i<codes.length;i++){
+      var code=String(codes[i]||'').trim().toUpperCase();
+      if(!code) continue;
+      try{
+        var data=await v25Fvt(code), info=data.info||{}, hist=data.history||info.history||[];
+        newInfo[code]={
+          name:info.name||code, price:Number(info.price)||0, dailyReturn:Number(info.dailyReturn)||0,
+          weeklyReturn:Number(info.weeklyReturn)||0, monthlyReturn:Number(info.monthlyReturn)||0,
+          size:Number(info.size)||0, investors:parseInt(info.investors||0,10), date:info.date||'', source:'FVT'
+        };
+        for(var h=0;h<hist.length;h++){
+          var key=v25DateKey(hist[h].date), val=Number(hist[h].dailyReturn);
+          if(!key || !isFinite(val)) continue;
+          if(!receivedRates[key]) receivedRates[key]={};
+          receivedRates[key][code.toLowerCase()]=Number(val.toFixed(4));
+        }
+        if(!hist.length && info.date && isFinite(Number(info.dailyReturn))){
+          var latestKey=v25DateKey(info.date);
+          if(latestKey){ if(!receivedRates[latestKey]) receivedRates[latestKey]={}; receivedRates[latestKey][code.toLowerCase()]=Number(Number(info.dailyReturn).toFixed(4)); }
+        }
+        okCount++; report.push(code+':FVT fiyat='+newInfo[code].price+' tarih='+(info.date||'-')+' geçmiş='+hist.length);
+      }catch(e){ failCount++; report.push(code+':HATA '+(e&&e.message?e.message:e)); }
+    }
+    try{
+      var cached=JSON.parse(_lsGet(TKEY)||'{}')||{}, oldRates=cached.rates||liveRates||{}, oldInfo=cached.info||tefasInfo||{};
+      liveRates=Object.assign({},oldRates);
+      Object.keys(receivedRates).forEach(function(d){ liveRates[d]=Object.assign({},liveRates[d]||{},receivedRates[d]); });
+      tefasInfo=Object.assign({},oldInfo,newInfo);
+      _lsSet(TKEY,JSON.stringify({rates:liveRates,info:tefasInfo,ts:Date.now(),sourceReport:report,engine:'ORKA_V25_FVT'}));
+    }catch(e){
+      Object.keys(receivedRates).forEach(function(d){ if(!liveRates[d]) liveRates[d]={}; Object.assign(liveRates[d],receivedRates[d]); });
+      tefasInfo=Object.assign({},tefasInfo||{},newInfo);
+    }
+    console.log('ORKA_V25_FVT:',report.join(' | '));
+    var lu=document.getElementById('last-update');
+    if(lu) lu.innerHTML='Son güncelleme: <span style="color:var(--green)">'+new Date().toLocaleTimeString('tr-TR')+'</span> <span style="color:var(--muted)">Kaynak: FVT '+okCount+', Hata '+failCount+'</span>';
+    try{ if(typeof renderTefasCardsHTML==='function') renderTefasCardsHTML(); }catch(e){}
+    try{ if(typeof renderTefasCards==='function') renderTefasCards(); }catch(e){}
+    try{ if(typeof render==='function') render(); }catch(e){}
+    try{ if(typeof fonFirebaseSave==='function') fonFirebaseSave(true); }catch(e){}
+    if(okCount){ if(typeof toast==='function') toast('Fon kapanışları FVT’den alındı · '+okCount+' fon','ok'); }
+    else{
+      if(err){ err.style.display='flex'; var em=document.getElementById('error-msg'); if(em) em.textContent='FVT kapanış verisi alınamadı; mevcut kayıtlar korundu.'; }
+      if(typeof toast==='function') toast('FVT kapanış verisi alınamadı; mevcut kayıtlar korundu','info');
+    }
+    if(loading) loading.style.display='none';
+    if(btn) btn.disabled=false;
+  };
+})();
+
 </script>
 
 
