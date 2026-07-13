@@ -138,7 +138,24 @@ function fonFirebaseApply(data){
   _fonFirebaseApplying = true;
   try{
     FON_FIREBASE_KEYS.forEach(function(key){
-      if(data[key] !== undefined && data[key] !== null) fonFirebaseWriteLocal(key, fonFirebaseDecodeKeys(data[key]));
+      if(data[key] === undefined || data[key] === null) return;
+      var incoming = fonFirebaseDecodeKeys(data[key]);
+      if(key === 'fon_trx_extra_v1'){
+        // RECOVERY V1: Firebase'deki eksik bir liste geçmiş hareketleri silemez.
+        var local = fonFirebaseReadLocal(key) || [];
+        var map = {};
+        function add(list){
+          (Array.isArray(list) ? list : []).forEach(function(t){
+            if(!t || !t.fon || !t.tarih) return;
+            var k = String(t.fon).toUpperCase().trim() + '|' + String(t.tarih).trim();
+            var prev = map[k];
+            if(!prev || Number(t.ts||0) >= Number(prev.ts||0)) map[k] = t;
+          });
+        }
+        add(local); add(incoming);
+        incoming = Object.keys(map).map(function(k){ return map[k]; });
+      }
+      fonFirebaseWriteLocal(key, incoming);
     });
   }finally{ _fonFirebaseApplying = false; }
 }
@@ -3459,6 +3476,31 @@ function persistTrxExtra(extra){
   (extra||[]).forEach(function(t){ DEFAULT_TRX_EXTRA.push(t); });
 }
 
+// ORKA RECOVERY V1 — geçmiş işlem hareketleri fon+tarih anahtarıyla birleştirilir.
+// Yeni/eksik bir liste eski tarihleri silemez; aynı anahtarda daha yeni ts kazanır.
+function mergeTrxExtraHistory(base, incoming){
+  var map = {};
+  function add(list){
+    (Array.isArray(list) ? list : []).forEach(function(t){
+      if(!t || !t.fon || !t.tarih) return;
+      var k = String(t.fon).toUpperCase().trim() + '|' + String(t.tarih).trim();
+      var prev = map[k];
+      if(!prev || Number(t.ts||0) >= Number(prev.ts||0)) map[k] = t;
+    });
+  }
+  add(base); add(incoming);
+  return Object.keys(map).map(function(k){ return map[k]; });
+}
+
+function ensureRecoveryHistory(extra){
+  var recovery = [
+    {tarih:'01.06.2026', fon:'DFI', miktar:563911, eskiMiktar:null, not:'BAK tablodan', ts:1780917239973},
+    {tarih:'12.06.2026', fon:'DFI', miktar:581072, eskiMiktar:580970.01, not:'BAK tablodan', ts:1781505021367},
+    {tarih:'18.06.2026', fon:'DFI', miktar:0, not:'Portföy yönetimi - sat', ts:1781864723247}
+  ];
+  return mergeTrxExtraHistory(recovery, extra || []);
+}
+
 var DEFAULT_TRX_EXTRA = (function(){
   try{
     var data = JSON.parse(localStorage.getItem('fon_trx_extra_v1'))||[];
@@ -3469,8 +3511,14 @@ var DEFAULT_TRX_EXTRA = (function(){
       var d=new Date(parseInt(p[2]||2026),parseInt(p[1])-1,parseInt(p[0]));
       return d >= new Date(2026,4,11); // 11 Mayis 2026 ve sonrasi
     });
-    return data;
-  }catch{ return []; }
+    var recovered = ensureRecoveryHistory(data);
+    try{ _lsSet(TRX_EXTRA_KEY, JSON.stringify(recovered)); }catch(e){}
+    return recovered;
+  }catch{
+    var recovered = ensureRecoveryHistory([]);
+    try{ _lsSet(TRX_EXTRA_KEY, JSON.stringify(recovered)); }catch(e){}
+    return recovered;
+  }
 })();
 var DEFAULT_TRX_EXTRA_ONCEKI = null;
 let liveRates={}, tefasInfo={};
@@ -3842,9 +3890,8 @@ function restoreData(input){
       // trx_extra geri yukle (el ile girilen TL tutarlar)
       if(d.trx_extra && d.trx_extra.length > 0){
         try{
-          _lsSet(TRX_EXTRA_KEY, JSON.stringify(d.trx_extra));
-          DEFAULT_TRX_EXTRA.length = 0;
-          d.trx_extra.forEach(function(t){ DEFAULT_TRX_EXTRA.push(t); });
+          var mergedExtra = ensureRecoveryHistory(mergeTrxExtraHistory(DEFAULT_TRX_EXTRA, d.trx_extra));
+          persistTrxExtra(mergedExtra);
         }catch(ex){}
       }
       // silinen fonlar geri yukle
@@ -10285,11 +10332,9 @@ function _restoreFonBolumu(fon){
   if(fon.tefas){ try{_lsSet(TKEY, JSON.stringify(fon.tefas)); changed=true;}catch(e){} }
   if(fon.trx_extra){
     try{
-      _lsSet(TRX_EXTRA_KEY, JSON.stringify(fon.trx_extra));
-      if(typeof DEFAULT_TRX_EXTRA !== 'undefined' && DEFAULT_TRX_EXTRA && DEFAULT_TRX_EXTRA.length !== undefined){
-        DEFAULT_TRX_EXTRA.length=0;
-        fon.trx_extra.forEach(function(t){ DEFAULT_TRX_EXTRA.push(t); });
-      }
+      var currentExtra = (typeof DEFAULT_TRX_EXTRA !== 'undefined' && DEFAULT_TRX_EXTRA) ? DEFAULT_TRX_EXTRA : [];
+      var mergedExtra = ensureRecoveryHistory(mergeTrxExtraHistory(currentExtra, fon.trx_extra));
+      persistTrxExtra(mergedExtra);
       changed=true;
     }catch(e){}
   }
