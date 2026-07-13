@@ -3135,6 +3135,11 @@ function buildMergedForAy(k){
       Object.keys(src[d]||{}).forEach(function(f){ if(src[d][f]!==null && src[d][f]!==undefined) merged[ds][f]=src[d][f]; });
     });
   });
+  // IJC 07.07.2026: satış günündeki görünmeyen kapanış getirisi hiçbir hesaba girmez.
+  if(monthNoFromKey(k)===7){
+    if(!merged['07.07']) merged['07.07']={};
+    merged['07.07'].ijc=0;
+  }
   return merged;
 }
 function baslangicTrxFromBakiye(bakiye, k){
@@ -3245,14 +3250,15 @@ function computeForWeeks(rates, weeks){
       tumFonlar.forEach(function(f){
         var trxKey=d.split('.')[0]+'.'+d.split('.')[1]+'.2026';
         if(trxMap[f][trxKey]!==undefined) bakiye[f]=trxMap[f][trxKey];
-        var pct=r[f.toLowerCase()]||0;
+        var pct=(String(f).toUpperCase()==='IJC' && trxKey==='07.07.2026') ? 0 : (r[f.toLowerCase()]||0);
         if(bakiye[f]) bakiye[f] = bakiye[f] * (1 + pct/100);
         if(trxSetMap[f][trxKey]!==undefined){ bakiye[f]=trxSetMap[f][trxKey]; } // BAK: gün sonu override
       });
       // fonDetay ve kz hesapla (updateAktifAyForMonth için)
       var fonDetay={}, kz=0;
       tumFonlar.forEach(function(f){
-        var pct2=r[f.toLowerCase()]||0;
+        var dayKeyFull=d.split('.')[0]+'.'+d.split('.')[1]+'.2026';
+        var pct2=(String(f).toUpperCase()==='IJC' && dayKeyFull==='07.07.2026') ? 0 : (r[f.toLowerCase()]||0);
         var sonBal=bakiye[f]||0;
         var tl2 = pct2!==0 ? sonBal - sonBal/(1+pct2/100) : 0;
         fonDetay[f]={pct:pct2, tl:tl2};
@@ -4543,9 +4549,11 @@ function compute(rates){
         // ── ADIM 2: Aktif mi? ────────────────────────────────
         var ilkTarih = ilkTarihMap[f];
         var satisTarih = satisTarihMap[f];
+        var zorunluGetiriHaric = (String(f).toUpperCase()==='IJC' && gunKey==='07.07.2026');
         var aktif = ilkTarih && gunDate >= ilkTarih &&
                     (!satisTarih || gunDate < satisTarih) &&
-                    (bakiye[f]||0) > 0;
+                    (bakiye[f]||0) > 0 &&
+                    !zorunluGetiriHaric;
 
         // ── ADIM 3: Getiri hesabı ─────────────────────────────
         var getiriPct = aktif ? (r[f.toLowerCase()]||0) : 0;
@@ -4650,6 +4658,8 @@ function render(){
   Object.keys(PREFILLED).forEach(d=>{merged[d]={...PREFILLED[d]};});
   Object.keys(liveRates).forEach(d=>{if(!merged[d])merged[d]={};Object.keys(liveRates[d]).forEach(f=>{if(liveRates[d][f]!==0)merged[d][f]=liveRates[d][f];});});
   Object.keys(usr).forEach(d=>{if(!merged[d])merged[d]={};Object.keys(usr[d]).forEach(f=>{if(usr[d][f]!==null&&usr[d][f]!==undefined)merged[d][f]=usr[d][f];});});
+  // IJC'nin 07.07.2026 görünmeyen kapanışı ekranda ve toplam hesapta kullanılmaz.
+  if(monthNoFromKey(aktifAy)===7){ if(!merged['07.07']) merged['07.07']={}; merged['07.07'].ijc=0; }
   const result=compute(merged);
   const{rows}=result;
   const tumFonlar=getPortfoyGorunenFonlar();
@@ -4705,8 +4715,9 @@ function render(){
       const tr=document.createElement('tr');if(!hasData)tr.style.opacity='0.45';
       var tdHtml=`<td>${row.date}.${monthYearFromKey(aktifAy)}${isLive?'<span style="color:var(--green);margin-left:4px;font-size:0.6rem">●</span>':''}</td>`;
       tumFonlar.forEach(function(f){
-        var pct=r[f.toLowerCase()]||0;
-        var tl=row.fonDetay?.[f]?.tl||0;
+        var ijcHaric = (String(f).toUpperCase()==='IJC' && row.date==='07.07' && monthYearFromKey(aktifAy)===2026);
+        var pct=ijcHaric ? 0 : (r[f.toLowerCase()]||0);
+        var tl=ijcHaric ? 0 : (row.fonDetay?.[f]?.tl||0);
         tdHtml+=`<td class="fon-sep" style="padding:3px 2px;text-align:center"><div class="inp-wrap" style="justify-content:center"><input class="rinp ${isLive?'auto-filled':''}" type="number" step="0.001" data-d="${row.date}" data-f="${f.toLowerCase()}" value="${pct||''}" placeholder="0.000"><span class="pct-sym">%</span></div></td>`;
         var fonBakiye=row.bakiyeSnap?.[f]||0;
         var renk=getFonRenk(f);
