@@ -11087,7 +11087,7 @@ async function fetchAllFunds_V19_OVERRIDE_DISABLED(){
 
 <script>
 /* ═══════════════════════════════════════════════════════
-   ORKA V27 — TEFAS TARİH DÜZELTMESİ
+   ORKA V28 — TEFAS İŞLEM GÜNÜ EŞLEŞTİRMESİ
    Tek yetkili fetchAllFunds akışıdır.
    Fon kapanışlarını yalnızca:
      /api/tefas?mode=price&code=FON
@@ -11149,7 +11149,7 @@ async function fetchAllFunds_V19_OVERRIDE_DISABLED(){
     }
   }
 
-  window.fetchAllFunds = async function fetchAllFunds_ORKA_V27_TEFAS_DATE_FIX() {
+  window.fetchAllFunds = async function fetchAllFunds_ORKA_V28_TEFAS_MARKET_DATE_FIX() {
     var loading = document.getElementById('loading');
     var button = document.getElementById('refresh-btn');
     var errorBar = document.getElementById('error-bar');
@@ -11228,15 +11228,20 @@ async function fetchAllFunds_V19_OVERRIDE_DISABLED(){
       for (var i = 1; i < history.length; i++) {
         var previousPrice = orkaV26Number(history[i - 1] && history[i - 1].fiyat);
         var currentPrice = orkaV26Number(history[i] && history[i].fiyat);
-        var currentDateText = String(history[i] && history[i].tarih || '');
+        var publicationDateText = String(history[i] && history[i].tarih || '');
+        var marketDateText = String(history[i - 1] && history[i - 1].tarih || '');
         var latestYear = String(data.latest.tarih || '').slice(0, 4);
-        var currentYear = currentDateText.slice(0, 4);
+        var marketYear = marketDateText.slice(0, 4);
 
-        // TEFAS 12 aylık geçmiş döndürüyor. ORKA'nın günlük tablosu dd.mm
-        // anahtarı kullandığı için önceki yılın aynı ay günleri yeni yıla karışmasın.
-        if (!latestYear || currentYear !== latestYear) continue;
+        // TEFAS'taki tarih yayın/değerleme tarihidir. ORKA günlük performansında
+        // bu değişim bir önceki işlem gününe yazılmalıdır.
+        // Örnek: 10.07.2026 TEFAS kaydı -> 09.07.2026 ORKA işlem günü.
+        //
+        // ORKA dd.mm anahtarı kullandığı için önceki yılın aynı günlerinin
+        // güncel yıla karışmasını engelle.
+        if (!latestYear || marketYear !== latestYear) continue;
 
-        var dayKey = orkaV26DateKey(currentDateText);
+        var dayKey = orkaV26DateKey(marketDateText);
 
         if (!dayKey || !(previousPrice > 0) || !(currentPrice > 0)) continue;
         if (!calculatedRates[dayKey]) calculatedRates[dayKey] = {};
@@ -11292,7 +11297,7 @@ async function fetchAllFunds_V19_OVERRIDE_DISABLED(){
         info: tefasInfo,
         ts: Date.now(),
         sourceReport: details,
-        engine: 'ORKA_V27_TEFAS_DATE_FIX'
+        engine: 'ORKA_V28_TEFAS_MARKET_DATE_FIX'
       }));
     } catch (cacheError) {
       tefasInfo = Object.assign({}, tefasInfo || {}, newInfo);
@@ -11309,7 +11314,7 @@ async function fetchAllFunds_V19_OVERRIDE_DISABLED(){
         successCount + ', Hata ' + errorCount + '</span>';
     }
 
-    console.log('ORKA_V27_TEFAS_DATE_FIX:', details.join(' | '));
+    console.log('ORKA_V28_TEFAS_MARKET_DATE_FIX:', details.join(' | '));
 
     try {
       if (typeof renderTefasCardsHTML === 'function') renderTefasCardsHTML();
@@ -11350,7 +11355,7 @@ async function fetchAllFunds_V19_OVERRIDE_DISABLED(){
     if (button) button.disabled = false;
   };
 
-  console.log('ORKA V27 hazır: TEFAS tarih eşleştirmesi düzeltildi.');
+  console.log('ORKA V28 hazır: TEFAS verileri bir önceki işlem gününe eşleştiriliyor.');
 })();
 </script>
 
