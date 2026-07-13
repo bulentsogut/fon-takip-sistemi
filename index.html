@@ -4544,7 +4544,7 @@ function compute(rates){
         var ilkTarih = ilkTarihMap[f];
         var satisTarih = satisTarihMap[f];
         var aktif = ilkTarih && gunDate >= ilkTarih &&
-                    (!satisTarih || gunDate <= satisTarih) &&
+                    (!satisTarih || gunDate < satisTarih) &&
                     (bakiye[f]||0) > 0;
 
         // ── ADIM 3: Getiri hesabı ─────────────────────────────
