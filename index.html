@@ -11087,7 +11087,7 @@ async function fetchAllFunds_V19_OVERRIDE_DISABLED(){
 
 <script>
 /* ═══════════════════════════════════════════════════════
-   ORKA V28 — TEFAS İŞLEM GÜNÜ EŞLEŞTİRMESİ
+   ORKA V29 — TEFAS TARİH VE CACHE DÜZELTMESİ
    Tek yetkili fetchAllFunds akışıdır.
    Fon kapanışlarını yalnızca:
      /api/tefas?mode=price&code=FON
@@ -11149,7 +11149,7 @@ async function fetchAllFunds_V19_OVERRIDE_DISABLED(){
     }
   }
 
-  window.fetchAllFunds = async function fetchAllFunds_ORKA_V28_TEFAS_MARKET_DATE_FIX() {
+  window.fetchAllFunds = async function fetchAllFunds_ORKA_V29_TEFAS_DATE_CACHE_FIX() {
     var loading = document.getElementById('loading');
     var button = document.getElementById('refresh-btn');
     var errorBar = document.getElementById('error-bar');
@@ -11274,10 +11274,19 @@ async function fetchAllFunds_V19_OVERRIDE_DISABLED(){
         if (typeof loadR === 'function') {
           var manualRates = loadR() || {};
           Object.keys(manualRates).forEach(function (dayKey) {
+            // Sadece TEFAS'ın bu çalıştırmada doğruladığı gerçek işlem günlerini koru.
+            // Böylece eski motorlardan kalan gelecekteki/sapmış günler geri yüklenmez.
+            if (!Object.prototype.hasOwnProperty.call(calculatedRates, dayKey)) return;
+
             if (!liveRates[dayKey]) liveRates[dayKey] = {};
+
             Object.keys(manualRates[dayKey] || {}).forEach(function (fundKey) {
               var manualValue = manualRates[dayKey][fundKey];
+
+              // TEFAS'ın hesapladığı otomatik değer asla eski kayıtla ezilmesin.
+              // Manuel değer yalnızca o fon için otomatik veri yoksa boşluğu tamamlasın.
               if (
+                liveRates[dayKey][fundKey] === undefined &&
                 manualValue !== null &&
                 manualValue !== undefined &&
                 manualValue !== '' &&
@@ -11287,6 +11296,10 @@ async function fetchAllFunds_V19_OVERRIDE_DISABLED(){
               }
             });
           });
+
+          // ORKA'nın ana günlük tablo motoru SK/fon_v5 kaydını okuyor.
+          // Düzeltilmiş tarihleri bu ana kayda da yaz ki render eski veriyi göstermesin.
+          if (typeof saveR === 'function') saveR(liveRates);
         }
       } catch (manualError) {
         console.warn('ORKA V26 manuel veri birleştirme uyarısı:', manualError);
@@ -11297,7 +11310,7 @@ async function fetchAllFunds_V19_OVERRIDE_DISABLED(){
         info: tefasInfo,
         ts: Date.now(),
         sourceReport: details,
-        engine: 'ORKA_V28_TEFAS_MARKET_DATE_FIX'
+        engine: 'ORKA_V29_TEFAS_DATE_CACHE_FIX'
       }));
     } catch (cacheError) {
       tefasInfo = Object.assign({}, tefasInfo || {}, newInfo);
@@ -11314,7 +11327,7 @@ async function fetchAllFunds_V19_OVERRIDE_DISABLED(){
         successCount + ', Hata ' + errorCount + '</span>';
     }
 
-    console.log('ORKA_V28_TEFAS_MARKET_DATE_FIX:', details.join(' | '));
+    console.log('ORKA_V29_TEFAS_DATE_CACHE_FIX:', details.join(' | '));
 
     try {
       if (typeof renderTefasCardsHTML === 'function') renderTefasCardsHTML();
@@ -11355,7 +11368,7 @@ async function fetchAllFunds_V19_OVERRIDE_DISABLED(){
     if (button) button.disabled = false;
   };
 
-  console.log('ORKA V28 hazır: TEFAS verileri bir önceki işlem gününe eşleştiriliyor.');
+  console.log('ORKA V29 hazır: TEFAS tarihleri düzeltildi ve eski cache kayıtları temizleniyor.');
 })();
 </script>
 
