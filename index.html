@@ -4566,7 +4566,7 @@ function compute(rates){
       var total = 0;
       tumFonlar.forEach(function(f){ total += bakiye[f]||0; });
       // pct: ağırlıklı ortalama getiri (trx para giriş/çıkışları hariç, sadece getiri yüzdesi)
-      var pct = prevTotal > 0 ? toplamKZ / prevTotal : 0;
+      var pct = prevTotal > 0 ? (toplamKZ / prevTotal) * 100 : 0;
 
       var snap = {};
       tumFonlar.forEach(function(f){ snap[f] = bakiye[f]||0; });
