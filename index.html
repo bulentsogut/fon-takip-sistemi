@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Fon Yönetim Merkezi — Takip & Tahmin</title>
+<!-- ORKA_PRODUCTION_DFI_REBUY_FIX_2026-07-14 -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 
@@ -4548,10 +4549,30 @@ function compute(rates){
 
         // ── ADIM 2: Aktif mi? ────────────────────────────────
         var ilkTarih = ilkTarihMap[f];
-        var satisTarih = satisTarihMap[f];
         var zorunluGetiriHaric = (String(f).toUpperCase()==='IJC' && gunKey==='07.07.2026');
-        var aktif = ilkTarih && gunDate >= ilkTarih &&
-                    (!satisTarih || gunDate < satisTarih) &&
+
+        // ORKA PRODUCTION FIX — Satılan fon daha sonra yeniden alınabilir.
+        // Eski yapı, fondaki EN SON sıfır kaydını kalıcı satış tarihi kabul ettiği için
+        // DFI 10.07.2026'da yeniden eklense bile sonraki günlerde pasif kalıyordu.
+        // Aktiflik artık ilgili güne kadar olan SON işlem miktarına göre belirlenir:
+        //   son miktar > 0  → aktif
+        //   son miktar = 0  → pasif
+        var fonIslemleri = trxForFon(trxTum, f);
+        if(String(f).toUpperCase()==='IJC' && typeof IJC_BASLANGIC_SET!=='undefined'){
+          IJC_BASLANGIC_SET.forEach(function(t){
+            if(String(t.fon||'').toUpperCase()===String(f).toUpperCase()){
+              fonIslemleri.push({tarih:t.tarih, miktar:t.miktar, date:parseDate(t.tarih)});
+            }
+          });
+          fonIslemleri.sort(function(a,b){ return a.date-b.date; });
+        }
+        var sonIslem = null;
+        for(var ti=0; ti<fonIslemleri.length; ti++){
+          if(fonIslemleri[ti].date <= gunDate) sonIslem = fonIslemleri[ti];
+          else break;
+        }
+        var aktif = sonIslem && Number(sonIslem.miktar) > 0 &&
+                    ilkTarih && gunDate >= ilkTarih &&
                     (bakiye[f]||0) > 0 &&
                     !zorunluGetiriHaric;
 
