@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Fon Yönetim Merkezi — Takip & Tahmin</title>
 <!-- ORKA_PRODUCTION_DFI_REBUY_FIX_2026-07-14 -->
+<!-- ORKA_PRODUCTION_YABANCI_VARLIK_HESAP_FIX_2026-07-16 -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 
@@ -166,6 +167,7 @@ function fonFirebaseRefreshUI(){
     try{ if(typeof render === 'function') render(); }catch(e){}
     try{ if(typeof renderTefasCards === 'function') renderTefasCards(); }catch(e){}
     try{ if(typeof renderHissePanel === 'function') renderHissePanel(); }catch(e){}
+    try{ if(typeof renderYabanciPanel === 'function') renderYabanciPanel(); }catch(e){}
   }
   run();
   setTimeout(run, 250);
@@ -8327,9 +8329,28 @@ function yvWrite(arr){
     if(typeof fonFirebaseSave==='function') setTimeout(function(){ try{ fonFirebaseSave(true); }catch(e){} }, 50);
   }catch(e){}
 }
-function yvFmt(v){ return '₺'+(Number(v)||0).toLocaleString('tr-TR',{maximumFractionDigits:0}); }
-function yvNum(v){ v=String(v==null?'':v).replace(/\./g,'').replace(',', '.'); var n=parseFloat(v); return isNaN(n)?0:n; }
-function yvClass(v){ return (Number(v)||0)>=0?'pos':'neg'; }
+function yvValue(v){
+  if(typeof v === 'number') return isFinite(v) ? v : 0;
+  var s=String(v==null?'':v).trim().replace(/\s/g,'');
+  if(!s) return 0;
+  var comma=s.lastIndexOf(','), dot=s.lastIndexOf('.');
+  if(comma>=0 && dot>=0){
+    // Son görülen ayraç ondalık, diğeri binlik kabul edilir.
+    if(comma>dot) s=s.replace(/\./g,'').replace(',', '.');
+    else s=s.replace(/,/g,'');
+  }else if(comma>=0){
+    s=s.replace(/\./g,'').replace(',', '.');
+  }else if((s.match(/\./g)||[]).length>1){
+    s=s.replace(/\./g,'');
+  }
+  var n=parseFloat(s);
+  return isNaN(n) || !isFinite(n) ? 0 : n;
+}
+function yvFmt(v){ return '₺'+yvValue(v).toLocaleString('tr-TR',{maximumFractionDigits:0}); }
+function yvNum(v){ return yvValue(v); }
+function yvTotal(x){ return yvValue(x && x.amount) * yvValue(x && x.currentTry); }
+function yvCost(x){ return yvValue(x && x.amount) * yvValue(x && x.costTry); }
+function yvClass(v){ return yvValue(v)>=0?'pos':'neg'; }
 
 function yvYahooUrls(ticker){
   var enc=encodeURIComponent(ticker);
@@ -8428,8 +8449,8 @@ function renderYabanciPanel(){
   var now=document.getElementById('yabanci-hdate'); if(now) now.innerHTML='<span class="live-dot"></span>'+new Date().toLocaleDateString('tr-TR',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
   var totals={all:0,cost:0,doviz:0,maden:0}; var biggest=null;
   arr.forEach(function(x){
-    var total=(Number(x.amount)||0)*(Number(x.currentTry)||0);
-    var cost=(Number(x.amount)||0)*(Number(x.costTry)||0);
+    var total=yvTotal(x);
+    var cost=yvCost(x);
     totals.all+=total; totals.cost+=cost;
     if(String(x.type||'').toLowerCase().indexOf('maden')>=0) totals.maden+=total; else totals.doviz+=total;
     if(!biggest || total>biggest.total) biggest=Object.assign({},x,{total:total});
@@ -8442,10 +8463,10 @@ function renderYabanciPanel(){
   set('yv-doviz-total', yvFmt(totals.doviz)); set('yv-maden-total', yvFmt(totals.maden));
   set('yv-biggest', biggest && biggest.total>0 ? biggest.code : '—'); set('yv-biggest-sub', biggest && biggest.total>0 ? yvFmt(biggest.total) : 'Henüz tutar girilmedi');
   var cards=document.getElementById('yv-card-row'); if(cards){
-    cards.innerHTML=arr.map(function(x){ var total=(Number(x.amount)||0)*(Number(x.currentTry)||0); var cost=(Number(x.amount)||0)*(Number(x.costTry)||0); var k=total-cost; var p=cost?k/cost*100:0; return '<div class="yv-card"><div class="yv-name">'+(x.code||'')+'</div><div class="yv-type">'+(x.name||'')+' · '+(x.type||'')+'</div><div class="yv-total">'+yvFmt(total)+'</div><div class="yv-meta"><div><div class="yv-meta-label">Adet</div><div class="yv-meta-val">'+(Number(x.amount)||0).toLocaleString('tr-TR')+'</div></div><div><div class="yv-meta-label">Güncel TL</div><div class="yv-meta-val">'+yvFmt(x.currentTry||0)+'</div></div><div><div class="yv-meta-label">K/Z</div><div class="yv-meta-val '+yvClass(k)+'">'+(k>=0?'+':'')+yvFmt(k)+'</div></div><div><div class="yv-meta-label">K/Z %</div><div class="yv-meta-val '+yvClass(p)+'">'+(p>=0?'+':'')+p.toFixed(2)+'%</div></div></div></div>'; }).join('');
+    cards.innerHTML=arr.map(function(x){ var total=yvTotal(x); var cost=yvCost(x); var k=total-cost; var p=cost?k/cost*100:0; return '<div class="yv-card"><div class="yv-name">'+(x.code||'')+'</div><div class="yv-type">'+(x.name||'')+' · '+(x.type||'')+'</div><div class="yv-total">'+yvFmt(total)+'</div><div class="yv-meta"><div><div class="yv-meta-label">Adet</div><div class="yv-meta-val">'+yvValue(x.amount).toLocaleString('tr-TR')+'</div></div><div><div class="yv-meta-label">Güncel TL</div><div class="yv-meta-val">'+yvFmt(x.currentTry||0)+'</div></div><div><div class="yv-meta-label">K/Z</div><div class="yv-meta-val '+yvClass(k)+'">'+(k>=0?'+':'')+yvFmt(k)+'</div></div><div><div class="yv-meta-label">K/Z %</div><div class="yv-meta-val '+yvClass(p)+'">'+(p>=0?'+':'')+p.toFixed(2)+'%</div></div></div></div>'; }).join('');
   }
   var tb=document.getElementById('yv-tbody'); if(tb){
-    tb.innerHTML=arr.map(function(x){ var total=(Number(x.amount)||0)*(Number(x.currentTry)||0); var cost=(Number(x.amount)||0)*(Number(x.costTry)||0); var k=total-cost; var p=cost?k/cost*100:0; return '<tr><td>'+x.code+'<div style="color:var(--muted);font-weight:400;font-size:9px">'+(x.name||'')+'</div></td><td>'+x.type+'</td><td>'+Number(x.amount||0).toLocaleString('tr-TR')+'</td><td>'+yvFmt(x.costTry||0)+'</td><td>'+yvFmt(x.currentTry||0)+'</td><td class="tcol">'+yvFmt(total)+'</td><td class="'+yvClass(k)+'">'+(k>=0?'+':'')+yvFmt(k)+'</td><td class="'+yvClass(p)+'">'+(p>=0?'+':'')+p.toFixed(2)+'%</td></tr>'; }).join('');
+    tb.innerHTML=arr.map(function(x){ var total=yvTotal(x); var cost=yvCost(x); var k=total-cost; var p=cost?k/cost*100:0; return '<tr><td>'+x.code+'<div style="color:var(--muted);font-weight:400;font-size:9px">'+(x.name||'')+'</div></td><td>'+x.type+'</td><td>'+yvValue(x.amount).toLocaleString('tr-TR')+'</td><td>'+yvFmt(x.costTry||0)+'</td><td>'+yvFmt(x.currentTry||0)+'</td><td class="tcol">'+yvFmt(total)+'</td><td class="'+yvClass(k)+'">'+(k>=0?'+':'')+yvFmt(k)+'</td><td class="'+yvClass(p)+'">'+(p>=0?'+':'')+p.toFixed(2)+'%</td></tr>'; }).join('');
   }
 }
 function openYabanciPortfoyModal(){
@@ -8462,7 +8483,7 @@ function yvRenderEditRows(){
 }
 function yvAddRow(){ if(!window._yvEditRows) window._yvEditRows=[]; window._yvEditRows.push({code:'',name:'',type:'Döviz',amount:0,costTry:0,currentTry:0}); yvRenderEditRows(); }
 function yvSaveModal(){
-  var arr=(window._yvEditRows||[]).filter(function(x){return String(x.code||'').trim();}).map(function(x){ return {code:String(x.code||'').toUpperCase().trim(), name:String(x.name||'').trim(), type:String(x.type||'Döviz'), amount:Number(x.amount)||0, costTry:Number(x.costTry)||0, currentTry:Number(x.currentTry)||0, updatedAt:new Date().toISOString()}; });
+  var arr=(window._yvEditRows||[]).filter(function(x){return String(x.code||'').trim();}).map(function(x){ return {code:String(x.code||'').toUpperCase().trim(), name:String(x.name||'').trim(), type:String(x.type||'Döviz'), amount:yvValue(x.amount), costTry:yvValue(x.costTry), currentTry:yvValue(x.currentTry), updatedAt:new Date().toISOString()}; });
   yvWrite(arr); var modal=document.getElementById('yv-modal-overlay'); if(modal) modal.remove(); renderYabanciPanel(); if(typeof toast==='function') toast('Yabancı varlık portföyü kaydedildi.','ok');
 }
 window.addEventListener('load', function(){ setTimeout(function(){ try{ renderYabanciPanel(); yabanciKurlariGuncelle(false); }catch(e){} }, 600); });
