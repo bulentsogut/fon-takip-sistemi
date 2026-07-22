@@ -8553,6 +8553,21 @@ function yvTickerFor(code){
   if(code==='CHF') return 'CHFTRY=X';
   return '';
 }
+async function yvFetchFirstPrice(tickers){
+  for(var i=0;i<(tickers||[]).length;i++){
+    var p=await yvFetchYahooPrice(tickers[i]);
+    if(p>0) return {ticker:tickers[i],price:p};
+  }
+  return {ticker:'',price:0};
+}
+function yvMetalCode(code,name){
+  var c=String(code||'').toUpperCase().trim();
+  var n=String(name||'').toUpperCase();
+  if(c==='GAU'||c==='ALTIN'||c==='GOLD'||c==='GRAMALTIN'||n.indexOf('GRAM ALTIN')>=0) return 'GAU';
+  if(c==='XAG'||c==='GUMUS'||c==='GÜMÜŞ'||c==='SILVER'||n.indexOf('GRAM GÜMÜŞ')>=0||n.indexOf('GRAM GUMUS')>=0) return 'XAG';
+  if(c==='XAU') return 'XAU';
+  return c;
+}
 async function yabanciKurlariGuncelle(showToast){
   var btn=document.getElementById('yv-rate-btn');
   if(btn){ btn.disabled=true; btn.textContent='Güncelleniyor...'; }
@@ -8573,17 +8588,34 @@ async function yabanciKurlariGuncelle(showToast){
       try{ if(typeof fetchHisseUsdTry==='function') usdtry=await fetchHisseUsdTry(); }catch(e){}
       if(!usdtry && typeof hisseUsdTryKur==='function') usdtry=hisseUsdTryKur();
     }
-    var hasMaden=arr.some(function(x){ var c=String(x.code||'').toUpperCase(); return c==='GAU'||c==='XAG'||c==='XAU'; });
-    if(hasMaden && usdtry>0){
-      xauusd=await yvFetchYahooPrice('GC=F');
-      xagusd=await yvFetchYahooPrice('SI=F');
+    var hasMaden=arr.some(function(x){ var c=yvMetalCode(x.code,x.name); return c==='GAU'||c==='XAG'||c==='XAU'; });
+    if(hasMaden){
+      // Öncelik doğrudan TRY/ons kotasyonudur. Bulunamazsa USD/ons × USDTRY kullanılır.
+      var goldTry=await yvFetchFirstPrice(['XAUTRY=X']);
+      var silverTry=await yvFetchFirstPrice(['XAGTRY=X']);
+      if(!goldTry.price && usdtry>0){
+        xauusd=await yvFetchYahooPrice('GC=F');
+        if(xauusd>0) goldTry={ticker:'GC=F×USDTRY',price:xauusd*usdtry};
+      }
+      if(!silverTry.price && usdtry>0){
+        xagusd=await yvFetchYahooPrice('SI=F');
+        if(xagusd>0) silverTry={ticker:'SI=F×USDTRY',price:xagusd*usdtry};
+      }
       arr.forEach(function(x){
-        var c=String(x.code||'').toUpperCase();
-        // ORKA varsayılan maden ölçüsü gramdır: adet alanı gram kabul edilir.
-        if(c==='GAU' && xauusd>0) x.currentTry=xauusd*usdtry/31.1034768;
-        if(c==='XAG' && xagusd>0) x.currentTry=xagusd*usdtry/31.1034768;
-        // Eski yedeklerden gelen XAU kaydı varsa geriye dönük uyumluluk için ons bazında korunur.
-        if(c==='XAU' && xauusd>0) x.currentTry=xauusd*usdtry;
+        var c=yvMetalCode(x.code,x.name);
+        // GAU ve XAG satırlarında adet alanı GRAMDIR. 1 gram fiyatı = 1 ons fiyatı / 31,1034768.
+        if(c==='GAU' && goldTry.price>0){
+          x.code='GAU'; x.name=x.name||'Gram Altın'; x.type='Maden';
+          x.currentTry=goldTry.price/31.1034768;
+          x.priceSource=goldTry.ticker;
+        }
+        if(c==='XAG' && silverTry.price>0){
+          x.code='XAG'; x.name=x.name||'Gram Gümüş'; x.type='Maden';
+          x.currentTry=silverTry.price/31.1034768;
+          x.priceSource=silverTry.ticker;
+        }
+        // XAU eski kayıtları ons miktarı olarak korunur.
+        if(c==='XAU' && goldTry.price>0){ x.currentTry=goldTry.price; x.priceSource=goldTry.ticker; }
       });
     }
     yvWrite(arr);
@@ -8627,7 +8659,7 @@ function renderYabanciPanel(){
   set('yv-doviz-total', yvFmt(totals.doviz)); set('yv-maden-total', yvFmt(totals.maden));
   set('yv-biggest', biggest && biggest.total>0 ? biggest.code : '—'); set('yv-biggest-sub', biggest && biggest.total>0 ? yvFmt(biggest.total) : 'Henüz tutar girilmedi');
   var cards=document.getElementById('yv-card-row'); if(cards){
-    cards.innerHTML=arr.map(function(x){ var total=yvTotal(x); var cost=yvCost(x); var k=total-cost; var p=cost?k/cost*100:0; return '<div class="yv-card"><div class="yv-name">'+(x.code||'')+'</div><div class="yv-type">'+(x.name||'')+' · '+(x.type||'')+'</div><div class="yv-total">'+yvFmt(total)+'</div><div style="font-size:.58rem;color:var(--muted);margin-top:4px">'+yvValue(x.amount).toLocaleString('tr-TR',{maximumFractionDigits:8})+' × '+yvValue(x.currentTry).toLocaleString('tr-TR',{minimumFractionDigits:2,maximumFractionDigits:4})+' TL</div><div class="yv-meta"><div><div class="yv-meta-label">Adet</div><div class="yv-meta-val">'+yvValue(x.amount).toLocaleString('tr-TR',{maximumFractionDigits:8})+'</div></div><div><div class="yv-meta-label">1 Birim TL</div><div class="yv-meta-val">'+yvFmt(x.currentTry||0)+'</div></div><div><div class="yv-meta-label">K/Z</div><div class="yv-meta-val '+yvClass(k)+'">'+(k>=0?'+':'')+yvFmt(k)+'</div></div><div><div class="yv-meta-label">K/Z %</div><div class="yv-meta-val '+yvClass(p)+'">'+(p>=0?'+':'')+p.toFixed(2)+'%</div></div></div></div>'; }).join('');
+    cards.innerHTML=arr.map(function(x){ var total=yvTotal(x); var cost=yvCost(x); var k=total-cost; var p=cost?k/cost*100:0; return '<div class="yv-card"><div class="yv-name">'+(x.code||'')+'</div><div class="yv-type">'+(x.name||'')+' · '+(x.type||'')+'</div><div class="yv-total">'+yvFmt(total)+'</div><div style="font-size:.58rem;color:var(--muted);margin-top:4px">'+yvValue(x.amount).toLocaleString('tr-TR',{maximumFractionDigits:8})+' '+(yvMetalCode(x.code,x.name)==='GAU'||yvMetalCode(x.code,x.name)==='XAG'?'gram':'adet')+' × '+yvValue(x.currentTry).toLocaleString('tr-TR',{minimumFractionDigits:2,maximumFractionDigits:4})+' TL</div><div class="yv-meta"><div><div class="yv-meta-label">Adet</div><div class="yv-meta-val">'+yvValue(x.amount).toLocaleString('tr-TR',{maximumFractionDigits:8})+'</div></div><div><div class="yv-meta-label">1 Birim TL</div><div class="yv-meta-val">'+yvFmt(x.currentTry||0)+'</div></div><div><div class="yv-meta-label">K/Z</div><div class="yv-meta-val '+yvClass(k)+'">'+(k>=0?'+':'')+yvFmt(k)+'</div></div><div><div class="yv-meta-label">K/Z %</div><div class="yv-meta-val '+yvClass(p)+'">'+(p>=0?'+':'')+p.toFixed(2)+'%</div></div></div></div>'; }).join('');
   }
   try{ renderGenelVarlikOzeti(); }catch(e){}
   var tb=document.getElementById('yv-tbody'); if(tb){
