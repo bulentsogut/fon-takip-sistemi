@@ -4,6 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Fon Yönetim Merkezi — Takip & Tahmin</title>
+<!-- ORKA_ASELS_RESURRECTION_FIX_2026-07-23 -->
+<!-- ORKA_HISSE_SATIS_GECMISI_FIX_2026-07-23 -->
 <!-- ORKA_FON_SATIS_GECMISI_FIX_2026-07-22 -->
 <!-- ORKA_GENEL_VARLIK_OZETI_2026-07-22 -->
 <!-- ORKA_PRODUCTION_DFI_REBUY_FIX_2026-07-14 -->
@@ -37,6 +39,8 @@ var FON_FIREBASE_KEYS = [
   'fon_satis_gecmisi_v1',
   // Hisse Takip verileri
   'hisse_portfoy_v1',
+  'hisse_deleted_v1',
+  'hisse_satis_gecmisi_v1',
   'hisse_gunluk_v1',
   'hisse_bugun_v1',
   'hisse_kayit_paketi_v1',
@@ -145,7 +149,14 @@ function fonFirebaseApply(data){
   if(!data || typeof data !== 'object') return;
   _fonFirebaseApplying = true;
   try{
-    FON_FIREBASE_KEYS.forEach(function(key){
+    var applyKeys = FON_FIREBASE_KEYS.slice().sort(function(a,b){
+      if(a === 'hisse_deleted_v1') return -1;
+      if(b === 'hisse_deleted_v1') return 1;
+      if(a === 'hisse_portfoy_v1') return 1;
+      if(b === 'hisse_portfoy_v1') return -1;
+      return 0;
+    });
+    applyKeys.forEach(function(key){
       if(data[key] === undefined || data[key] === null) return;
       var incoming = fonFirebaseDecodeKeys(data[key]);
       if(key === 'fon_trx_extra_v1'){
@@ -162,6 +173,52 @@ function fonFirebaseApply(data){
         }
         add(local); add(incoming);
         incoming = Object.keys(map).map(function(k){ return map[k]; });
+      }
+      if(key === 'hisse_deleted_v1'){
+        var localDeleted = fonFirebaseReadLocal(key) || [];
+        var delMap = {};
+        (Array.isArray(localDeleted)?localDeleted:[]).concat(Array.isArray(incoming)?incoming:[]).forEach(function(x){
+          var kod = String((x && x.kod) || x || '').toUpperCase().trim();
+          if(!kod) return;
+          var item = (x && typeof x === 'object') ? x : {kod:kod, ts:0};
+          if(!delMap[kod] || Number(item.ts||0) >= Number(delMap[kod].ts||0)) delMap[kod]=item;
+        });
+        incoming = Object.keys(delMap).map(function(k){ return delMap[k]; });
+      }
+      if(key === 'hisse_satis_gecmisi_v1'){
+        var localHisseSales = fonFirebaseReadLocal(key) || [];
+        var hisseSalesMap = {};
+        function addHisseSales(list){
+          (Array.isArray(list)?list:[]).forEach(function(x){
+            if(!x || !x.kod || !x.satisTarihi) return;
+            var k=String(x.kod).toUpperCase().trim()+'|'+String(x.satisTarihi).trim();
+            var prev=hisseSalesMap[k];
+            if(!prev || Number(x.ts||0)>=Number(prev.ts||0)) hisseSalesMap[k]=x;
+          });
+        }
+        addHisseSales(localHisseSales); addHisseSales(incoming);
+        incoming=Object.keys(hisseSalesMap).map(function(k){return hisseSalesMap[k];});
+      }
+      if(key === 'hisse_portfoy_v1'){
+        // Silinmiş hisseler Firebase'deki eski portföy kaydından yeniden doğamaz.
+        var deletedStocks = fonFirebaseReadLocal('hisse_deleted_v1') || [];
+        var deletedMap = {};
+        (Array.isArray(deletedStocks)?deletedStocks:[]).forEach(function(x){
+          var kod=String((x&&x.kod)||x||'').toUpperCase().trim(); if(kod) deletedMap[kod]=true;
+        });
+        if(incoming && typeof incoming === 'object') Object.keys(incoming).forEach(function(k){ if(deletedMap[String(k).toUpperCase()]) delete incoming[k]; });
+      }
+      if(key === 'hisse_kayit_paketi_v1' && incoming && typeof incoming === 'object'){
+        var deletedForPack = fonFirebaseReadLocal('hisse_deleted_v1') || [];
+        var deletedPackMap = {};
+        (Array.isArray(deletedForPack)?deletedForPack:[]).forEach(function(x){
+          var kod=String((x&&x.kod)||x||'').toUpperCase().trim(); if(kod) deletedPackMap[kod]=true;
+        });
+        if(incoming.portfoy && typeof incoming.portfoy === 'object'){
+          Object.keys(incoming.portfoy).forEach(function(k){ if(deletedPackMap[String(k).toUpperCase()]) delete incoming.portfoy[k]; });
+        }
+        incoming.deleted = deletedForPack;
+        incoming.satis_gecmisi = fonFirebaseReadLocal('hisse_satis_gecmisi_v1') || incoming.satis_gecmisi || [];
       }
       if(key === 'fon_satis_gecmisi_v1'){
         // Satış geçmişi de cihazlar arasında birleşir; boş/eski Firebase verisi yerel kaydı silemez.
@@ -184,6 +241,7 @@ function fonFirebaseApply(data){
 }
 function fonFirebaseRefreshUI(){
   function run(){
+    try{ if(typeof hissePortfoyuYukle === 'function') hissePortfoyuYukle(); }catch(e){}
     try{ if(typeof initTakipAyOtomasyon === 'function') initTakipAyOtomasyon(); }catch(e){}
     try{ if(typeof render === 'function') render(); }catch(e){}
     try{ if(typeof renderTefasCards === 'function') renderTefasCards(); }catch(e){}
@@ -2494,6 +2552,7 @@ window.addEventListener('unhandledrejection', function(ev){
     <button class="abtn rst" onclick="openPortfoyModal()">⚙ Portföy</button>
     <button class="abtn" style="background:rgba(167,139,250,0.12);border-color:rgba(167,139,250,0.4);color:#a78bfa" onclick="openDegisiklikler()">Fondaki Değişiklikler</button>
     <button class="abtn" style="background:rgba(0,255,200,0.08);border-color:rgba(0,255,200,0.3);color:#00ffc8" onclick="openFonAlimSatimGecmisi()">Fon Alım/Satım Geçmişi</button>
+    <button class="abtn" style="background:rgba(255,159,67,0.10);border-color:rgba(255,159,67,0.35);color:#ff9f43" onclick="openHisseAlimSatimGecmisi()">Hisse Alım/Satım Geçmişi</button>
     <button class="abtn" style="background:rgba(255,71,87,0.08);border-color:rgba(255,71,87,0.3);color:#ff4757" onclick="geriAl()">&#8629; Geri Al</button>
     <button class="abtn save" onclick="openManualUpdate()">✎ El ile Guncelle</button>
   </div>
@@ -9769,10 +9828,9 @@ hesaplaVeUygulaOfset = function() { adaptifOfsetUygula('ema'); };
 // kayıtlı portföy okunamaz ve sonradan eklenen SPCX gibi hisseler kaybolmuş görünür.
 var HISSE_LS_KEY = 'hisse_portfoy_v1';
 
-var HISSE_PORTFOY = {
-  ASELS: { ad: 'Aselsan Elektronik',   adet: 500,  ortMaliyet: 401.24, ticker: 'ASELS.IS', renk: '#ff9f43' },
-  ISKPL: { ad: 'Isik Plastik San.',     adet: 5458, ortMaliyet: 22.97,  ticker: 'ISKPL.IS', renk: '#a78bfa' }
-};
+// Portföy artık kod içinde varsayılan hisse taşımaz.
+// Tek gerçek kaynak localStorage/Firebase kayıtlarıdır; böylece satılan bir hisse F5'te yeniden doğmaz.
+var HISSE_PORTFOY = {};
 
 var hisseGunlukFiyat = {};
 var hisseBugunkuFiyat = {};
@@ -10518,19 +10576,75 @@ function hissePortfoyuKaydet() {
   if(typeof fonFirebaseSave === 'function') fonFirebaseSave(true);
 }
 
+var HISSE_DELETED_KEY='hisse_deleted_v1';
+var HISSE_SATIS_GECMISI_KEY='hisse_satis_gecmisi_v1';
+function loadHisseDeleted(){ try{var a=JSON.parse(localStorage.getItem(HISSE_DELETED_KEY)||'[]');return Array.isArray(a)?a:[];}catch(e){return [];} }
+function saveHisseDeleted(a){ try{localStorage.setItem(HISSE_DELETED_KEY,JSON.stringify(a||[]));return true;}catch(e){return false;} }
+function hisseDeletedMap(){ var m={}; loadHisseDeleted().forEach(function(x){var k=String((x&&x.kod)||x||'').toUpperCase().trim();if(k)m[k]=true;}); return m; }
+function loadHisseSatisGecmisi(){ try{var a=JSON.parse(localStorage.getItem(HISSE_SATIS_GECMISI_KEY)||'[]');return Array.isArray(a)?a:[];}catch(e){return [];} }
+function saveHisseSatisGecmisi(a){ try{localStorage.setItem(HISSE_SATIS_GECMISI_KEY,JSON.stringify(a||[]));var k=JSON.parse(localStorage.getItem(HISSE_SATIS_GECMISI_KEY)||'[]');return Array.isArray(k);}catch(e){return false;} }
+
 function hissePortfoyuYukle() {
   try {
-    var saved = JSON.parse(localStorage.getItem(HISSE_LS_KEY));
-    if (!saved) {
-      var paket = JSON.parse(localStorage.getItem('hisse_kayit_paketi_v1'));
-      if (paket && paket.portfoy) saved = paket.portfoy;
+    var saved = JSON.parse(localStorage.getItem(HISSE_LS_KEY) || 'null');
+    var paket = JSON.parse(localStorage.getItem('hisse_kayit_paketi_v1') || 'null');
+    if ((!saved || typeof saved !== 'object') && paket && paket.portfoy && typeof paket.portfoy === 'object') {
+      saved = paket.portfoy;
     }
+    var deleted = hisseDeletedMap();
+
+    // Her yüklemede belleği sıfırla. Kod içindeki veya eski oturumdaki hiçbir varsayılan kayıt kalamaz.
+    Object.keys(HISSE_PORTFOY).forEach(function(k){ delete HISSE_PORTFOY[k]; });
+
     if (saved && typeof saved === 'object') {
       Object.keys(saved).forEach(function(kod) {
-        HISSE_PORTFOY[kod] = saved[kod];
+        var nk = hisseNormalizeKod(kod);
+        if (nk && !deleted[nk]) HISSE_PORTFOY[nk] = saved[kod];
       });
     }
-  } catch(e) {}
+
+    // Eski kayıt paketi de aynı anda temizlenir; satılan hisse buradan geri yüklenemez.
+    if (paket && typeof paket === 'object') {
+      paket.portfoy = Object.assign({}, HISSE_PORTFOY);
+      paket.deleted = loadHisseDeleted();
+      paket.satis_gecmisi = loadHisseSatisGecmisi();
+      localStorage.setItem('hisse_kayit_paketi_v1', JSON.stringify(paket));
+    }
+
+    // Filtrelenmiş portföy ana kaynağa geri yazılır.
+    localStorage.setItem(HISSE_LS_KEY, JSON.stringify(HISSE_PORTFOY));
+  } catch(e) {
+    console.warn('Hisse portföyü yüklenemedi:', e);
+  }
+}
+
+function hisseSatisFiyatiBul(kod,h){
+  var b=hisseBugunkuFiyat[kod]||{};
+  var f=Number(b.fiyat||0);
+  if(f>0)return f;
+  var keys=Object.keys(hisseGunlukFiyat||{}).sort(function(a,b){return b.localeCompare(a);});
+  for(var i=0;i<keys.length;i++){var x=hisseGunlukFiyat[keys[i]]&&hisseGunlukFiyat[keys[i]][kod]; if(Number(x)>0)return Number(x);}
+  return Number(h&&h.ortMaliyet)||0;
+}
+function hisseSatisKaydiOlustur(kod,h){
+  var now=new Date();
+  var satisTarihi=String(now.getDate()).padStart(2,'0')+'.'+String(now.getMonth()+1).padStart(2,'0')+'.'+now.getFullYear();
+  var fiyat=hisseSatisFiyatiBul(kod,h), adet=Number(h.adet)||0, maliyet=Number(h.ortMaliyet)||0;
+  var doviz=hisseIsABD(kod,h)?'USD':'TRY';
+  var alimTutari=adet*maliyet, satisTutari=adet*fiyat, kz=satisTutari-alimTutari, pct=alimTutari?100*kz/alimTutari:0;
+  var arr=loadHisseSatisGecmisi();
+  arr=arr.filter(function(x){return !(String(x.kod).toUpperCase()===kod && String(x.satisTarihi)===satisTarihi);});
+  arr.push({kod:kod,ad:h.ad||kod,adet:adet,alimFiyati:maliyet,satisFiyati:fiyat,alimTutari:alimTutari,satisTutari:satisTutari,kz:kz,kzPct:pct,doviz:doviz,satisTarihi:satisTarihi,ts:Date.now()});
+  if(!saveHisseSatisGecmisi(arr)) throw new Error('Hisse satış geçmişi kaydedilemedi');
+  return arr[arr.length-1];
+}
+function openHisseAlimSatimGecmisi(){
+  var old=document.getElementById('hisse-satis-modal'); if(old)old.remove();
+  var arr=loadHisseSatisGecmisi().slice().sort(function(a,b){return Number(b.ts||0)-Number(a.ts||0);});
+  var html='<div style="position:fixed;inset:0;background:rgba(0,0,0,.86);z-index:10000;display:flex;align-items:center;justify-content:center;padding:20px"><div style="background:#0d1520;border:1px solid rgba(255,159,67,.35);border-radius:16px;padding:24px;max-width:1100px;width:96%;max-height:88vh;overflow:auto"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px"><div><div style="font-family:Syne,sans-serif;font-size:1.15rem;font-weight:800;color:#ff9f43">HİSSE ALIM/SATIM GEÇMİŞİ</div><div style="font-size:.68rem;color:#4e6a82;margin-top:5px">Portföyden çıkarılan hisselerin gerçekleşen sonuçları</div></div><button onclick="document.getElementById(\'hisse-satis-modal\').remove()" style="background:transparent;border:1px solid #ff4757;color:#ff4757;border-radius:7px;padding:7px 12px;cursor:pointer">✕</button></div>';
+  if(!arr.length) html+='<div style="padding:28px;text-align:center;color:#4e6a82">Henüz hisse satış kaydı yok.</div>';
+  else{html+='<table style="width:100%;border-collapse:collapse;font-family:DM Mono,monospace;font-size:.72rem"><thead><tr style="color:#4e6a82"><th style="text-align:left;padding:9px">Hisse</th><th style="text-align:right;padding:9px">Satış Tarihi</th><th style="text-align:right;padding:9px">Adet</th><th style="text-align:right;padding:9px">Alış Fiyatı</th><th style="text-align:right;padding:9px">Satış Fiyatı</th><th style="text-align:right;padding:9px">Satış Tutarı</th><th style="text-align:right;padding:9px">K/Z</th><th style="text-align:right;padding:9px">K/Z %</th></tr></thead><tbody>';arr.forEach(function(x){var sym=x.doviz==='USD'?'$':'₺',c=Number(x.kz)>=0?'#2ed573':'#ff4757';function f(v){return Number(v||0).toLocaleString('tr-TR',{minimumFractionDigits:2,maximumFractionDigits:2});}html+='<tr style="border-top:1px solid rgba(255,255,255,.06)"><td style="padding:10px;font-weight:800;color:#ff9f43">'+x.kod+'</td><td style="padding:10px;text-align:right">'+x.satisTarihi+'</td><td style="padding:10px;text-align:right">'+f(x.adet)+'</td><td style="padding:10px;text-align:right">'+sym+f(x.alimFiyati)+'</td><td style="padding:10px;text-align:right">'+sym+f(x.satisFiyati)+'</td><td style="padding:10px;text-align:right">'+sym+f(x.satisTutari)+'</td><td style="padding:10px;text-align:right;color:'+c+'">'+(Number(x.kz)>=0?'+':'')+sym+f(x.kz)+'</td><td style="padding:10px;text-align:right;color:'+c+'">'+(Number(x.kzPct)>=0?'+':'')+f(x.kzPct)+'%</td></tr>';});html+='</tbody></table>';}
+  html+='</div></div>';var m=document.createElement('div');m.id='hisse-satis-modal';m.innerHTML=html;document.body.appendChild(m);
 }
 
 function openHisseManualUpdate() {
@@ -10649,6 +10763,8 @@ function genelYedekle(){
       },
       hisse: {
         portfoy: hissePortfoy,
+        deleted: loadHisseDeleted(),
+        satis_gecmisi: loadHisseSatisGecmisi(),
         gunluk: hisseGunluk,
         bugun: hisseBugun,
         usdtry: hisseUsdTry || {}
@@ -10699,10 +10815,13 @@ function _restoreFonBolumu(fon){
 function _restoreHisseBolumu(hisse){
   if(!hisse) return false;
   var changed=false;
+  if(hisse.deleted){ try{saveHisseDeleted(hisse.deleted);changed=true;}catch(e){} }
+  if(hisse.satis_gecmisi){ try{saveHisseSatisGecmisi(hisse.satis_gecmisi);changed=true;}catch(e){} }
   if(hisse.portfoy){
     try{
       Object.keys(HISSE_PORTFOY).forEach(function(k){ delete HISSE_PORTFOY[k]; });
-      Object.assign(HISSE_PORTFOY, hisse.portfoy);
+      var restoreDeleted=hisseDeletedMap();
+      Object.keys(hisse.portfoy).forEach(function(k){ var nk=hisseNormalizeKod(k); if(!restoreDeleted[nk]) HISSE_PORTFOY[nk]=hisse.portfoy[k]; });
       if(typeof hissePortfoyuKaydet==='function') hissePortfoyuKaydet();
       changed=true;
     }catch(e){}
@@ -10790,7 +10909,9 @@ function hisseVerileriKaydet() {
       portfoy: HISSE_PORTFOY || {},
       gunluk: hisseGunlukFiyat || {},
       bugun: hisseBugunkuFiyat || {},
-      usdtry: hisseUsdTry || {}
+      usdtry: hisseUsdTry || {},
+      deleted: loadHisseDeleted(),
+      satis_gecmisi: loadHisseSatisGecmisi()
     }));
 
     if (typeof fonFirebaseSave === 'function') fonFirebaseSave(true);
@@ -10948,14 +11069,43 @@ function hisseGuncelle(kod) {
 }
 
 function hisseSil(kod) {
-  if (!confirm(kod + ' hissesini portfoyden cikarmak istediginizden emin misiniz?')) return;
-  delete HISSE_PORTFOY[kod];
-  delete hisseBugunkuFiyat[kod];
-  Object.keys(hisseGunlukFiyat).forEach(function(t){ delete hisseGunlukFiyat[t][kod]; });
-  hissePortfoyuKaydet();
-  document.getElementById('hisse-portfoy-modal').remove();
-  renderHissePanel();
-  toast(kod + ' portfoyden cikarildi.', 'ok');
+  kod=hisseNormalizeKod(kod);
+  var h=HISSE_PORTFOY[kod];
+  if(!h) return;
+  if (!confirm(kod + ' hissesini satılmış olarak portföyden çıkarmak ve satış geçmişine kaydetmek istiyor musunuz?')) return;
+  try{
+    hisseSatisKaydiOlustur(kod,h);
+    var deleted=loadHisseDeleted().filter(function(x){return String((x&&x.kod)||x||'').toUpperCase()!==kod;});
+    deleted.push({kod:kod,ts:Date.now()});
+    if(!saveHisseDeleted(deleted)) throw new Error('Silinen hisse kaydı oluşturulamadı');
+    delete HISSE_PORTFOY[kod];
+    delete hisseBugunkuFiyat[kod];
+    // Geçmiş günlük fiyatlar silinmez; satış öncesi performans ve kayıtlar korunur.
+    hissePortfoyuKaydet();
+    localStorage.setItem('hisse_bugun_v1',JSON.stringify(hisseBugunkuFiyat));
+    localStorage.setItem('hisse_gunluk_v1',JSON.stringify(hisseGunlukFiyat));
+    var eskiPaket={};
+    try{ eskiPaket=JSON.parse(localStorage.getItem('hisse_kayit_paketi_v1')||'{}')||{}; }catch(_e){}
+    eskiPaket.v=3;
+    eskiPaket.at=new Date().toISOString();
+    eskiPaket.portfoy=Object.assign({},HISSE_PORTFOY);
+    eskiPaket.gunluk=hisseGunlukFiyat||{};
+    eskiPaket.bugun=hisseBugunkuFiyat||{};
+    eskiPaket.usdtry=hisseUsdTry||{};
+    eskiPaket.deleted=loadHisseDeleted();
+    eskiPaket.satis_gecmisi=loadHisseSatisGecmisi();
+    localStorage.setItem('hisse_kayit_paketi_v1',JSON.stringify(eskiPaket));
+    if(typeof fonFirebaseSave==='function') fonFirebaseSave(true);
+    var kontrol=JSON.parse(localStorage.getItem(HISSE_LS_KEY)||'{}');
+    if(kontrol && kontrol[kod]) throw new Error('Hisse portföyden kalıcı çıkarılamadı');
+    var modal=document.getElementById('hisse-portfoy-modal'); if(modal)modal.remove();
+    renderHissePanel();
+    if(typeof renderGenelVarlikOzeti==='function') renderGenelVarlikOzeti();
+    toast(kod + ' satıldı; satış geçmişine eklendi ve portföyden kalıcı çıkarıldı.', 'ok');
+  }catch(e){
+    console.warn('Hisse satış/silme hatası:',e);
+    toast('Satış kaydı tamamlanamadı; hisse portföyden çıkarılmadı: '+e.message,'err');
+  }
 }
 
 function yeniHisseEkle() {
@@ -10979,6 +11129,7 @@ function yeniHisseEkle() {
   var renk = renkler[Object.keys(HISSE_PORTFOY).length % renkler.length];
   var ticker = piyasa === 'ABD' ? kod : kod + '.IS';
   HISSE_PORTFOY[kod] = { ad: ad || kod, adet: adet, ortMaliyet: maliyet, ticker: ticker, piyasa: piyasa, renk: renk };
+  saveHisseDeleted(loadHisseDeleted().filter(function(x){return String((x&&x.kod)||x||'').toUpperCase()!==kod;}));
   hissePortfoyuKaydet();
   document.getElementById('hisse-portfoy-modal').remove();
   tumHisseleriGuncelle();
