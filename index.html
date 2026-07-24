@@ -611,6 +611,12 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
 @media(max-width:920px){.genel-varlik-grid{grid-template-columns:1fr 1fr;}}
 @media(max-width:560px){.genel-varlik-grid{grid-template-columns:1fr;}}
 
+/* ORKA Son İşlem Günü Performansı */
+.performance-card{background:linear-gradient(135deg,rgba(0,255,200,.05),rgba(0,180,255,.04));border:1px solid rgba(0,255,200,.2);border-radius:14px;padding:18px 20px;margin-bottom:18px}
+.performance-row{display:flex;justify-content:space-between;padding:6px 0;font-family:DM Mono,monospace}
+.performance-total{border-top:1px solid rgba(255,255,255,.08);margin-top:8px;padding-top:10px;font-weight:bold}
+
+
 .fon-hero-row{grid-template-columns:1fr;max-width:100%;}
 .fon-summary-combined{
   display:grid;
@@ -2580,7 +2586,16 @@ window.addEventListener('unhandledrejection', function(ev){
   </div>
 </div>
 
-<div class="hero-row fon-hero-row">
+<div 
+<div class="performance-card" id="lastTradingPerformance">
+<div class="genel-varlik-title">📊 SON İŞLEM GÜNÜ PERFORMANSI (<span id="lastPerfDate"></span>)</div>
+<div class="performance-row"><span>Fonlar</span><strong id="lastPerfFon">—</strong></div>
+<div class="performance-row"><span>Hisse Senetleri</span><strong id="lastPerfHisse">—</strong></div>
+<div class="performance-row"><span>Yabancı Para / Maden</span><strong id="lastPerfYab">—</strong></div>
+<div class="performance-row performance-total"><span>Toplam</span><strong id="lastPerfTop">—</strong></div>
+<div class="performance-row"><span>Portföy Günlük Getirisi</span><strong id="lastPerfPct">—</strong></div>
+</div>
+class="hero-row fon-hero-row">
   <div class="hcard main fon-summary-combined">
     <div class="fon-summary-left">
       <div class="hlabel">Toplam Fon Sepeti Değeri</div>
@@ -4867,7 +4882,7 @@ function genelVarlikYabanciToplami(){
   }catch(e){ return 0; }
 }
 function renderGenelVarlikOzeti(fonBakiye){
-  var fon=genelVarlikFonToplami(fonBakiye);
+  var fon=genelVarlikFonToplami(fonBakiye); try{renderLastTradingPerformance();}catch(e){}
   var hisse=genelVarlikHisseToplami();
   var yabanci=genelVarlikYabanciToplami();
   var toplam=fon+hisse+yabanci;
@@ -4976,7 +4991,7 @@ function render(){
   if(monthNoFromKey(aktifAy)===7){ if(!merged['07.07']) merged['07.07']={}; merged['07.07'].ijc=0; }
   const result=compute(merged);
   const{rows}=result;
-  renderGenelVarlikOzeti(result.bakiye);
+  renderGenelVarlikOzeti(result.bakiye); try{renderLastTradingPerformance();}catch(e){}
   const tumFonlar=getPortfoyGorunenFonlar();
   // Tablo başlıklarını dinamik güncelle
   var thead = document.querySelector('#tbody').closest('table').querySelector('thead tr');
@@ -8828,7 +8843,7 @@ function renderYabanciPanel(){
   var cards=document.getElementById('yv-card-row'); if(cards){
     cards.innerHTML=arr.map(function(x){ var total=yvTotal(x); var cost=yvCost(x); var k=total-cost; var p=cost?k/cost*100:0; return '<div class="yv-card"><div class="yv-name">'+(x.code||'')+'</div><div class="yv-type">'+(x.name||'')+' · '+(x.type||'')+'</div><div class="yv-total">'+yvFmt(total)+'</div><div style="font-size:.58rem;color:var(--muted);margin-top:4px">'+yvValue(x.amount).toLocaleString('tr-TR',{maximumFractionDigits:8})+' '+(yvMetalCode(x.code,x.name)==='GAU'||yvMetalCode(x.code,x.name)==='XAG'?'gram':'adet')+' × '+yvValue(x.currentTry).toLocaleString('tr-TR',{minimumFractionDigits:2,maximumFractionDigits:4})+' TL</div><div class="yv-meta"><div><div class="yv-meta-label">Adet</div><div class="yv-meta-val">'+yvValue(x.amount).toLocaleString('tr-TR',{maximumFractionDigits:8})+'</div></div><div><div class="yv-meta-label">1 Birim TL</div><div class="yv-meta-val">'+yvFmt(x.currentTry||0)+'</div></div><div><div class="yv-meta-label">K/Z</div><div class="yv-meta-val '+yvClass(k)+'">'+(k>=0?'+':'')+yvFmt(k)+'</div></div><div><div class="yv-meta-label">K/Z %</div><div class="yv-meta-val '+yvClass(p)+'">'+(p>=0?'+':'')+p.toFixed(2)+'%</div></div></div></div>'; }).join('');
   }
-  try{ renderGenelVarlikOzeti(); }catch(e){}
+  try{ renderGenelVarlikOzeti(); try{renderLastTradingPerformance();}catch(e){} }catch(e){}
   var tb=document.getElementById('yv-tbody'); if(tb){
     tb.innerHTML=arr.map(function(x){ var total=yvTotal(x); var cost=yvCost(x); var k=total-cost; var p=cost?k/cost*100:0; return '<tr><td>'+x.code+'<div style="color:var(--muted);font-weight:400;font-size:9px">'+(x.name||'')+'</div></td><td>'+x.type+'</td><td>'+yvValue(x.amount).toLocaleString('tr-TR',{maximumFractionDigits:8})+'</td><td>'+yvFmt(x.costTry||0)+'</td><td>'+yvFmt(x.currentTry||0)+'</td><td class="tcol">'+yvFmt(total)+'</td><td class="'+yvClass(k)+'">'+(k>=0?'+':'')+yvFmt(k)+'</td><td class="'+yvClass(p)+'">'+(p>=0?'+':'')+p.toFixed(2)+'%</td></tr>'; }).join('');
   }
@@ -10133,7 +10148,7 @@ async function tumHisseleriGuncelle() {
 
 function renderHissePanel() {
   renderHisseKartlar();
-  try{ renderGenelVarlikOzeti(); }catch(e){}
+  try{ renderGenelVarlikOzeti(); try{renderLastTradingPerformance();}catch(e){} }catch(e){}
   renderHisseGrafikleri();
   renderHisseAylik();
   renderHisseDetayTablo();
@@ -11099,7 +11114,7 @@ function hisseSil(kod) {
     if(kontrol && kontrol[kod]) throw new Error('Hisse portföyden kalıcı çıkarılamadı');
     var modal=document.getElementById('hisse-portfoy-modal'); if(modal)modal.remove();
     renderHissePanel();
-    if(typeof renderGenelVarlikOzeti==='function') renderGenelVarlikOzeti();
+    if(typeof renderGenelVarlikOzeti==='function') renderGenelVarlikOzeti(); try{renderLastTradingPerformance();}catch(e){}
     toast(kod + ' satıldı; satış geçmişine eklendi ve portföyden kalıcı çıkarıldı.', 'ok');
   }catch(e){
     console.warn('Hisse satış/silme hatası:',e);
@@ -11915,3 +11930,22 @@ async function fetchAllFunds_V19_OVERRIDE_DISABLED(){
 
 </body>
 </html>
+
+function renderLastTradingPerformance(){
+  const ids={
+    date:'lastPerfDate',fon:'lastPerfFon',hisse:'lastPerfHisse',
+    yab:'lastPerfYab',top:'lastPerfTop',pct:'lastPerfPct'
+  };
+  const e=id=>document.getElementById(id);
+  if(!e(ids.fon)) return;
+  // PLACEHOLDER: mevcut günlük hesap fonksiyonları bağlanacak.
+  // Şimdilik mevcut kart düzenini oluşturur.
+  const d=new Date();
+  e(ids.date).textContent=d.toLocaleDateString('tr-TR');
+  e(ids.fon).textContent='—';
+  e(ids.hisse).textContent='—';
+  e(ids.yab).textContent='—';
+  e(ids.top).textContent='—';
+  e(ids.pct).textContent='—';
+}
+
