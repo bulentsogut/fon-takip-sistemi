@@ -2575,6 +2575,7 @@ window.addEventListener('unhandledrejection', function(ev){
       <div class="genel-varlik-label">Genel Toplam</div>
       <div class="genel-varlik-value" id="gv-toplam">—</div>
       <div class="genel-varlik-share">Tüm yatırım varlıkları</div>
+      <div class="genel-varlik-share" id="gv-gunluk-kz">Bugünkü Toplam K/Z: —</div>
     </div>
   </div>
 </div>
@@ -4871,12 +4872,38 @@ function renderGenelVarlikOzeti(fonBakiye){
   var yabanci=genelVarlikYabanciToplami();
   var toplam=fon+hisse+yabanci;
   var yaz=function(id,val){ var el=document.getElementById(id); if(el) el.textContent=fmt(val); };
+
+  // Günlük toplam portföy değişimi
+  var gunlukKZ=0;
+  try{
+    if(typeof tefasInfo!=='undefined'){
+      Object.keys(tefasInfo).forEach(function(k){
+        var info=tefasInfo[k]||{};
+        var pct=parseFloat(info.dailyReturn)||0;
+        var v=0;
+        var el=document.getElementById('fc-'+String(k).toLowerCase());
+        if(el){ v=parseFloat(el.textContent.replace(/[^0-9,.-]/g,'').replace(/\./g,'').replace(',','.'))||0; }
+        gunlukKZ += v*pct/100;
+      });
+    }
+  }catch(e){}
+  try{
+    if(typeof hisseData!=='undefined'){
+      Object.keys(hisseData).forEach(function(k){
+        var h=hisseData[k]||{};
+        var pct=parseFloat(h.gunlukDeg)||0;
+        gunlukKZ += (h.adet||0)*(h.fiyat||0)*pct/100;
+      });
+    }
+  }catch(e){}
   var pay=function(id,val){
     var el=document.getElementById(id); if(!el) return;
     el.textContent=toplam>0?'Genel toplamın %'+(val/toplam*100).toFixed(1).replace('.',',')+'’i':'—';
   };
   yaz('gv-fon',fon); yaz('gv-hisse',hisse); yaz('gv-yabanci',yabanci); yaz('gv-toplam',toplam);
   pay('gv-fon-pct',fon); pay('gv-hisse-pct',hisse); pay('gv-yabanci-pct',yabanci);
+  var g=document.getElementById('gv-gunluk-kz');
+  if(g) g.textContent='Bugünkü Toplam K/Z: '+(gunlukKZ>=0?'+':'')+fmt(gunlukKZ);
 }
 
 function renderPortfolioPie(bakiye){
