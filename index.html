@@ -611,12 +611,6 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
 @media(max-width:920px){.genel-varlik-grid{grid-template-columns:1fr 1fr;}}
 @media(max-width:560px){.genel-varlik-grid{grid-template-columns:1fr;}}
 
-/* ORKA Son İşlem Günü Performansı */
-.performance-card{background:linear-gradient(135deg,rgba(0,255,200,.05),rgba(0,180,255,.04));border:1px solid rgba(0,255,200,.2);border-radius:14px;padding:18px 20px;margin-bottom:18px}
-.performance-row{display:flex;justify-content:space-between;padding:6px 0;font-family:DM Mono,monospace}
-.performance-total{border-top:1px solid rgba(255,255,255,.08);margin-top:8px;padding-top:10px;font-weight:bold}
-
-
 .fon-hero-row{grid-template-columns:1fr;max-width:100%;}
 .fon-summary-combined{
   display:grid;
@@ -2586,16 +2580,7 @@ window.addEventListener('unhandledrejection', function(ev){
   </div>
 </div>
 
-<div 
-<div class="performance-card" id="lastTradingPerformance">
-<div class="genel-varlik-title">📊 SON İŞLEM GÜNÜ PERFORMANSI (<span id="lastPerfDate"></span>)</div>
-<div class="performance-row"><span>Fonlar</span><strong id="lastPerfFon">—</strong></div>
-<div class="performance-row"><span>Hisse Senetleri</span><strong id="lastPerfHisse">—</strong></div>
-<div class="performance-row"><span>Yabancı Para / Maden</span><strong id="lastPerfYab">—</strong></div>
-<div class="performance-row performance-total"><span>Toplam</span><strong id="lastPerfTop">—</strong></div>
-<div class="performance-row"><span>Portföy Günlük Getirisi</span><strong id="lastPerfPct">—</strong></div>
-</div>
-class="hero-row fon-hero-row">
+<div class="hero-row fon-hero-row">
   <div class="hcard main fon-summary-combined">
     <div class="fon-summary-left">
       <div class="hlabel">Toplam Fon Sepeti Değeri</div>
@@ -11937,22 +11922,3 @@ async function fetchAllFunds_V19_OVERRIDE_DISABLED(){
 
 </body>
 </html>
-
-function renderLastTradingPerformance(){
-  const ids={
-    date:'lastPerfDate',fon:'lastPerfFon',hisse:'lastPerfHisse',
-    yab:'lastPerfYab',top:'lastPerfTop',pct:'lastPerfPct'
-  };
-  const e=id=>document.getElementById(id);
-  if(!e(ids.fon)) return;
-  // PLACEHOLDER: mevcut günlük hesap fonksiyonları bağlanacak.
-  // Şimdilik mevcut kart düzenini oluşturur.
-  const d=new Date();
-  e(ids.date).textContent=d.toLocaleDateString('tr-TR');
-  e(ids.fon).textContent='—';
-  e(ids.hisse).textContent='—';
-  e(ids.yab).textContent='—';
-  e(ids.top).textContent='—';
-  e(ids.pct).textContent='—';
-}
-
