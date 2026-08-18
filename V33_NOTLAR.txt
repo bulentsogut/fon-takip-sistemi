@@ -1,0 +1,8 @@
+ORKA V33
+- V32.1 baz alınmıştır.
+- Fon kartına tıklanınca Fon Detay Paneli açılır.
+- Panel: güncel değer, son portföy seti, setten bu yana K/Z, birim fiyat, günlük/haftalık/aylık performans,
+  Ekofin/FUNDS cache portföy ağırlıkları, ağırlık raporu tarihi ve kayıtlı fon işlem/set geçmişini gösterir.
+- Detay paneli açılırken yeni TEFAS/Ekofin/Yahoo ağ isteği yapılmaz; mevcut cache/bellek kullanılır.
+- Son İşlem Günü Performansı alanı kaldırılmış olarak kalır.
+- V32 aktif fon güncelleme mantığı korunur.

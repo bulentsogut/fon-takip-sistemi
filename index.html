@@ -2464,6 +2464,45 @@ tbody tr:hover{background:rgba(0,180,255,0.035);}
   margin-top:8px;
 }
 
+
+/* ORKA V33 — Fon kartı detay paneli */
+.fcard.fund-detail-clickable{cursor:pointer;transition:transform .16s ease,border-color .16s ease,box-shadow .16s ease;}
+.fcard.fund-detail-clickable:hover{transform:translateY(-2px);box-shadow:0 14px 34px rgba(0,0,0,.28);}
+.fund-detail-overlay{position:fixed;inset:0;z-index:12000;background:rgba(2,7,14,.88);backdrop-filter:blur(9px);display:flex;align-items:center;justify-content:center;padding:20px;}
+.fund-detail-modal{width:min(1180px,96vw);max-height:92vh;overflow:auto;background:linear-gradient(180deg,#0a1622 0%,#08121c 100%);border:1px solid rgba(79,163,255,.28);border-radius:18px;box-shadow:0 28px 80px rgba(0,0,0,.55);}
+.fund-detail-head{position:sticky;top:0;z-index:2;display:flex;align-items:flex-start;justify-content:space-between;gap:18px;padding:20px 22px;background:rgba(8,18,28,.96);border-bottom:1px solid rgba(255,255,255,.07);}
+.fund-detail-code{font-family:var(--display);font-size:1.4rem;font-weight:900;letter-spacing:.08em;}
+.fund-detail-name{font-family:var(--mono);font-size:.72rem;color:var(--muted);margin-top:5px;max-width:760px;}
+.fund-detail-close{background:rgba(255,71,87,.09);border:1px solid rgba(255,71,87,.3);color:#ff7382;border-radius:9px;padding:8px 12px;cursor:pointer;font-family:var(--mono);font-size:.72rem;}
+.fund-detail-body{padding:20px 22px 24px;}
+.fund-detail-metrics{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;margin-bottom:16px;}
+.fund-detail-metric{background:rgba(8,24,36,.8);border:1px solid rgba(79,163,255,.14);border-radius:12px;padding:13px 14px;min-height:84px;}
+.fund-detail-metric-label{font-family:var(--mono);font-size:.61rem;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em;}
+.fund-detail-metric-value{font-family:var(--mono);font-weight:800;font-size:1rem;color:#dcecff;overflow-wrap:anywhere;}
+.fund-detail-grid{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,.85fr);gap:14px;}
+.fund-detail-panel{background:rgba(7,20,31,.72);border:1px solid rgba(79,163,255,.13);border-radius:13px;padding:15px;min-width:0;}
+.fund-detail-panel-title{font-family:var(--display);font-size:.78rem;color:#69c9ff;letter-spacing:.08em;margin-bottom:5px;}
+.fund-detail-panel-sub{font-family:var(--mono);font-size:.58rem;color:var(--muted);margin-bottom:12px;}
+.fund-detail-table-wrap{overflow:auto;max-height:390px;border-radius:8px;}
+.fund-detail-table{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:.66rem;min-width:470px;}
+.fund-detail-table th{position:sticky;top:0;background:#0b1a27;color:#6d91af;text-align:left;padding:9px;border-bottom:1px solid rgba(255,255,255,.08);font-weight:600;}
+.fund-detail-table td{padding:9px;border-bottom:1px solid rgba(255,255,255,.055);color:#d5e8f7;}
+.fund-detail-table th:last-child,.fund-detail-table td:last-child{text-align:right;}
+.fund-detail-weightbar{display:flex;align-items:center;gap:8px;justify-content:flex-end;}
+.fund-detail-bartrack{width:84px;height:6px;border-radius:9px;background:rgba(255,255,255,.07);overflow:hidden;}
+.fund-detail-barfill{height:100%;border-radius:9px;background:linear-gradient(90deg,#4fa3ff,#00ffc8);}
+.fund-detail-perf{display:flex;align-items:flex-end;gap:12px;height:155px;padding:14px 6px 4px;border-bottom:1px solid rgba(255,255,255,.08);}
+.fund-detail-perf-col{flex:1;min-width:0;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;height:100%;gap:6px;}
+.fund-detail-perf-val{font-family:var(--mono);font-size:.63rem;font-weight:800;}
+.fund-detail-perf-bar{width:min(54px,72%);min-height:3px;border-radius:7px 7px 2px 2px;}
+.fund-detail-perf-label{font-family:var(--mono);font-size:.57rem;color:var(--muted);}
+.fund-detail-meta{margin-top:13px;display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+.fund-detail-meta-item{padding:9px 10px;border-radius:9px;background:rgba(255,255,255,.025);font-family:var(--mono);font-size:.61rem;color:#a9c4da;}
+.fund-detail-meta-item b{color:#dcecff;}
+.fund-detail-empty{padding:18px 8px;color:var(--muted);font-family:var(--mono);font-size:.65rem;text-align:center;}
+@media(max-width:900px){.fund-detail-metrics{grid-template-columns:repeat(2,minmax(0,1fr));}.fund-detail-grid{grid-template-columns:1fr;}}
+@media(max-width:560px){.fund-detail-overlay{padding:8px}.fund-detail-head,.fund-detail-body{padding:14px}.fund-detail-metrics{grid-template-columns:1fr 1fr}.fund-detail-metric-value{font-size:.85rem}}
+
 </style>
 
 <script>
@@ -3849,7 +3888,7 @@ function getPortfoyGorunenFonlar(){
   return getTumFonlar().filter(function(f){ return !isFonSatildi(f); });
 }
 
-// ORKA V32: Ağ/veri güncellemelerinde yalnızca bugün portföyde aktif olan fonlar kullanılır.
+// ORKA V33: Ağ/veri güncellemelerinde yalnızca bugün portföyde aktif olan fonlar kullanılır.
 // Satılmış fonlar geçmiş raporlarda korunur ancak TEFAS/Ekofin arka plan isteklerine dahil edilmez.
 function getAktifGuncellemeFonlari(){
   var fonlar = [];
@@ -5240,9 +5279,12 @@ function render(){
         +'<span style="font-size:0.6rem;color:var(--muted);">'+ayAdi+' Toplam</span>'
         +'<span style="font-size:0.7rem;font-family:var(--mono);font-weight:700;color:'+toplamRenk+';">'+toplamStr+'</span>'
         +'</div>';
-      return '<div class="fcard" style="border-bottom-color:'+renk+'"'
+      return '<div class="fcard fund-detail-clickable" style="border-bottom-color:'+renk+'"'
         +' data-tooltip="'+tooltipContent.replace(/"/g,"&quot;")+'"'
-        +' onmouseenter="showFCardTooltip(event,this)" onmouseleave="hideFCardTooltip()">'
+        +' data-fund-code="'+f+'"'
+        +' title="'+f+' detayını aç"'
+        +' onmouseenter="showFCardTooltip(event,this)" onmouseleave="hideFCardTooltip()"'
+        +' onclick="hideFCardTooltip();openFundDetail(\''+f+'\')">'
         +'<div class="fname" style="color:'+renk+'">'+f+'</div>'
         +'<div class="hlabel" style="margin-top:4px">'+(info.name||f)+'</div>'
         +'<div class="ftotal" id="fc-'+f.toLowerCase()+'">'+fmt(bal)+'</div>'
@@ -11967,7 +12009,191 @@ async function fetchAllFunds_V19_OVERRIDE_DISABLED(){
     if (button) button.disabled = false;
   };
 
-  console.log('ORKA V32.1 hazır: Son İşlem Günü Performansı alanı kaldırıldı; yalnızca aktif portföy fonları güncelleniyor.');
+  console.log('ORKA V33 hazır: Fon Detay Paneli eklendi; yalnızca aktif portföy fonları güncelleniyor.');
+})();
+</script>
+
+
+<script>
+/* ORKA V33 — Fon Detay Paneli
+   Yalnızca mevcut bellekte/cache'de bulunan verileri kullanır.
+   Panel açılırken TEFAS, Ekofin veya Yahoo'ya yeni ağ isteği göndermez. */
+(function(){
+  function fdEsc(v){
+    return String(v==null?'':v).replace(/[&<>"']/g,function(ch){
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch];
+    });
+  }
+  function fdNum(v){
+    if(typeof parseTRNumber==='function') return parseTRNumber(v);
+    if(typeof v==='number') return v;
+    var s=String(v||'').replace(/[₺%\s]/g,'').replace(/\./g,'').replace(',','.');
+    var n=parseFloat(s); return isFinite(n)?n:0;
+  }
+  function fdMoney(v){
+    v=Number(v||0);
+    return (v<0?'-':'')+'₺'+Math.abs(v).toLocaleString('tr-TR',{minimumFractionDigits:0,maximumFractionDigits:0});
+  }
+  function fdPrice(v){
+    v=Number(v||0);
+    return v>0?v.toLocaleString('tr-TR',{minimumFractionDigits:4,maximumFractionDigits:6}):'—';
+  }
+  function fdPct(v){
+    v=Number(v||0);
+    if(!isFinite(v) || Math.abs(v)<0.0000001) return '—';
+    return (v>0?'+':'')+v.toFixed(3)+'%';
+  }
+  function fdPctClass(v){ return Number(v||0)>0?'#2ed573':Number(v||0)<0?'#ff5c7a':'#8fa9bf'; }
+  function fdCardMetric(code,id){
+    var el=document.getElementById(id+'-'+String(code).toLowerCase());
+    return el?String(el.textContent||'').trim():'—';
+  }
+  function fdCurrentValue(code){
+    return fdNum(fdCardMetric(code,'fc'));
+  }
+  function fdGetTransactions(code){
+    var arr=[];
+    try{ if(typeof loadTrx==='function') arr=(loadTrx()||[]).filter(function(x){return String(x.fon||'').toUpperCase()===code;}); }catch(e){}
+    try{
+      if(typeof IJC_BASLANGIC_SET!=='undefined'){
+        IJC_BASLANGIC_SET.forEach(function(x){ if(String(x.fon||'').toUpperCase()===code) arr.push(x); });
+      }
+    }catch(e){}
+    function dt(s){
+      var p=String(s||'').split('.');
+      return p.length>=2?new Date(Number(p[2]||2026),Number(p[1])-1,Number(p[0])).getTime():0;
+    }
+    arr.sort(function(a,b){return dt(a.tarih)-dt(b.tarih);});
+    return arr;
+  }
+  function fdLastBasis(code){
+    var tx=fdGetTransactions(code);
+    if(!tx.length) return 0;
+    return Number(tx[tx.length-1].miktar||0);
+  }
+  function fdHoldingType(h){
+    var t=String((h&& (h.type||h.tip))||'').toLowerCase();
+    if(t==='fund') return 'Fon';
+    if(t==='cash') return 'Nakit / Diğer';
+    if(t==='us') return 'Yabancı Hisse';
+    return 'BIST';
+  }
+  function fdBuildHoldings(code){
+    var f=(typeof FUNDS!=='undefined'&&FUNDS[code])?FUNDS[code]:null;
+    var hs=(f&&Array.isArray(f.holdings))?f.holdings.slice():[];
+    hs.sort(function(a,b){return Number(b.weight||0)-Number(a.weight||0);});
+    if(!hs.length) return '<div class="fund-detail-empty">Bu fon için kayıtlı portföy ağırlığı bulunmuyor. “Ağırlıkları Güncelle” ile veriyi yenileyebilirsin.</div>';
+    var max=Math.max.apply(null,hs.map(function(h){return Number(h.weight||0)}))||1;
+    var rows=hs.map(function(h){
+      var w=Number(h.weight||0);
+      return '<tr><td><b>'+fdEsc(h.code||h.symbol||'—')+'</b></td><td>'+fdEsc(h.name||h.code||'—')+'</td><td>'+fdEsc(fdHoldingType(h))+'</td>'
+        +'<td><div class="fund-detail-weightbar"><span>%'+w.toFixed(2)+'</span><span class="fund-detail-bartrack"><span class="fund-detail-barfill" style="display:block;width:'+Math.max(1,(w/max*100)).toFixed(1)+'%"></span></span></div></td></tr>';
+    }).join('');
+    return '<div class="fund-detail-table-wrap"><table class="fund-detail-table"><thead><tr><th>Kod</th><th>Varlık</th><th>Tür</th><th>Ağırlık</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
+  }
+  function fdBuildTransactions(code){
+    var tx=fdGetTransactions(code);
+    if(!tx.length) return '<div class="fund-detail-empty">Bu fon için kayıtlı portföy set / işlem kaydı bulunmuyor.</div>';
+    var rows=tx.map(function(x){
+      var m=Number(x.miktar||0);
+      return '<tr><td>'+fdEsc(x.tarih||'—')+'</td><td>'+(m<=0?'Satış / Kapatma':'Portföy Seti')+'</td><td>'+fdMoney(m)+'</td></tr>';
+    }).join('');
+    return '<div class="fund-detail-table-wrap" style="max-height:245px"><table class="fund-detail-table"><thead><tr><th>Tarih</th><th>İşlem</th><th>Tutar</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
+  }
+  function fdBuildPerformance(vals){
+    var items=[
+      {label:'Günlük',v:vals.daily},
+      {label:'Haftalık',v:vals.weekly},
+      {label:'Aylık',v:vals.monthly}
+    ];
+    var max=Math.max.apply(null,items.map(function(x){return Math.abs(Number(x.v)||0)}))||1;
+    return '<div class="fund-detail-perf">'+items.map(function(x){
+      var v=Number(x.v)||0, h=Math.max(3,Math.round(Math.abs(v)/max*92));
+      var color=fdPctClass(v);
+      return '<div class="fund-detail-perf-col"><div class="fund-detail-perf-val" style="color:'+color+'">'+fdPct(v)+'</div>'
+        +'<div class="fund-detail-perf-bar" style="height:'+h+'px;background:'+color+';opacity:.9"></div><div class="fund-detail-perf-label">'+x.label+'</div></div>';
+    }).join('')+'</div>';
+  }
+
+  window.closeFundDetail=function(){
+    var el=document.getElementById('fund-detail-overlay');
+    if(el) el.remove();
+  };
+
+  window.openFundDetail=function(rawCode){
+    var code=String(rawCode||'').toUpperCase().trim();
+    if(!code) return;
+    closeFundDetail();
+
+    var info=(typeof tefasInfo!=='undefined'&&tefasInfo[code])?tefasInfo[code]:{};
+    var fund=(typeof FUNDS!=='undefined'&&FUNDS[code])?FUNDS[code]:{};
+    var current=fdCurrentValue(code);
+    var basis=fdLastBasis(code);
+    var pnl=(current&&basis)?current-basis:0;
+    var pnlPct=(basis>0)?pnl/basis*100:0;
+    var daily=Number(info.dailyReturn||0);
+    var weekly=Number(info.weeklyReturn||0);
+    var monthly=Number(info.monthlyReturn||0);
+
+    // Kartta hesaplanmış oranlar varsa onları tercih et; yeni ağ isteği yok.
+    var dTxt=fdCardMetric(code,'fd'), wTxt=fdCardMetric(code,'fw'), mTxt=fdCardMetric(code,'fm');
+    function pctFromText(s){
+      var m=String(s||'').match(/[-+]?\s*%?\s*([0-9]+(?:[.,][0-9]+)?)/);
+      if(!m) return NaN;
+      var n=parseFloat(m[1].replace(',','.'));
+      return /▼|-/.test(s)?-n:n;
+    }
+    var x=pctFromText(dTxt); if(isFinite(x)) daily=x;
+    x=pctFromText(wTxt); if(isFinite(x)) weekly=x;
+    x=pctFromText(mTxt); if(isFinite(x)) monthly=x;
+
+    var reportDate=fund.aciklamaTarihi||'—';
+    var holdingCount=Array.isArray(fund.holdings)?fund.holdings.length:0;
+    var holdingTotal=(fund.holdings||[]).reduce(function(s,h){return s+(Number(h.weight)||0)},0);
+    var price=Number(info.price||0);
+
+    var overlay=document.createElement('div');
+    overlay.className='fund-detail-overlay';
+    overlay.id='fund-detail-overlay';
+    overlay.innerHTML=
+      '<div class="fund-detail-modal" role="dialog" aria-modal="true" aria-label="'+fdEsc(code)+' fon detayları">'
+      +'<div class="fund-detail-head"><div><div class="fund-detail-code" style="color:'+(fund.color||'#69c9ff')+'">'+fdEsc(code)+' · FON DETAYI</div>'
+      +'<div class="fund-detail-name">'+fdEsc(info.name||fund.name||code)+'</div></div>'
+      +'<button class="fund-detail-close" onclick="closeFundDetail()">✕ Kapat</button></div>'
+      +'<div class="fund-detail-body">'
+      +'<div class="fund-detail-metrics">'
+      +'<div class="fund-detail-metric"><div class="fund-detail-metric-label">Güncel Değer</div><div class="fund-detail-metric-value">'+(current?fdMoney(current):'—')+'</div></div>'
+      +'<div class="fund-detail-metric"><div class="fund-detail-metric-label">Son Portföy Seti</div><div class="fund-detail-metric-value">'+(basis?fdMoney(basis):'—')+'</div></div>'
+      +'<div class="fund-detail-metric"><div class="fund-detail-metric-label">Setten Bu Yana K/Z</div><div class="fund-detail-metric-value" style="color:'+fdPctClass(pnl)+'">'+(basis?((pnl>=0?'+':'')+fdMoney(pnl)+' · '+fdPct(pnlPct)):'—')+'</div></div>'
+      +'<div class="fund-detail-metric"><div class="fund-detail-metric-label">Birim Fiyat</div><div class="fund-detail-metric-value">'+fdPrice(price)+'</div></div>'
+      +'<div class="fund-detail-metric"><div class="fund-detail-metric-label">Bugün</div><div class="fund-detail-metric-value" style="color:'+fdPctClass(daily)+'">'+fdPct(daily)+'</div></div>'
+      +'</div>'
+      +'<div class="fund-detail-grid">'
+      +'<div class="fund-detail-panel"><div class="fund-detail-panel-title">PORTFÖY İÇERİĞİ / AĞIRLIKLAR</div>'
+      +'<div class="fund-detail-panel-sub">Mevcut cache kullanılır; panel açılırken Ekofin’e yeni sorgu gönderilmez.</div>'+fdBuildHoldings(code)+'</div>'
+      +'<div style="display:grid;gap:14px;align-content:start">'
+      +'<div class="fund-detail-panel"><div class="fund-detail-panel-title">PERFORMANS</div><div class="fund-detail-panel-sub">Kartta hesaplanmış mevcut günlük / haftalık / aylık oranlar</div>'
+      +fdBuildPerformance({daily:daily,weekly:weekly,monthly:monthly})+'</div>'
+      +'<div class="fund-detail-panel"><div class="fund-detail-panel-title">VERİ BİLGİSİ</div>'
+      +'<div class="fund-detail-meta">'
+      +'<div class="fund-detail-meta-item">Ağırlık raporu<br><b>'+fdEsc(reportDate)+'</b></div>'
+      +'<div class="fund-detail-meta-item">Kayıtlı varlık<br><b>'+holdingCount+' kalem</b></div>'
+      +'<div class="fund-detail-meta-item">Ağırlık toplamı<br><b>%'+holdingTotal.toFixed(2)+'</b></div>'
+      +'<div class="fund-detail-meta-item">Fiyat kaynağı<br><b>'+fdEsc(info.source||info.priceSource||'TEFAS / Cache')+'</b></div>'
+      +'</div></div>'
+      +'<div class="fund-detail-panel"><div class="fund-detail-panel-title">PORTFÖY SET / İŞLEM GEÇMİŞİ</div>'
+      +'<div class="fund-detail-panel-sub">ORKA’da kayıtlı fon tutarı değişiklikleri</div>'+fdBuildTransactions(code)+'</div>'
+      +'</div></div></div></div>';
+
+    overlay.addEventListener('click',function(e){if(e.target===overlay) closeFundDetail();});
+    document.body.appendChild(overlay);
+  };
+
+  document.addEventListener('keydown',function(e){
+    if(e.key==='Escape'&&document.getElementById('fund-detail-overlay')) closeFundDetail();
+  });
+
+  console.log('ORKA V33 hazır: Fon kartlarına cache tabanlı Fon Detay Paneli eklendi; panel yeni ağ isteği oluşturmaz.');
 })();
 </script>
 
