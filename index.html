@@ -7472,7 +7472,12 @@ async function fvtPortfoyGuncelle() {
   if (btn) btn.disabled = true;
   if (btnHeader) btnHeader.disabled = true;
   try {
-    var sonuc = await refreshAllPortfoliosDetay();
+    var sonuc = await refreshAllPortfoliosDetay(function(p){
+      var ikon = p.durum === 'tamam' ? '✓' : (p.durum === 'korundu' ? '•' : '⚠');
+      var kalem = p.adet ? (' — ' + p.adet + ' kalem') : '';
+      var kaynak = p.source ? (' [' + p.source + ']') : '';
+      setStatus('loading', 'Ekofin portföy güncellemesi: ' + p.completed + '/' + p.total + ' (%' + p.percent + ') — ' + ikon + ' ' + p.fon + kalem + kaynak);
+    });
     renderFunds();
     updateUI();
     if (!sonuc || sonuc.updated === 0) {
@@ -7510,7 +7515,7 @@ async function fvtPortfoyGuncelle() {
   }
 }
 
-async function refreshAllPortfoliosDetay() {
+async function refreshAllPortfoliosDetay(onProgress) {
   var takipFonlar = Object.keys(FUNDS);
   var updated = 0;
   var failed = 0;
@@ -7518,31 +7523,43 @@ async function refreshAllPortfoliosDetay() {
   var completed = 0;
   var total = takipFonlar.length;
   var nextIndex = 0;
+  var concurrency = Math.min(2, Math.max(1, total));
 
-  // Ekofin/Vercel isteklerini aynı anda sınırsız başlatmak yerine 2 işçiyle yürüt.
-  // Böylece serverless fonksiyonlar sıkışmaz; kullanıcı da ilerlemeyi canlı görür.
-  function progressText(fon, phase) {
-    var pct = total ? Math.round((completed / total) * 100) : 100;
-    setStatus('loading', 'Ekofin portföy güncellemesi: ' + completed + '/' + total + ' (%' + pct + ')' +
-      (fon ? ' · ' + fon + ' ' + (phase || '') : ''));
+  function progress(fon, durum, adet, source) {
+    completed++;
+    if (typeof onProgress === 'function') {
+      onProgress({
+        completed: completed,
+        total: total,
+        percent: total ? Math.round((completed / total) * 100) : 100,
+        fon: fon,
+        durum: durum,
+        adet: adet || 0,
+        source: source || ''
+      });
+    }
   }
 
-  progressText('', 'başlıyor');
-
-  async function processFund(fon) {
-    try {
-      setStatus('loading', 'Ekofin portföy güncellemesi: ' + completed + '/' + total + ' · ' + fon + ' okunuyor...');
-      var result = await loadPortfolioAnySource(fon);
+  async function worker() {
+    while (true) {
+      var myIndex = nextIndex++;
+      if (myIndex >= total) return;
+      var fon = takipFonlar[myIndex];
+      try {
+        var result = await loadPortfolioAnySource(fon);
       if (result && result.holdings && result.holdings.length > 0) {
         var mevcutHoldings = (FUNDS[fon].holdings || []).slice();
         if (!isCandidateSafeForReplace(fon, mevcutHoldings, result)) {
           failed++;
           console.warn('Portföy güncelleme atlandı; mevcut ağırlıklar korundu:', fon, result.source || 'kaynak');
-          return;
+          progress(fon, 'korundu', 0, result.source || 'kaynak');
+          continue;
         }
 
         var eskiAgirliklar = {};
         mevcutHoldings.forEach(function(h){ eskiAgirliklar[h.code] = h.weight; });
+
+        // Güvenlik: hiçbir kaynak mevcut portföyü eksilterek silmez; yeni gelenler mevcut listeye işlenir.
         FUNDS[fon].holdings = mergeHoldingsPreserveExisting(mevcutHoldings, result.holdings);
         normalizeAllHoldingTypes();
         FUNDS[fon].aciklamaTarihi = result.aciklamaTarihi || FUNDS[fon].aciklamaTarihi || '';
@@ -7550,43 +7567,48 @@ async function refreshAllPortfoliosDetay() {
 
         var fvtKodlar = new Set(result.holdings.map(function(h){ return h.code; }));
         var degisiklikler = [];
+
         result.holdings.forEach(function(h) {
           var eski = eskiAgirliklar[h.code];
-          if (eski === undefined) degisiklikler.push(h.code + ' +YENİ(%' + h.weight.toFixed(2) + ')');
-          else if (Math.abs(h.weight - eski) >= 0.10) {
+          if (eski === undefined) {
+            degisiklikler.push(h.code + ' +YENİ(%' + h.weight.toFixed(2) + ')');
+          } else if (Math.abs(h.weight - eski) >= 0.10) {
             var fark = h.weight - eski;
             degisiklikler.push(h.code + ' ' + (fark > 0 ? '+' : '') + fark.toFixed(2) + '%');
           }
         });
-        Object.keys(eskiAgirliklar).forEach(function(kod) { if (!fvtKodlar.has(kod)) { /* korunuyor */ } });
 
-        var toplamAgirlik = result.holdings.reduce(function(sum,h){ return sum + (parseFloat(h.weight)||0); }, 0);
-        detay.push({ fon: fon, hisseSay: result.holdings.length, toplamAgirlik: toplamAgirlik,
-          source: result.source || 'Ekofin', sourceMessage: result.sourceMessage || '', degisiklikler: degisiklikler });
+        // Mevcut portföy merge yöntemiyle korunduğu için gelen kaynakta olmayan eski kodlar
+        // artık silinmiş sayılmaz; bu nedenle yanıltıcı '-ÇIKTI' mesajı üretmiyoruz.
+        Object.keys(eskiAgirliklar).forEach(function(kod) {
+          if (!fvtKodlar.has(kod)) { /* korunuyor */ }
+        });
+
+        var toplamAgirlik = result.holdings.reduce(function(s,h){ return s + (parseFloat(h.weight)||0); }, 0);
+        detay.push({
+          fon: fon,
+          hisseSay: result.holdings.length,
+          toplamAgirlik: toplamAgirlik,
+          source: result.source || 'Ekofin',
+          sourceMessage: result.sourceMessage || '',
+          degisiklikler: degisiklikler
+        });
+        progress(fon, 'tamam', result.holdings.length, result.source || 'Ekofin');
       } else {
         failed++;
         console.warn('Ekofin/FVT portföy boş/başarısız:', fon);
+        progress(fon, 'başarısız', 0, '');
       }
     } catch(e) {
       failed++;
       console.warn('Ekofin/FVT portfoy hatasi:', fon, e);
-    } finally {
-      completed++;
-      progressText(fon, 'tamamlandı');
+      progress(fon, 'hata', 0, '');
+    }
     }
   }
 
-  async function worker() {
-    while (true) {
-      var idx = nextIndex++;
-      if (idx >= total) return;
-      await processFund(takipFonlar[idx]);
-    }
-  }
-
-  var workerCount = Math.min(2, Math.max(1, total));
   var workers = [];
-  for (var w = 0; w < workerCount; w++) workers.push(worker());
+  for (var w = 0; w < concurrency; w++) workers.push(worker());
   await Promise.all(workers);
 
   if (updated > 0) saveFVTPortfolioOverrides();
@@ -8794,13 +8816,14 @@ async function yabanciKurlariGuncelle(showToast){
     }
     var hasMaden=arr.some(function(x){ var c=yvMetalCode(x.code,x.name); return c==='GAU'||c==='XAG'||c==='XAU'; });
     if(hasMaden){
-      // Yahoo XAUTRY=X / XAGTRY=X artık 404 döndürüyor.
-      // Ons vadeli fiyatını USDTRY ile çarparak TRY/ons hesapla; 404 isteği hiç gönderilmez.
-      var goldTry={ticker:'',price:0};
-      var silverTry={ticker:'',price:0};
-      if(usdtry>0){
+      // Öncelik doğrudan TRY/ons kotasyonudur. Bulunamazsa USD/ons × USDTRY kullanılır.
+      var goldTry=await yvFetchFirstPrice(['XAUTRY=X']);
+      var silverTry=await yvFetchFirstPrice(['XAGTRY=X']);
+      if(!goldTry.price && usdtry>0){
         xauusd=await yvFetchYahooPrice('GC=F');
         if(xauusd>0) goldTry={ticker:'GC=F×USDTRY',price:xauusd*usdtry};
+      }
+      if(!silverTry.price && usdtry>0){
         xagusd=await yvFetchYahooPrice('SI=F');
         if(xagusd>0) silverTry={ticker:'SI=F×USDTRY',price:xagusd*usdtry};
       }
@@ -11664,7 +11687,7 @@ async function fetchAllFunds_V19_OVERRIDE_DISABLED(){
 
 <script>
 /* ═══════════════════════════════════════════════════════
-   ORKA V29 — TEFAS TARİH VE CACHE DÜZELTMESİ
+   ORKA V31 — EKOFİN HIZ VE CANLI İLERLEME
    Tek yetkili fetchAllFunds akışıdır.
    Fon kapanışlarını yalnızca:
      /api/tefas?mode=price&code=FON
@@ -11945,7 +11968,7 @@ async function fetchAllFunds_V19_OVERRIDE_DISABLED(){
     if (button) button.disabled = false;
   };
 
-  console.log('ORKA V30 hazır: Ekofin timeout/paralellik düzeltildi, portföy ilerleme bilgisi eklendi ve Yahoo maden 404 çağrıları kaldırıldı.');
+  console.log('ORKA V31 hazır: Ekofin 404 denemeleri kaldırıldı ve canlı portföy güncelleme ilerlemesi eklendi.');
 })();
 </script>
 
