@@ -173,24 +173,48 @@ function rowsFromJsonText(text) {
 function extractAnchorHoldings(html, fundCode, mode) {
   const out = [];
   const seen = new Set();
-  const anchorRe = /<a\b[^>]*href="\/(sirket|fonlar)\/detay\/([A-Za-z0-9]+)(?:\/[^\"]*)?"[^>]*>([\s\S]*?)<\/a>/gi;
-  let m;
-  while ((m = anchorRe.exec(html || ''))) {
+  const raw = String(html || '');
+  const anchorRe = /<a\b[^>]*href=["']\/(sirket|fonlar)\/detay\/([A-Za-z0-9]+)(?:\/[^"']*)?["'][^>]*>([\s\S]*?)<\/a>/gi;
+  const matches = [...raw.matchAll(anchorRe)];
+
+  for (let i = 0; i < matches.length; i++) {
+    const m = matches[i];
     const kind = String(m[1] || '').toLowerCase();
     const code = cleanCode(m[2]);
     if (!code || code === fundCode) continue;
     if (mode === 'portfolio' && kind !== 'sirket') continue;
     if (mode === 'carried' && kind !== 'fonlar') continue;
-    const inner = stripTags(m[3]);
-    if (!inner || !/%/.test(inner)) continue;
-    const pcts = [...inner.matchAll(/(-?\d+(?:[\.,]\d+)?)\s*%/g)].map(x => x[1]);
+
+    // Ekofin'de yüzde artık çoğu zaman <a> etiketinin içinde değil,
+    // şirket linkinden sonraki hücrelerde bulunuyor. Bir sonraki şirket/fon
+    // linkine kadar olan bölümü okuyup yüzdeleri oradan çıkarıyoruz.
+    const from = (m.index || 0) + m[0].length;
+    const to = (i + 1 < matches.length && Number.isFinite(matches[i + 1].index))
+      ? matches[i + 1].index
+      : Math.min(raw.length, from + 5000);
+    const segment = stripTags(raw.slice(from, to));
+    const pcts = [...segment.matchAll(/(-?\d+(?:[\.,]\d+)?)\s*%/g)]
+      .map(x => toNumber(x[1]))
+      .filter(Number.isFinite);
     if (!pcts.length) continue;
-    addHolding(out, seen, { code, name: code, weight: pcts[pcts.length - 1], type: kind === 'fonlar' ? 'fund' : 'bist' });
+
+    // Güncel Portföy satırında sıra: fiyat değişimi, güncel fon ağırlığı,
+    // aylık değişim ve önceki ay ağırlığı. Fiyat değişimini atlayıp ikinci
+    // yüzdeyi güncel fon ağırlığı olarak alıyoruz. Daha kısa yapılarda ilk
+    // makul yüzdeye geri düşüyoruz.
+    let weight = pcts.length >= 2 ? pcts[1] : pcts[0];
+    if (!Number.isFinite(weight) || weight < 0 || weight > 100) continue;
+
+    addHolding(out, seen, {
+      code,
+      name: stripTags(m[3]) || code,
+      weight,
+      type: kind === 'fonlar' ? 'fund' : 'bist'
+    });
   }
   out.sort((a, b) => b.weight - a.weight);
   return out;
 }
-
 
 function walkJson(value, visitor, path = []) {
   if (Array.isArray(value)) {
@@ -402,7 +426,7 @@ function historicalUrls(code) {
   const c = encodeURIComponent(code);
   return [
     `https://ekofin.net/fonlar/detay/${c}/historical-distribution?fonKodu=${c}`,
-    `https://ekofin.net/fonlar/detay/${c}/fon-portfoy/historical-distribution?fonKodu=${c}`,
+    `https://ekofin.net/fonlar/detay/${c}/fon-portfoyu/historical-distribution?fonKodu=${c}`,
     `https://ekofin.net/historical-distribution?fonKodu=${c}`,
     `https://ekofin.net/api/historical-distribution?fonKodu=${c}`
   ];
@@ -427,16 +451,16 @@ async function loadHistoricalPortfolio(code, attempts) {
 }
 
 async function loadHtmlPortfolio(code, attempts) {
-  const url = `https://ekofin.net/fonlar/detay/${encodeURIComponent(code)}/fon-portfoy`;
+  const url = `https://ekofin.net/fonlar/detay/${encodeURIComponent(code)}/fon-portfoyu`;
   try {
     const r = await httpsGet(url, 18000);
-    attempts.push({ step: 'fon-portfoy', url, status: r.status, contentType: r.headers['content-type'] || '', len: (r.body || '').length });
+    attempts.push({ step: 'fon-portfoyu', url, status: r.status, contentType: r.headers['content-type'] || '', len: (r.body || '').length });
     if (r.status < 200 || r.status >= 300) return [];
     const holdings = extractAnchorHoldings(r.body, code, 'portfolio');
     attempts[attempts.length - 1].parsed = holdings.length;
     return holdings;
   } catch (err) {
-    attempts.push({ step: 'fon-portfoy', url, error: err && err.message ? err.message : String(err) });
+    attempts.push({ step: 'fon-portfoyu', url, error: err && err.message ? err.message : String(err) });
     return [];
   }
 }
