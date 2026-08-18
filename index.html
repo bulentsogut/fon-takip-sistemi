@@ -3864,6 +3864,19 @@ function getPortfoyGorunenFonlar(){
   return getTumFonlar().filter(function(f){ return !isFonSatildi(f); });
 }
 
+// ORKA V32: Ağ/veri güncellemelerinde yalnızca bugün portföyde aktif olan fonlar kullanılır.
+// Satılmış fonlar geçmiş raporlarda korunur ancak TEFAS/Ekofin arka plan isteklerine dahil edilmez.
+function getAktifGuncellemeFonlari(){
+  var fonlar = [];
+  try {
+    if (typeof getPortfoyGorunenFonlar === 'function') fonlar = getPortfoyGorunenFonlar() || [];
+  } catch(e) {}
+  fonlar = Array.from(new Set((fonlar || []).map(function(f){
+    return String(f || '').trim().toUpperCase();
+  }).filter(Boolean)));
+  return fonlar;
+}
+
 const fmt=n=>isNaN(n)||n==null?'—':(n<0?'-':'')+'₺'+Math.abs(n).toLocaleString('tr-TR',{minimumFractionDigits:0,maximumFractionDigits:0});
 const fmtP=n=>isNaN(n)||n==null?'—':(n>=0?'▲ ':'▼ ')+Math.abs(n*100).toFixed(3)+'%';
 const cc=v=>(!v||isNaN(v)||v===0)?'gz':v>0?'gp':'gn';
@@ -7466,7 +7479,8 @@ async function loadFVTPortfolio(fonKodu) {
 }
 
 async function fvtPortfoyGuncelle() {
-  setStatus('loading', 'Ekofin portföy ağırlıkları güncelleniyor...');
+  var aktifGuncellemeFonlari = getAktifGuncellemeFonlari();
+  setStatus('loading', 'Ekofin portföy ağırlıkları güncelleniyor — ' + aktifGuncellemeFonlari.length + ' aktif fon taranacak...');
   var btn = document.getElementById('refreshBtnFVT');
   var btnHeader = document.getElementById('refreshBtnFVTHeader');
   if (btn) btn.disabled = true;
@@ -7516,7 +7530,7 @@ async function fvtPortfoyGuncelle() {
 }
 
 async function refreshAllPortfoliosDetay(onProgress) {
-  var takipFonlar = Object.keys(FUNDS);
+  var takipFonlar = getAktifGuncellemeFonlari().filter(function(f){ return !!FUNDS[f]; });
   var updated = 0;
   var failed = 0;
   var detay = [];
@@ -7616,7 +7630,7 @@ async function refreshAllPortfoliosDetay(onProgress) {
 }
 
 async function refreshAllPortfolios() {
-  var fonlar = Object.keys(FUNDS);
+  var fonlar = getAktifGuncellemeFonlari().filter(function(f){ return !!FUNDS[f]; });
   var updated = 0;
   for (var i = 0; i < fonlar.length; i++) {
     var fon = fonlar[i];
@@ -11760,11 +11774,11 @@ async function fetchAllFunds_V19_OVERRIDE_DISABLED(){
 
     var codes;
     try {
-      codes = typeof getTumFonlar === 'function'
-        ? getTumFonlar()
-        : ['DFI', 'TLY', 'PHE', 'CPT', 'IJC'];
+      codes = typeof getAktifGuncellemeFonlari === 'function'
+        ? getAktifGuncellemeFonlari()
+        : (typeof getPortfoyGorunenFonlar === 'function' ? getPortfoyGorunenFonlar() : []);
     } catch (e) {
-      codes = ['DFI', 'TLY', 'PHE', 'CPT', 'IJC'];
+      codes = [];
     }
 
     codes = Array.from(new Set(
@@ -11968,7 +11982,7 @@ async function fetchAllFunds_V19_OVERRIDE_DISABLED(){
     if (button) button.disabled = false;
   };
 
-  console.log('ORKA V31 hazır: Ekofin 404 denemeleri kaldırıldı ve canlı portföy güncelleme ilerlemesi eklendi.');
+  console.log('ORKA V32 hazır: yalnızca aktif portföy fonları TEFAS/Ekofin güncellemelerine dahil ediliyor; satılmış fonlar arka planda çağrılmıyor.');
 })();
 </script>
 
