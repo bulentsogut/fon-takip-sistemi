@@ -2686,7 +2686,7 @@ class="hero-row fon-hero-row">
   <div class="fitem"><div class="finame">Günlük TL Yansıması</div><div class="ficode">= Fon_Değeri × Getiri_%</div><div class="fidesc">Önceki günkü fon değeri × girilen yüzde oranı</div></div>
   <div class="fitem"><div class="finame">Gün Sonu Fon Değeri</div><div class="ficode">= Önceki + TL_Yansıması</div><div class="fidesc">Her gün kümülatif olarak güncellenir</div></div>
   <div class="fitem"><div class="finame">Sepet Toplamı</div><div class="ficode">= DFI + TLY + PHE + CPT</div><div class="fidesc">Dört fonun gün sonu değerlerinin toplamı</div></div>
-  <div class="fitem"><div class="finame">Günlük % Değişim</div><div class="ficode">= (Bugün − Dün) / Bugün</div><div class="fidesc">Sepetin günlük yüzdesel değişimi</div></div>
+  <div class="fitem"><div class="finame">Günlük % Değişim</div><div class="ficode">= Günlük K/Z / Günlük Açılış Portföyü</div><div class="fidesc">İşlem/set kayıtları sonrası açılış bakiyesi üzerinden ağırlıklı günlük getiri</div></div>
   <div class="fitem"><div class="finame">Aylık Getiri</div><div class="ficode">= Son / İlk − 1</div><div class="fidesc">Ayın son ve ilk sepet değeri farkı</div></div>
   <div class="fitem"><div class="finame">Toplam K/Z</div><div class="ficode">= Σ Günlük TL Getirileri</div><div class="fidesc">Tüm günlerin TL getirisinin toplamı</div></div>
 </div></div>
@@ -4760,8 +4760,12 @@ function compute(rates){
     wk.dates.forEach(function(d){
       var r = rates[d]||{};
       var fonDetay = {}, toplamKZ = 0;
-      var prevTotal = 0;
-      tumFonlar.forEach(function(f){ prevTotal += bakiye[f]||0; });
+      // Günlük yüzdelik getiri için baz, o günün işlem/set kayıtları uygulandıktan
+      // SONRA fakat günlük getiriler uygulanmadan ÖNCE oluşan açılış bakiyeleridir.
+      // Eski hesap prevTotal'i günün başında topladığı için yeni eklenen / yeniden
+      // alınan büyük bir fon paydada yer almıyor, K/Z doğru kalırken %Değ. 40-160%
+      // gibi anlamsız seviyelere sıçrıyordu.
+      var returnBaseTotal = 0;
 
       tumFonlar.forEach(function(f){
         // Gün tarihi
@@ -4806,6 +4810,7 @@ function compute(rates){
         // ── ADIM 3: Getiri hesabı ─────────────────────────────
         var getiriPct = aktif ? parseTRNumber(r[f.toLowerCase()]||0) : 0;
         var openingBalance = bakiye[f]||0;
+        returnBaseTotal += openingBalance;
         var tl = openingBalance * getiriPct / 100;
         if(aktif) bakiye[f] = openingBalance + tl;
 
@@ -4823,8 +4828,10 @@ function compute(rates){
 
       var total = 0;
       tumFonlar.forEach(function(f){ total += bakiye[f]||0; });
-      // pct: ağırlıklı ortalama getiri (trx para giriş/çıkışları hariç, sadece getiri yüzdesi)
-      var pct = prevTotal > 0 ? (toplamKZ / prevTotal) * 100 : 0;
+      // pct: ondalık oran olarak tutulur (örn. %0,526 = 0.00526). fmtP ekranda ×100 yapar.
+      // Payda, o günün getiriye tabi açılış portföy büyüklüğüdür; böylece gün içi
+      // alım / yeniden alım da yüzdelik getiriyi yapay biçimde şişirmez.
+      var pct = returnBaseTotal > 0 ? (toplamKZ / returnBaseTotal) : 0;
 
       var snap = {};
       tumFonlar.forEach(function(f){ snap[f] = bakiye[f]||0; });
