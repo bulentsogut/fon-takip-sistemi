@@ -7244,7 +7244,7 @@ async function loadEkofinPortfolio(fonKodu) {
 
   for (var i = 0; i < urls.length; i++) {
     try {
-      var resp = await fetchWithTimeout(urls[i], { headers: { 'Accept': 'text/html,application/json,text/plain,*/*' } }, 12000);
+      var resp = await fetchWithTimeout(urls[i], { headers: { 'Accept': 'text/html,application/json,text/plain,*/*' } }, 35000);
       if (!resp.ok) {
         console.warn('Ekofin HTTP', fonKodu, resp.status, urls[i]);
         continue;
@@ -7515,9 +7515,23 @@ async function refreshAllPortfoliosDetay() {
   var updated = 0;
   var failed = 0;
   var detay = [];
+  var completed = 0;
+  var total = takipFonlar.length;
+  var nextIndex = 0;
 
-  await Promise.all(takipFonlar.map(async function(fon) {
+  // Ekofin/Vercel isteklerini aynı anda sınırsız başlatmak yerine 2 işçiyle yürüt.
+  // Böylece serverless fonksiyonlar sıkışmaz; kullanıcı da ilerlemeyi canlı görür.
+  function progressText(fon, phase) {
+    var pct = total ? Math.round((completed / total) * 100) : 100;
+    setStatus('loading', 'Ekofin portföy güncellemesi: ' + completed + '/' + total + ' (%' + pct + ')' +
+      (fon ? ' · ' + fon + ' ' + (phase || '') : ''));
+  }
+
+  progressText('', 'başlıyor');
+
+  async function processFund(fon) {
     try {
+      setStatus('loading', 'Ekofin portföy güncellemesi: ' + completed + '/' + total + ' · ' + fon + ' okunuyor...');
       var result = await loadPortfolioAnySource(fon);
       if (result && result.holdings && result.holdings.length > 0) {
         var mevcutHoldings = (FUNDS[fon].holdings || []).slice();
@@ -7529,8 +7543,6 @@ async function refreshAllPortfoliosDetay() {
 
         var eskiAgirliklar = {};
         mevcutHoldings.forEach(function(h){ eskiAgirliklar[h.code] = h.weight; });
-
-        // Güvenlik: hiçbir kaynak mevcut portföyü eksilterek silmez; yeni gelenler mevcut listeye işlenir.
         FUNDS[fon].holdings = mergeHoldingsPreserveExisting(mevcutHoldings, result.holdings);
         normalizeAllHoldingTypes();
         FUNDS[fon].aciklamaTarihi = result.aciklamaTarihi || FUNDS[fon].aciklamaTarihi || '';
@@ -7538,32 +7550,19 @@ async function refreshAllPortfoliosDetay() {
 
         var fvtKodlar = new Set(result.holdings.map(function(h){ return h.code; }));
         var degisiklikler = [];
-
         result.holdings.forEach(function(h) {
           var eski = eskiAgirliklar[h.code];
-          if (eski === undefined) {
-            degisiklikler.push(h.code + ' +YENİ(%' + h.weight.toFixed(2) + ')');
-          } else if (Math.abs(h.weight - eski) >= 0.10) {
+          if (eski === undefined) degisiklikler.push(h.code + ' +YENİ(%' + h.weight.toFixed(2) + ')');
+          else if (Math.abs(h.weight - eski) >= 0.10) {
             var fark = h.weight - eski;
             degisiklikler.push(h.code + ' ' + (fark > 0 ? '+' : '') + fark.toFixed(2) + '%');
           }
         });
+        Object.keys(eskiAgirliklar).forEach(function(kod) { if (!fvtKodlar.has(kod)) { /* korunuyor */ } });
 
-        // Mevcut portföy merge yöntemiyle korunduğu için gelen kaynakta olmayan eski kodlar
-        // artık silinmiş sayılmaz; bu nedenle yanıltıcı '-ÇIKTI' mesajı üretmiyoruz.
-        Object.keys(eskiAgirliklar).forEach(function(kod) {
-          if (!fvtKodlar.has(kod)) { /* korunuyor */ }
-        });
-
-        var toplamAgirlik = result.holdings.reduce(function(s,h){ return s + (parseFloat(h.weight)||0); }, 0);
-        detay.push({
-          fon: fon,
-          hisseSay: result.holdings.length,
-          toplamAgirlik: toplamAgirlik,
-          source: result.source || 'Ekofin',
-          sourceMessage: result.sourceMessage || '',
-          degisiklikler: degisiklikler
-        });
+        var toplamAgirlik = result.holdings.reduce(function(sum,h){ return sum + (parseFloat(h.weight)||0); }, 0);
+        detay.push({ fon: fon, hisseSay: result.holdings.length, toplamAgirlik: toplamAgirlik,
+          source: result.source || 'Ekofin', sourceMessage: result.sourceMessage || '', degisiklikler: degisiklikler });
       } else {
         failed++;
         console.warn('Ekofin/FVT portföy boş/başarısız:', fon);
@@ -7571,8 +7570,24 @@ async function refreshAllPortfoliosDetay() {
     } catch(e) {
       failed++;
       console.warn('Ekofin/FVT portfoy hatasi:', fon, e);
+    } finally {
+      completed++;
+      progressText(fon, 'tamamlandı');
     }
-  }));
+  }
+
+  async function worker() {
+    while (true) {
+      var idx = nextIndex++;
+      if (idx >= total) return;
+      await processFund(takipFonlar[idx]);
+    }
+  }
+
+  var workerCount = Math.min(2, Math.max(1, total));
+  var workers = [];
+  for (var w = 0; w < workerCount; w++) workers.push(worker());
+  await Promise.all(workers);
 
   if (updated > 0) saveFVTPortfolioOverrides();
   return { updated: updated, failed: failed, detay: detay };
@@ -8779,14 +8794,13 @@ async function yabanciKurlariGuncelle(showToast){
     }
     var hasMaden=arr.some(function(x){ var c=yvMetalCode(x.code,x.name); return c==='GAU'||c==='XAG'||c==='XAU'; });
     if(hasMaden){
-      // Öncelik doğrudan TRY/ons kotasyonudur. Bulunamazsa USD/ons × USDTRY kullanılır.
-      var goldTry=await yvFetchFirstPrice(['XAUTRY=X']);
-      var silverTry=await yvFetchFirstPrice(['XAGTRY=X']);
-      if(!goldTry.price && usdtry>0){
+      // Yahoo XAUTRY=X / XAGTRY=X artık 404 döndürüyor.
+      // Ons vadeli fiyatını USDTRY ile çarparak TRY/ons hesapla; 404 isteği hiç gönderilmez.
+      var goldTry={ticker:'',price:0};
+      var silverTry={ticker:'',price:0};
+      if(usdtry>0){
         xauusd=await yvFetchYahooPrice('GC=F');
         if(xauusd>0) goldTry={ticker:'GC=F×USDTRY',price:xauusd*usdtry};
-      }
-      if(!silverTry.price && usdtry>0){
         xagusd=await yvFetchYahooPrice('SI=F');
         if(xagusd>0) silverTry={ticker:'SI=F×USDTRY',price:xagusd*usdtry};
       }
@@ -11931,7 +11945,7 @@ async function fetchAllFunds_V19_OVERRIDE_DISABLED(){
     if (button) button.disabled = false;
   };
 
-  console.log('ORKA V29 hazır: TEFAS tarihleri düzeltildi ve eski cache kayıtları temizleniyor.');
+  console.log('ORKA V30 hazır: Ekofin timeout/paralellik düzeltildi, portföy ilerleme bilgisi eklendi ve Yahoo maden 404 çağrıları kaldırıldı.');
 })();
 </script>
 
