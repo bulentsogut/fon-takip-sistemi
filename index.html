@@ -2465,7 +2465,7 @@ tbody tr:hover{background:rgba(0,180,255,0.035);}
 }
 
 
-/* ORKA V33 — Fon kartı detay paneli */
+/* ORKA V34 — Fon kartı detay paneli */
 .fcard.fund-detail-clickable{cursor:pointer;transition:transform .16s ease,border-color .16s ease,box-shadow .16s ease;}
 .fcard.fund-detail-clickable:hover{transform:translateY(-2px);box-shadow:0 14px 34px rgba(0,0,0,.28);}
 .fund-detail-overlay{position:fixed;inset:0;z-index:12000;background:rgba(2,7,14,.88);backdrop-filter:blur(9px);display:flex;align-items:center;justify-content:center;padding:20px;}
@@ -3888,7 +3888,7 @@ function getPortfoyGorunenFonlar(){
   return getTumFonlar().filter(function(f){ return !isFonSatildi(f); });
 }
 
-// ORKA V33: Ağ/veri güncellemelerinde yalnızca bugün portföyde aktif olan fonlar kullanılır.
+// ORKA V34: Ağ/veri güncellemelerinde yalnızca bugün portföyde aktif olan fonlar kullanılır.
 // Satılmış fonlar geçmiş raporlarda korunur ancak TEFAS/Ekofin arka plan isteklerine dahil edilmez.
 function getAktifGuncellemeFonlari(){
   var fonlar = [];
@@ -12009,54 +12009,96 @@ async function fetchAllFunds_V19_OVERRIDE_DISABLED(){
     if (button) button.disabled = false;
   };
 
-  console.log('ORKA V33 hazır: Fon Detay Paneli eklendi; yalnızca aktif portföy fonları güncelleniyor.');
+  console.log('ORKA V34 hazır: Fon Detay Paneli eklendi; yalnızca aktif portföy fonları güncelleniyor.');
 })();
 </script>
 
 
 <script>
-/* ORKA V33 — Fon Detay Paneli
-   Yalnızca mevcut bellekte/cache'de bulunan verileri kullanır.
-   Panel açılırken TEFAS, Ekofin veya Yahoo'ya yeni ağ isteği göndermez. */
+/* ORKA V34 — Gerçek Fon Detay Verileri
+   - Güncel değer ve birim fiyat doğrudan ekrandaki hesaplanmış fon kartından okunur.
+   - Son portföy seti ORKA işlem geçmişindeki son pozitif set kaydıdır.
+   - K/Z = güncel fon değeri - son portföy seti.
+   - Performans = ORKA'nın günlük hesap motorundaki son 5 gerçek işlem günü.
+   - Portföy ağırlıkları panel açılırken Ekofin API'den taze çekilir.
+*/
 (function(){
   function fdEsc(v){
     return String(v==null?'':v).replace(/[&<>"']/g,function(ch){
       return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch];
     });
   }
-  function fdNum(v){
-    if(typeof parseTRNumber==='function') return parseTRNumber(v);
-    if(typeof v==='number') return v;
-    var s=String(v||'').replace(/[₺%\s]/g,'').replace(/\./g,'').replace(',','.');
-    var n=parseFloat(s); return isFinite(n)?n:0;
+
+  // Ekrandaki Türkçe TL metnini doğru okur:
+  // ₺2.085.417 -> 2085417, ₺2.085.417,35 -> 2085417.35
+  function fdMoneyNumber(v){
+    if(typeof v==='number') return isFinite(v)?v:0;
+    var s=String(v==null?'':v).trim().replace(/[₺TL\s]/gi,'');
+    if(!s) return 0;
+    var neg=s.indexOf('-')>=0;
+    s=s.replace(/-/g,'');
+    if(s.indexOf(',')>=0){
+      s=s.replace(/\./g,'').replace(',','.');
+    }else{
+      // Birden fazla veya 3 haneli son grup içeren noktalar TL binlik ayırıcıdır.
+      var parts=s.split('.');
+      if(parts.length>2 || (parts.length===2 && parts[1].length===3)) s=parts.join('');
+    }
+    var n=parseFloat(s);
+    return isFinite(n)?(neg?-n:n):0;
   }
+
+  function fdPctNumber(v){
+    var s=String(v==null?'':v).trim();
+    if(!s || s==='—') return 0;
+    var neg=/▼|-/.test(s);
+    var m=s.match(/([0-9]+(?:[.,][0-9]+)?)/);
+    if(!m) return 0;
+    var n=parseFloat(m[1].replace(',','.'));
+    return isFinite(n)?(neg?-n:n):0;
+  }
+
   function fdMoney(v){
     v=Number(v||0);
     return (v<0?'-':'')+'₺'+Math.abs(v).toLocaleString('tr-TR',{minimumFractionDigits:0,maximumFractionDigits:0});
   }
-  function fdPrice(v){
-    v=Number(v||0);
-    return v>0?v.toLocaleString('tr-TR',{minimumFractionDigits:4,maximumFractionDigits:6}):'—';
-  }
   function fdPct(v){
     v=Number(v||0);
-    if(!isFinite(v) || Math.abs(v)<0.0000001) return '—';
+    if(!isFinite(v)) return '—';
     return (v>0?'+':'')+v.toFixed(3)+'%';
   }
-  function fdPctClass(v){ return Number(v||0)>0?'#2ed573':Number(v||0)<0?'#ff5c7a':'#8fa9bf'; }
-  function fdCardMetric(code,id){
-    var el=document.getElementById(id+'-'+String(code).toLowerCase());
-    return el?String(el.textContent||'').trim():'—';
+  function fdColor(v){ return Number(v||0)>0?'#2ed573':Number(v||0)<0?'#ff5c7a':'#8fa9bf'; }
+
+  function fdElText(id){
+    var el=document.getElementById(id);
+    return el?String(el.textContent||'').trim():'';
   }
+
   function fdCurrentValue(code){
-    return fdNum(fdCardMetric(code,'fc'));
+    return fdMoneyNumber(fdElText('fc-'+code.toLowerCase()));
   }
+
+  function fdUnitPriceText(code){
+    var t=fdElText('fp-'+code.toLowerCase());
+    return t && t!=='—' ? t : '—';
+  }
+
+  function fdTodayPct(code){
+    return fdPctNumber(fdElText('fd-'+code.toLowerCase()));
+  }
+
   function fdGetTransactions(code){
     var arr=[];
-    try{ if(typeof loadTrx==='function') arr=(loadTrx()||[]).filter(function(x){return String(x.fon||'').toUpperCase()===code;}); }catch(e){}
+    try{
+      if(typeof loadTrx==='function') arr=(loadTrx()||[]).filter(function(x){
+        return String(x.fon||'').toUpperCase()===code;
+      });
+    }catch(e){}
     try{
       if(typeof IJC_BASLANGIC_SET!=='undefined'){
-        IJC_BASLANGIC_SET.forEach(function(x){ if(String(x.fon||'').toUpperCase()===code) arr.push(x); });
+        IJC_BASLANGIC_SET.forEach(function(x){
+          if(String(x.fon||'').toUpperCase()===code) arr.push(x);
+        });
       }
     }catch(e){}
     function dt(s){
@@ -12066,23 +12108,29 @@ async function fetchAllFunds_V19_OVERRIDE_DISABLED(){
     arr.sort(function(a,b){return dt(a.tarih)-dt(b.tarih);});
     return arr;
   }
-  function fdLastBasis(code){
+
+  function fdLastPositiveSet(code){
     var tx=fdGetTransactions(code);
-    if(!tx.length) return 0;
-    return Number(tx[tx.length-1].miktar||0);
+    for(var i=tx.length-1;i>=0;i--){
+      var m=Number(tx[i].miktar||0);
+      if(m>0) return {amount:m,date:tx[i].tarih||'—'};
+    }
+    return {amount:0,date:'—'};
   }
+
   function fdHoldingType(h){
-    var t=String((h&& (h.type||h.tip))||'').toLowerCase();
+    var t=String((h&&(h.type||h.tip))||'').toLowerCase();
     if(t==='fund') return 'Fon';
     if(t==='cash') return 'Nakit / Diğer';
     if(t==='us') return 'Yabancı Hisse';
     return 'BIST';
   }
-  function fdBuildHoldings(code){
-    var f=(typeof FUNDS!=='undefined'&&FUNDS[code])?FUNDS[code]:null;
-    var hs=(f&&Array.isArray(f.holdings))?f.holdings.slice():[];
+
+  function fdBuildHoldings(holdings){
+    var hs=Array.isArray(holdings)?holdings.slice():[];
+    hs=hs.filter(function(h){return h && Number(h.weight||0)>0;});
     hs.sort(function(a,b){return Number(b.weight||0)-Number(a.weight||0);});
-    if(!hs.length) return '<div class="fund-detail-empty">Bu fon için kayıtlı portföy ağırlığı bulunmuyor. “Ağırlıkları Güncelle” ile veriyi yenileyebilirsin.</div>';
+    if(!hs.length) return '<div class="fund-detail-empty">Ekofin portföy ağırlığı bulunamadı.</div>';
     var max=Math.max.apply(null,hs.map(function(h){return Number(h.weight||0)}))||1;
     var rows=hs.map(function(h){
       var w=Number(h.weight||0);
@@ -12091,28 +12139,78 @@ async function fetchAllFunds_V19_OVERRIDE_DISABLED(){
     }).join('');
     return '<div class="fund-detail-table-wrap"><table class="fund-detail-table"><thead><tr><th>Kod</th><th>Varlık</th><th>Tür</th><th>Ağırlık</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
   }
+
   function fdBuildTransactions(code){
     var tx=fdGetTransactions(code);
     if(!tx.length) return '<div class="fund-detail-empty">Bu fon için kayıtlı portföy set / işlem kaydı bulunmuyor.</div>';
-    var rows=tx.map(function(x){
+    var rows=tx.slice().reverse().map(function(x){
       var m=Number(x.miktar||0);
       return '<tr><td>'+fdEsc(x.tarih||'—')+'</td><td>'+(m<=0?'Satış / Kapatma':'Portföy Seti')+'</td><td>'+fdMoney(m)+'</td></tr>';
     }).join('');
     return '<div class="fund-detail-table-wrap" style="max-height:245px"><table class="fund-detail-table"><thead><tr><th>Tarih</th><th>İşlem</th><th>Tutar</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
   }
-  function fdBuildPerformance(vals){
-    var items=[
-      {label:'Günlük',v:vals.daily},
-      {label:'Haftalık',v:vals.weekly},
-      {label:'Aylık',v:vals.monthly}
-    ];
-    var max=Math.max.apply(null,items.map(function(x){return Math.abs(Number(x.v)||0)}))||1;
+
+  // MONTH_DATA içindeki ORKA hesap motorundan son 5 gerçek işlem gününü alır.
+  function fdLastFiveDays(code){
+    var out=[];
+    try{
+      var monthKeys=Object.keys(MONTH_DATA||{});
+      monthKeys.forEach(function(k){
+        var mo=MONTH_DATA[k]||{};
+        (mo.days||[]).forEach(function(d){
+          var item=d[String(code).toLowerCase()]||{};
+          var pct=Number(item.pct||0);
+          var tl=Number(item.tl||0);
+          if(!d.d) return;
+          // Fon o gün aktifse pct/tl kaydı vardır. Sıfır getirili gerçek gün de tutulabilir.
+          if(item && Object.prototype.hasOwnProperty.call(item,'pct')){
+            var p=String(d.d).split('.');
+            var dt=new Date(Number(p[2]||2026),Number(p[1]||1)-1,Number(p[0]||1));
+            out.push({date:d.d,pct:pct,tl:tl,ts:dt.getTime()});
+          }
+        });
+      });
+    }catch(e){}
+    // Aynı tarih farklı scaffoldlarda varsa son kaydı kullan.
+    var byDate={};
+    out.forEach(function(x){byDate[x.date]=x;});
+    out=Object.keys(byDate).map(function(k){return byDate[k];}).sort(function(a,b){return a.ts-b.ts;});
+    return out.slice(-5);
+  }
+
+  function fdBuildFiveDayPerformance(code){
+    var items=fdLastFiveDays(code);
+    if(!items.length){
+      return '<div class="fund-detail-empty">Son 5 işlem günü için ORKA günlük performans kaydı bulunamadı.</div>';
+    }
+    var max=Math.max.apply(null,items.map(function(x){return Math.abs(Number(x.pct)||0)}))||1;
     return '<div class="fund-detail-perf">'+items.map(function(x){
-      var v=Number(x.v)||0, h=Math.max(3,Math.round(Math.abs(v)/max*92));
-      var color=fdPctClass(v);
-      return '<div class="fund-detail-perf-col"><div class="fund-detail-perf-val" style="color:'+color+'">'+fdPct(v)+'</div>'
-        +'<div class="fund-detail-perf-bar" style="height:'+h+'px;background:'+color+';opacity:.9"></div><div class="fund-detail-perf-label">'+x.label+'</div></div>';
+      var v=Number(x.pct)||0;
+      var h=Math.max(3,Math.round(Math.abs(v)/max*92));
+      var color=fdColor(v);
+      var shortDate=String(x.date||'').split('.').slice(0,2).join('.');
+      return '<div class="fund-detail-perf-col" title="'+fdEsc(x.date)+' · '+fdPct(v)+' · '+fdMoney(x.tl)+'">'
+        +'<div class="fund-detail-perf-val" style="color:'+color+'">'+fdPct(v)+'</div>'
+        +'<div class="fund-detail-perf-bar" style="height:'+h+'px;background:'+color+';opacity:.9"></div>'
+        +'<div class="fund-detail-perf-label">'+fdEsc(shortDate)+'</div></div>';
     }).join('')+'</div>';
+  }
+
+  async function fdFetchFreshEkofin(code){
+    try{
+      var ctrl=new AbortController();
+      var timer=setTimeout(function(){try{ctrl.abort();}catch(e){}},35000);
+      var r=await fetch('/api/ekofin?code='+encodeURIComponent(code),{
+        headers:{'Accept':'application/json'},
+        cache:'no-store',
+        signal:ctrl.signal
+      });
+      clearTimeout(timer);
+      if(!r.ok) return null;
+      var d=await r.json();
+      if(!d || d.ok===false) return null;
+      return d;
+    }catch(e){ return null; }
   }
 
   window.closeFundDetail=function(){
@@ -12120,7 +12218,7 @@ async function fetchAllFunds_V19_OVERRIDE_DISABLED(){
     if(el) el.remove();
   };
 
-  window.openFundDetail=function(rawCode){
+  window.openFundDetail=async function(rawCode){
     var code=String(rawCode||'').toUpperCase().trim();
     if(!code) return;
     closeFundDetail();
@@ -12128,29 +12226,11 @@ async function fetchAllFunds_V19_OVERRIDE_DISABLED(){
     var info=(typeof tefasInfo!=='undefined'&&tefasInfo[code])?tefasInfo[code]:{};
     var fund=(typeof FUNDS!=='undefined'&&FUNDS[code])?FUNDS[code]:{};
     var current=fdCurrentValue(code);
-    var basis=fdLastBasis(code);
-    var pnl=(current&&basis)?current-basis:0;
-    var pnlPct=(basis>0)?pnl/basis*100:0;
-    var daily=Number(info.dailyReturn||0);
-    var weekly=Number(info.weeklyReturn||0);
-    var monthly=Number(info.monthlyReturn||0);
-
-    // Kartta hesaplanmış oranlar varsa onları tercih et; yeni ağ isteği yok.
-    var dTxt=fdCardMetric(code,'fd'), wTxt=fdCardMetric(code,'fw'), mTxt=fdCardMetric(code,'fm');
-    function pctFromText(s){
-      var m=String(s||'').match(/[-+]?\s*%?\s*([0-9]+(?:[.,][0-9]+)?)/);
-      if(!m) return NaN;
-      var n=parseFloat(m[1].replace(',','.'));
-      return /▼|-/.test(s)?-n:n;
-    }
-    var x=pctFromText(dTxt); if(isFinite(x)) daily=x;
-    x=pctFromText(wTxt); if(isFinite(x)) weekly=x;
-    x=pctFromText(mTxt); if(isFinite(x)) monthly=x;
-
-    var reportDate=fund.aciklamaTarihi||'—';
-    var holdingCount=Array.isArray(fund.holdings)?fund.holdings.length:0;
-    var holdingTotal=(fund.holdings||[]).reduce(function(s,h){return s+(Number(h.weight)||0)},0);
-    var price=Number(info.price||0);
+    var lastSet=fdLastPositiveSet(code);
+    var pnl=(current&&lastSet.amount)?current-lastSet.amount:0;
+    var pnlPct=lastSet.amount>0?pnl/lastSet.amount*100:0;
+    var today=fdTodayPct(code);
+    var priceText=fdUnitPriceText(code);
 
     var overlay=document.createElement('div');
     overlay.className='fund-detail-overlay';
@@ -12163,37 +12243,76 @@ async function fetchAllFunds_V19_OVERRIDE_DISABLED(){
       +'<div class="fund-detail-body">'
       +'<div class="fund-detail-metrics">'
       +'<div class="fund-detail-metric"><div class="fund-detail-metric-label">Güncel Değer</div><div class="fund-detail-metric-value">'+(current?fdMoney(current):'—')+'</div></div>'
-      +'<div class="fund-detail-metric"><div class="fund-detail-metric-label">Son Portföy Seti</div><div class="fund-detail-metric-value">'+(basis?fdMoney(basis):'—')+'</div></div>'
-      +'<div class="fund-detail-metric"><div class="fund-detail-metric-label">Setten Bu Yana K/Z</div><div class="fund-detail-metric-value" style="color:'+fdPctClass(pnl)+'">'+(basis?((pnl>=0?'+':'')+fdMoney(pnl)+' · '+fdPct(pnlPct)):'—')+'</div></div>'
-      +'<div class="fund-detail-metric"><div class="fund-detail-metric-label">Birim Fiyat</div><div class="fund-detail-metric-value">'+fdPrice(price)+'</div></div>'
-      +'<div class="fund-detail-metric"><div class="fund-detail-metric-label">Bugün</div><div class="fund-detail-metric-value" style="color:'+fdPctClass(daily)+'">'+fdPct(daily)+'</div></div>'
+      +'<div class="fund-detail-metric"><div class="fund-detail-metric-label">Son Portföy Seti · '+fdEsc(lastSet.date)+'</div><div class="fund-detail-metric-value">'+(lastSet.amount?fdMoney(lastSet.amount):'—')+'</div></div>'
+      +'<div class="fund-detail-metric"><div class="fund-detail-metric-label">Setten Bu Yana K/Z</div><div class="fund-detail-metric-value" style="color:'+fdColor(pnl)+'">'+(lastSet.amount?((pnl>=0?'+':'')+fdMoney(pnl)+' · '+fdPct(pnlPct)):'—')+'</div></div>'
+      +'<div class="fund-detail-metric"><div class="fund-detail-metric-label">Birim Fiyat</div><div class="fund-detail-metric-value">'+fdEsc(priceText)+'</div></div>'
+      +'<div class="fund-detail-metric"><div class="fund-detail-metric-label">Bugün</div><div class="fund-detail-metric-value" style="color:'+fdColor(today)+'">'+(fdElText('fd-'+code.toLowerCase())||'—')+'</div></div>'
       +'</div>'
       +'<div class="fund-detail-grid">'
       +'<div class="fund-detail-panel"><div class="fund-detail-panel-title">PORTFÖY İÇERİĞİ / AĞIRLIKLAR</div>'
-      +'<div class="fund-detail-panel-sub">Mevcut cache kullanılır; panel açılırken Ekofin’e yeni sorgu gönderilmez.</div>'+fdBuildHoldings(code)+'</div>'
+      +'<div class="fund-detail-panel-sub" id="fd-holdings-status">Ekofin’den '+fdEsc(code)+' güncel portföy dağılımı alınıyor…</div>'
+      +'<div id="fd-holdings-body"><div class="fund-detail-empty">Veri çekiliyor…</div></div></div>'
       +'<div style="display:grid;gap:14px;align-content:start">'
-      +'<div class="fund-detail-panel"><div class="fund-detail-panel-title">PERFORMANS</div><div class="fund-detail-panel-sub">Kartta hesaplanmış mevcut günlük / haftalık / aylık oranlar</div>'
-      +fdBuildPerformance({daily:daily,weekly:weekly,monthly:monthly})+'</div>'
+      +'<div class="fund-detail-panel"><div class="fund-detail-panel-title">SON 5 İŞLEM GÜNÜ PERFORMANSI</div>'
+      +'<div class="fund-detail-panel-sub">ORKA günlük hesap motorundaki fon getirileri · tarih bazında</div>'
+      +fdBuildFiveDayPerformance(code)+'</div>'
       +'<div class="fund-detail-panel"><div class="fund-detail-panel-title">VERİ BİLGİSİ</div>'
-      +'<div class="fund-detail-meta">'
-      +'<div class="fund-detail-meta-item">Ağırlık raporu<br><b>'+fdEsc(reportDate)+'</b></div>'
-      +'<div class="fund-detail-meta-item">Kayıtlı varlık<br><b>'+holdingCount+' kalem</b></div>'
-      +'<div class="fund-detail-meta-item">Ağırlık toplamı<br><b>%'+holdingTotal.toFixed(2)+'</b></div>'
-      +'<div class="fund-detail-meta-item">Fiyat kaynağı<br><b>'+fdEsc(info.source||info.priceSource||'TEFAS / Cache')+'</b></div>'
+      +'<div class="fund-detail-meta" id="fd-meta">'
+      +'<div class="fund-detail-meta-item">Ağırlık raporu<br><b>Ekofin bekleniyor…</b></div>'
+      +'<div class="fund-detail-meta-item">Kayıtlı varlık<br><b>—</b></div>'
+      +'<div class="fund-detail-meta-item">Ağırlık toplamı<br><b>—</b></div>'
+      +'<div class="fund-detail-meta-item">Fon değeri / fiyat<br><b>ORKA + TEFAS</b></div>'
       +'</div></div>'
       +'<div class="fund-detail-panel"><div class="fund-detail-panel-title">PORTFÖY SET / İŞLEM GEÇMİŞİ</div>'
-      +'<div class="fund-detail-panel-sub">ORKA’da kayıtlı fon tutarı değişiklikleri</div>'+fdBuildTransactions(code)+'</div>'
+      +'<div class="fund-detail-panel-sub">ORKA’da kayıtlı gerçek fon tutarı değişiklikleri</div>'+fdBuildTransactions(code)+'</div>'
       +'</div></div></div></div>';
 
     overlay.addEventListener('click',function(e){if(e.target===overlay) closeFundDetail();});
     document.body.appendChild(overlay);
+
+    // Ağırlıkları panel açıldığında gerçekten Ekofin'den çek.
+    var fresh=await fdFetchFreshEkofin(code);
+    if(!document.getElementById('fund-detail-overlay')) return;
+    var body=document.getElementById('fd-holdings-body');
+    var status=document.getElementById('fd-holdings-status');
+    var meta=document.getElementById('fd-meta');
+
+    if(fresh && Array.isArray(fresh.holdings)){
+      var hs=fresh.holdings;
+      var total=hs.reduce(function(s,h){return s+(Number(h.weight)||0);},0);
+      if(body) body.innerHTML=fdBuildHoldings(hs);
+      if(status) status.textContent='Ekofin güncel veri · '+hs.length+' kalem · '+(fresh.aciklamaTarihi||fresh.latestDate||'tarih yok');
+      if(meta) meta.innerHTML=
+        '<div class="fund-detail-meta-item">Ağırlık raporu<br><b>'+fdEsc(fresh.aciklamaTarihi||fresh.latestDate||'—')+'</b></div>'
+        +'<div class="fund-detail-meta-item">Kayıtlı varlık<br><b>'+hs.length+' kalem</b></div>'
+        +'<div class="fund-detail-meta-item">Ağırlık toplamı<br><b>%'+total.toFixed(2)+'</b></div>'
+        +'<div class="fund-detail-meta-item">Ağırlık kaynağı<br><b>Ekofin · canlı</b></div>';
+      // Taze sonucu ana cache'e de yaz ki sonraki ORKA ekranı bundan faydalansın.
+      try{
+        if(typeof FUNDS!=='undefined' && FUNDS[code]){
+          FUNDS[code].holdings=hs;
+          FUNDS[code].aciklamaTarihi=fresh.aciklamaTarihi||fresh.latestDate||FUNDS[code].aciklamaTarihi;
+          if(typeof saveFunds==='function') saveFunds();
+        }
+      }catch(e){}
+    }else{
+      if(body) body.innerHTML=fdBuildHoldings(fund.holdings||[]);
+      if(status) status.textContent='Ekofin canlı sorgusu alınamadı; mevcut ORKA cache gösteriliyor.';
+      var hs2=Array.isArray(fund.holdings)?fund.holdings:[];
+      var total2=hs2.reduce(function(s,h){return s+(Number(h.weight)||0);},0);
+      if(meta) meta.innerHTML=
+        '<div class="fund-detail-meta-item">Ağırlık raporu<br><b>'+fdEsc(fund.aciklamaTarihi||'—')+'</b></div>'
+        +'<div class="fund-detail-meta-item">Kayıtlı varlık<br><b>'+hs2.length+' kalem</b></div>'
+        +'<div class="fund-detail-meta-item">Ağırlık toplamı<br><b>%'+total2.toFixed(2)+'</b></div>'
+        +'<div class="fund-detail-meta-item">Ağırlık kaynağı<br><b>ORKA cache</b></div>';
+    }
   };
 
   document.addEventListener('keydown',function(e){
     if(e.key==='Escape'&&document.getElementById('fund-detail-overlay')) closeFundDetail();
   });
 
-  console.log('ORKA V33 hazır: Fon kartlarına cache tabanlı Fon Detay Paneli eklendi; panel yeni ağ isteği oluşturmaz.');
+  console.log('ORKA V34 hazır: Fon detayında gerçek kart değerleri, canlı Ekofin ağırlıkları ve son 5 işlem günü performansı kullanılıyor.');
 })();
 </script>
 
