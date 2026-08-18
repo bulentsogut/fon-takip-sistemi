@@ -422,33 +422,8 @@ function extractPriceInfo(html, fundCode) {
   return (info.price > 0 || info.dailyReturn || info.weeklyReturn || info.monthlyReturn) ? info : null;
 }
 
-function historicalUrls(code) {
-  const c = encodeURIComponent(code);
-  return [
-    `https://ekofin.net/fonlar/detay/${c}/historical-distribution?fonKodu=${c}`,
-    `https://ekofin.net/fonlar/detay/${c}/fon-portfoyu/historical-distribution?fonKodu=${c}`,
-    `https://ekofin.net/historical-distribution?fonKodu=${c}`,
-    `https://ekofin.net/api/historical-distribution?fonKodu=${c}`
-  ];
-}
-
-async function loadHistoricalPortfolio(code, attempts) {
-  for (const url of historicalUrls(code)) {
-    try {
-      const r = await httpsGet(url, 12000);
-      attempts.push({ step: 'historical-distribution', url, status: r.status, contentType: r.headers['content-type'] || '', len: (r.body || '').length });
-      if (r.status < 200 || r.status >= 300) continue;
-      const rows = rowsFromJsonText(r.body);
-      const holdings = normalizeHistoricalRows(rows, code);
-      attempts[attempts.length - 1].rows = rows.length;
-      attempts[attempts.length - 1].parsed = holdings.length;
-      if (holdings.length) return holdings;
-    } catch (err) {
-      attempts.push({ step: 'historical-distribution', url, error: err && err.message ? err.message : String(err) });
-    }
-  }
-  return [];
-}
+// ORKA V31: Sürekli 404 dönen historical-distribution denemeleri kaldırıldı.
+// Portföy doğrudan çalışan /fon-portfoyu sayfasından okunur.
 
 async function loadHtmlPortfolio(code, attempts) {
   const url = `https://ekofin.net/fonlar/detay/${encodeURIComponent(code)}/fon-portfoyu`;
@@ -528,8 +503,7 @@ export default async function handler(req, res) {
   let carried = [];
 
   if (mode !== 'info') {
-    portfolio = await loadHistoricalPortfolio(code, attempts);
-    if (!portfolio.length) portfolio = await loadHtmlPortfolio(code, attempts);
+    portfolio = await loadHtmlPortfolio(code, attempts);
     carried = await loadCarriedFunds(code, attempts);
   }
 
