@@ -2465,7 +2465,7 @@ tbody tr:hover{background:rgba(0,180,255,0.035);}
 }
 
 
-/* ORKA V34 — Fon kartı detay paneli */
+/* ORKA V34.1 — Fon kartı detay paneli */
 .fcard.fund-detail-clickable{cursor:pointer;transition:transform .16s ease,border-color .16s ease,box-shadow .16s ease;}
 .fcard.fund-detail-clickable:hover{transform:translateY(-2px);box-shadow:0 14px 34px rgba(0,0,0,.28);}
 .fund-detail-overlay{position:fixed;inset:0;z-index:12000;background:rgba(2,7,14,.88);backdrop-filter:blur(9px);display:flex;align-items:center;justify-content:center;padding:20px;}
@@ -3888,7 +3888,7 @@ function getPortfoyGorunenFonlar(){
   return getTumFonlar().filter(function(f){ return !isFonSatildi(f); });
 }
 
-// ORKA V34: Ağ/veri güncellemelerinde yalnızca bugün portföyde aktif olan fonlar kullanılır.
+// ORKA V34.1: Ağ/veri güncellemelerinde yalnızca bugün portföyde aktif olan fonlar kullanılır.
 // Satılmış fonlar geçmiş raporlarda korunur ancak TEFAS/Ekofin arka plan isteklerine dahil edilmez.
 function getAktifGuncellemeFonlari(){
   var fonlar = [];
@@ -12009,13 +12009,13 @@ async function fetchAllFunds_V19_OVERRIDE_DISABLED(){
     if (button) button.disabled = false;
   };
 
-  console.log('ORKA V34 hazır: Fon Detay Paneli eklendi; yalnızca aktif portföy fonları güncelleniyor.');
+  console.log('ORKA V34.1 hazır: Fon Detay Paneli eklendi; yalnızca aktif portföy fonları güncelleniyor.');
 })();
 </script>
 
 
 <script>
-/* ORKA V34 — Gerçek Fon Detay Verileri
+/* ORKA V34.1 — Gerçek Fon Detay Verileri
    - Güncel değer ve birim fiyat doğrudan ekrandaki hesaplanmış fon kartından okunur.
    - Son portföy seti ORKA işlem geçmişindeki son pozitif set kaydıdır.
    - K/Z = güncel fon değeri - son portföy seti.
@@ -12175,6 +12175,13 @@ async function fetchAllFunds_V19_OVERRIDE_DISABLED(){
     var byDate={};
     out.forEach(function(x){byDate[x.date]=x;});
     out=Object.keys(byDate).map(function(k){return byDate[k];}).sort(function(a,b){return a.ts-b.ts;});
+
+    // Detay ekranı bugünün performansını zaten üstte ayrı gösteriyor.
+    // Grafik bu nedenle bugünden ÖNCEKİ 5 tamamlanmış işlem gününü göstermeli.
+    var now=new Date();
+    var todayStart=new Date(now.getFullYear(),now.getMonth(),now.getDate()).getTime();
+    out=out.filter(function(x){ return x.ts < todayStart; });
+
     return out.slice(-5);
   }
 
@@ -12312,7 +12319,7 @@ async function fetchAllFunds_V19_OVERRIDE_DISABLED(){
     if(e.key==='Escape'&&document.getElementById('fund-detail-overlay')) closeFundDetail();
   });
 
-  console.log('ORKA V34 hazır: Fon detayında gerçek kart değerleri, canlı Ekofin ağırlıkları ve son 5 işlem günü performansı kullanılıyor.');
+  console.log('ORKA V34.1.1 hazır: Fon detayında performans grafiği bugünden önceki 5 tamamlanmış işlem gününü gösteriyor.');
 })();
 </script>
 

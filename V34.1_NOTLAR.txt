@@ -1,0 +1,5 @@
+ORKA V34.1
+- Fon detayındaki 'Son 5 İşlem Günü Performansı' düzeltildi.
+- Bugün grafiğe dahil edilmez.
+- Grafik bugünden önceki en yakın 5 tamamlanmış işlem gününü gösterir.
+- V34'teki gerçek değer, canlı Ekofin ağırlıkları ve diğer detay paneli özellikleri korunmuştur.
