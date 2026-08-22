@@ -2570,6 +2570,85 @@ tbody tr:hover{background:rgba(0,180,255,0.035);}
   opacity:1!important;
 }
 
+
+/* ORKA V34.7 — Aya göre yalnızca mevcut fonları gösteren aylık özet */
+.month-compact-row td{
+  padding:0!important;
+  background:#09131e!important;
+  border-bottom:1px solid #173247!important;
+}
+.month-compact-wrap{
+  display:grid;
+  grid-template-columns:110px minmax(0,1fr) 180px;
+  align-items:stretch;
+  gap:12px;
+  padding:12px 14px;
+}
+.month-compact-name{
+  display:flex;
+  align-items:center;
+  color:#80cfff;
+  font-family:var(--display);
+  font-size:.78rem;
+  font-weight:900;
+  letter-spacing:.08em;
+}
+.month-compact-funds{
+  display:flex;
+  flex-wrap:wrap;
+  gap:9px;
+  align-items:center;
+}
+.month-fund-chip{
+  min-width:145px;
+  padding:9px 11px;
+  border:1px solid rgba(79,163,255,.25);
+  border-radius:9px;
+  background:#0d1c29;
+  display:grid;
+  grid-template-columns:52px 1fr;
+  gap:4px 10px;
+  align-items:center;
+}
+.month-fund-code{
+  grid-row:1 / span 2;
+  font-family:var(--display);
+  font-size:.72rem;
+  font-weight:900;
+  letter-spacing:.06em;
+  align-self:center;
+}
+.month-fund-pct,.month-fund-tl{
+  font-family:var(--mono);
+  font-size:.68rem;
+  font-weight:850;
+  text-align:right;
+}
+.month-compact-total{
+  border-left:2px solid rgba(79,163,255,.45);
+  padding-left:15px;
+  display:grid;
+  grid-template-columns:1fr;
+  align-content:center;
+  justify-items:end;
+}
+.month-total-title{
+  color:#8fb4cf;
+  font-family:var(--display);
+  font-size:.62rem;
+  font-weight:900;
+  letter-spacing:.08em;
+}
+.month-total-value{
+  font-family:var(--mono);
+  font-size:.75rem;
+  font-weight:900;
+}
+@media(max-width:900px){
+  .month-compact-wrap{grid-template-columns:1fr;}
+  .month-compact-total{border-left:0;border-top:1px solid rgba(79,163,255,.35);padding:10px 0 0;justify-items:start;}
+}
+
 </style>
 
 <script>
@@ -5207,26 +5286,28 @@ function render(){
     tbody.appendChild(wtr2);
   });
 
-  // ORKA V34.4 — TÜM AYLAR / FON BAZINDA TOPLAM YÜZDELER
-  // Günlük detay tablosunun en altında mevcut bütün aylar ayrı satır olarak gösterilir.
-  // Her fonun aylık toplamı kendi % sütununun tam altındadır.
+  // ORKA V34.7 — AYA GÖRE FONLAR
+  // Her ay yalnızca o ayda gerçekten veri/pozisyon bulunan fonlar gösterilir.
+  // Böylece bugün portföyde olmayan veya o ayda bulunmayan fonlar boş kolon olarak görünmez.
   var monthNames={ocak:'OCAK',subat:'ŞUBAT',mart:'MART',nisan:'NİSAN',mayis:'MAYIS',
                   haziran:'HAZİRAN',temmuz:'TEMMUZ',agustos:'AĞUSTOS',eylul:'EYLÜL',
                   ekim:'EKİM',kasim:'KASIM',aralik:'ARALIK'};
   var monthOrder=['ocak','subat','mart','nisan','mayis','haziran','temmuz','agustos','eylul','ekim','kasim','aralik'];
 
-  // Günlük detay başlığındaki fon kolonları mümkün olduğunca tüm tarihsel fonları kapsasın.
-  // Satılmış fonların geçmiş aylık getirileri kaybolmasın.
-  try{
-    if(typeof getTumFonlar==='function'){
-      var tarihselFonlar=getTumFonlar();
-      if(Array.isArray(tarihselFonlar) && tarihselFonlar.length){
-        tarihselFonlar.forEach(function(f){
-          if(tumFonlar.indexOf(f)<0) tumFonlar.push(f);
-        });
-      }
+  var LEGACY_MONTH_FUND_SUMMARY={
+    'ocak-2026':{
+      DFI:{pct:8.33,tl:57794}, TLY:{pct:10.04,tl:32100}
+    },
+    'subat-2026':{
+      DFI:{pct:7.57,tl:59438}, TLY:{pct:15.23,tl:92872}, PHE:{pct:0.96,tl:144}
+    },
+    'mart-2026':{
+      DFI:{pct:8.90,tl:61198}, TLY:{pct:16.47,tl:126939}, PHE:{pct:12.51,tl:66999}
+    },
+    'nisan-2026':{
+      DFI:{pct:7.17,tl:42420}, TLY:{pct:10.09,tl:102003}, PHE:{pct:9.61,tl:76285}
     }
-  }catch(e){}
+  };
 
   var allMonthKeys=Object.keys(MONTH_DATA||{}).filter(function(k){
     var mo=MONTH_DATA[k];
@@ -5244,95 +5325,89 @@ function render(){
   if(allMonthKeys.length){
     var sep=document.createElement('tr');
     sep.className='month-total-section-head';
-    sep.innerHTML='<td colspan="'+(1+tumFonlar.length*3+3)+'">AYLIK FON GETİRİ TOPLAMLARI · HER FONUN % SÜTUNUNDA</td>';
+    sep.innerHTML='<td colspan="'+(1+tumFonlar.length*3+3)+'">AYLIK FON GETİRİLERİ · SADECE O AYDA BULUNAN FONLAR</td>';
     tbody.appendChild(sep);
   }
 
-  // ORKA V34.6 — Eski alt özet tablosundaki gerçek geçmiş ay fon verileri.
-  // MONTH_DATA.days içinde geçmiş fonDetay bulunmadığında bu kayıtlar kullanılır.
-  var LEGACY_MONTH_FUND_SUMMARY={
-    'ocak-2026':{
-      DFI:{pct:8.33,tl:57794}, TLY:{pct:10.04,tl:32100}
-    },
-    'subat-2026':{
-      DFI:{pct:7.57,tl:59438}, TLY:{pct:15.23,tl:92872}, PHE:{pct:0.96,tl:144}
-    },
-    'mart-2026':{
-      DFI:{pct:8.90,tl:61198}, TLY:{pct:16.47,tl:126939}, PHE:{pct:12.51,tl:66999}
-    },
-    'nisan-2026':{
-      DFI:{pct:7.17,tl:42420}, TLY:{pct:10.09,tl:102003}, PHE:{pct:9.61,tl:76285}
-    }
-  };
-
   allMonthKeys.forEach(function(mKey){
     var mo=MONTH_DATA[mKey]||{};
-    var totalRow=document.createElement('tr');
-    totalRow.className='month-pct-total-row';
-
     var base=String(mKey).split('-')[0];
-    var label=monthNames[base]||base.toUpperCase();
-    var html='<td><span class="month-total-label">'+label+'</span></td>';
+    var monthLabel=monthNames[base]||base.toUpperCase();
 
-    tumFonlar.forEach(function(f){
-      var fPct=0, fTL=0, hasData=false;
+    // Ay içinde veri bulunan fonları topla.
+    var monthFunds={};
 
-      // 1) Öncelik: MONTH_DATA içinde daha önce hesaplanmış fon aylık özeti.
-      var storedFund=(mo.funds||{})[String(f).toLowerCase()] || (mo.funds||{})[String(f).toUpperCase()];
-      if(storedFund && (storedFund.pct!=null || storedFund.tl!=null)){
-        fPct=Number(storedFund.pct)||0;
-        fTL=Number(storedFund.tl)||0;
-        hasData=true;
+    // 1) Kaydedilmiş aylık fon özetleri
+    Object.keys(mo.funds||{}).forEach(function(f){
+      var rec=(mo.funds||{})[f]||{};
+      if(rec.pct!=null || rec.tl!=null){
+        monthFunds[String(f).toUpperCase()]={pct:Number(rec.pct)||0,tl:Number(rec.tl)||0};
       }
+    });
 
-      // 2) Günlük fonDetay varsa ay toplamını günlük kayıtlardan üret.
-      if(!hasData){
-        (mo.days||[]).forEach(function(day){
-          var det=(day.fonDetay && (day.fonDetay[f]||day.fonDetay[String(f).toUpperCase()]||day.fonDetay[String(f).toLowerCase()])) || null;
-          if(det && Object.prototype.hasOwnProperty.call(det,'pct')){
-            fPct += Number(det.pct)||0;
-            fTL += Number(det.tl)||0;
-            hasData=true;
-          }
-        });
-      }
-
-      // 3) Ocak–Nisan eski alt tabloda bulunan geçmiş kayıtlar.
-      if(!hasData){
-        var legacy=(LEGACY_MONTH_FUND_SUMMARY[mKey]||{})[String(f).toUpperCase()];
-        if(legacy){
-          fPct=Number(legacy.pct)||0;
-          fTL=Number(legacy.tl)||0;
-          hasData=true;
+    // 2) Günlük fonDetay kayıtlarından ay toplamları
+    (mo.days||[]).forEach(function(day){
+      Object.keys(day.fonDetay||{}).forEach(function(f){
+        var det=day.fonDetay[f]||{};
+        var code=String(f).toUpperCase();
+        if(!monthFunds[code]) monthFunds[code]={pct:0,tl:0};
+        if(Object.prototype.hasOwnProperty.call(det,'pct')){
+          monthFunds[code].pct += Number(det.pct)||0;
+          monthFunds[code].tl += Number(det.tl)||0;
         }
+      });
+    });
+
+    // 3) Eski alt tabloda yer alan geçmiş ay verileri
+    Object.keys(LEGACY_MONTH_FUND_SUMMARY[mKey]||{}).forEach(function(f){
+      if(!monthFunds[f]){
+        var legacy=LEGACY_MONTH_FUND_SUMMARY[mKey][f];
+        monthFunds[f]={pct:Number(legacy.pct)||0,tl:Number(legacy.tl)||0};
       }
+    });
 
+    // Sıfır/verisiz fonları ayıklayıp sadece o ayda gerçekten görünenleri bırak.
+    var monthFundList=Object.keys(monthFunds).filter(function(f){
+      var x=monthFunds[f]||{};
+      return Math.abs(Number(x.pct)||0)>0.0000001 || Math.abs(Number(x.tl)||0)>0.5;
+    });
+
+    if(!monthFundList.length) return;
+
+    var row=document.createElement('tr');
+    row.className='month-compact-row';
+
+    var cells='<td colspan="'+(1+tumFonlar.length*3+3)+'">';
+    cells+='<div class="month-compact-wrap">';
+    cells+='<div class="month-compact-name">'+monthLabel+'</div>';
+    cells+='<div class="month-compact-funds">';
+
+    monthFundList.forEach(function(f){
+      var rec=monthFunds[f]||{};
       var renk=getFonRenk(f);
-      var cls=fPct>0?'gp':fPct<0?'gn':'gz';
-      var tlCls=fTL>0?'gp':fTL<0?'gn':'gz';
-      var pctText=hasData ? ((fPct>0?'+':'')+fPct.toFixed(3)+'%') : '—';
-      var tlText=hasData ? ((fTL>0?'+':'')+fmt(fTL)) : '—';
-
-      // Eski alt özet tablosundaki iki temel veri artık burada:
-      // % sütununda aylık fon yüzdesi, TL sütununda aylık fon K/Z.
-      html+='<td class="fon-sep month-total-pct '+cls+'" style="color:'+renk+'">'+pctText+'</td>';
-      html+='<td class="month-total-fon-tl '+tlCls+'">'+tlText+'</td>';
-      html+='<td class="month-total-empty">—</td>';
+      var pct=Number(rec.pct)||0;
+      var tl=Number(rec.tl)||0;
+      cells+='<div class="month-fund-chip" style="border-color:'+renk+'55">'
+        +'<div class="month-fund-code" style="color:'+renk+'">'+f+'</div>'
+        +'<div class="month-fund-pct '+(pct>0?'gp':pct<0?'gn':'gz')+'">'+(pct>0?'+':'')+pct.toFixed(2)+'%</div>'
+        +'<div class="month-fund-tl '+(tl>0?'gp':tl<0?'gn':'gz')+'">'+(tl>0?'+':'')+fmt(tl)+'</div>'
+        +'</div>';
     });
 
     var generalPct=Number(mo.pct);
     var generalTL=Number(mo.total)||0;
-    var gpctText=Number.isFinite(generalPct)
-      ? ((generalPct>0?'+':'')+generalPct.toFixed(3)+'%')
-      : '—';
-    var gcls=generalPct>0?'gp':generalPct<0?'gn':'gz';
+    cells+='</div>';
+    cells+='<div class="month-compact-total">'
+      +'<div class="month-total-title">TOPLAM</div>'
+      +'<div class="month-total-value '+(generalPct>0?'gp':generalPct<0?'gn':'gz')+'">'
+      +(Number.isFinite(generalPct)?((generalPct>0?'+':'')+generalPct.toFixed(2)+'%'):'—')
+      +'</div>'
+      +'<div class="month-total-value '+(generalTL>0?'gp':generalTL<0?'gn':'gz')+'">'+(generalTL>0?'+':'')+fmt(generalTL)+'</div>'
+      +'</div>';
+    cells+='</div></td>';
 
-    html+='<td class="fon-sep month-total-pct '+gcls+'">'+gpctText+'</td>';
-    html+='<td class="month-total-tl '+(generalTL>=0?'gp':'gn')+'">'+fmt(generalTL)+'</td>';
-    html+='<td class="month-total-empty">—</td>';
-
-    totalRow.innerHTML=html;
-    tbody.appendChild(totalRow);
+    row.innerHTML=cells;
+    tbody.appendChild(row);
   });
 
   // ORKA V34.5 — Eski alt aylık özet tablosu kaldırıldı.
@@ -12230,7 +12305,7 @@ async function fetchAllFunds_V19_OVERRIDE_DISABLED(){
     if (button) button.disabled = false;
   };
 
-  console.log('ORKA V34.6 hazır: Eski aylık fon yüzde ve TL verileri yeni tek tabloda geri yüklendi.');
+  console.log('ORKA V34.7 hazır: Aylık özetlerde yalnızca ilgili ayda gerçekten bulunan fonlar gösteriliyor.');
 })();
 </script>
 

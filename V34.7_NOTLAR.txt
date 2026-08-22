@@ -1,0 +1,9 @@
+ORKA V34.7 — Aya Göre Fonlar
+
+- Aylık özet artık sabit tüm fon kolonlarını göstermiyor.
+- Her ay satırında yalnızca o ayda gerçekten bulunan/verisi olan fonlar gösteriliyor.
+- Böylece o ay portföyde olmayan fonlar ekranda görünmüyor.
+- Her fon kartında o aya ait yüzde getiri ve TL K/Z birlikte gösteriliyor.
+- Her ayın en sağında TOPLAM yüzde ve TOPLAM TL getirisi ayrı ve belirgin gösteriliyor.
+- Geçmiş aylardaki satılmış fonlar yalnızca gerçekten bulundukları aylarda görünür.
+- Eski alt aylık özet tablosu geri getirilmedi.
