@@ -3367,6 +3367,19 @@ function updateAktifAyForMonth(ayKey, rows){
     wk.total=wd.reduce(function(s,d){ return s+(d.kz||0); },0);
   });
   mo.total=days.reduce(function(s,d){ return s+(d.kz||0); },0);
+
+  // ORKA V34.2 — Aylık getiri yüzdesi:
+  // O ayın TL K/Z'si / ay açılışındaki fon portföy toplamı × 100.
+  // Zincir yapıda bu açılış toplamı bir önceki ayın kapanış fon toplamıdır.
+  var openingTotal = 0;
+  if(rows && rows.length && rows[0] && rows[0].wkBas){
+    openingTotal = Object.keys(rows[0].wkBas).reduce(function(s,f){
+      return s + (Number(rows[0].wkBas[f]) || 0);
+    },0);
+  }
+  mo.openingTotal = openingTotal;
+  mo.pct = openingTotal > 0 ? (mo.total / openingTotal * 100) : null;
+
   mo.activeFunds=gorunenFonlar.map(function(f){ return f.toLowerCase(); });
   // Funds toplamları
   mo.funds={};
@@ -5374,6 +5387,17 @@ function updateAktifAyDays(merged, rows){
 
   mo.days = days;
   mo.total = days.reduce(function(s,d){ return s+(d.kz||0); },0);
+
+  // ORKA V34.2 — Aktif ayda da aynı aylık yüzde formülünü kullan.
+  var openingTotal = 0;
+  if(rows && rows.length && rows[0] && rows[0].wkBas){
+    openingTotal = Object.keys(rows[0].wkBas).reduce(function(s,f){
+      return s + (Number(rows[0].wkBas[f]) || 0);
+    },0);
+  }
+  mo.openingTotal = openingTotal;
+  mo.pct = openingTotal > 0 ? (mo.total / openingTotal * 100) : null;
+
   mo.activeFunds = gorunenFonlar.map(function(f){ return f.toLowerCase(); });
   mo.funds = {};
   tumFonlar.forEach(function(f){
@@ -5389,13 +5413,10 @@ function updateAktifAyDays(merged, rows){
   var pctEl  = document.getElementById('mo-'+ayKey.toLowerCase()+'-pct');
   if(karEl) karEl.textContent = fmt(mo.total);
   if(pctEl){
-    var bas = HAZ_TRX_BASLANGIC.length>0 && ayKey!==BASE_MONTH_KEY
-      ? HAZ_TRX_BASLANGIC.reduce(function(s,t){ return s+t.miktar; },0)
-      : (function(){ var trx=loadTrx(); return getTumFonlar().reduce(function(s,f){
-          var ft=trxForFon(trx,f); var ilk=ft.find(function(t){ return t.miktar>0; });
-          return s+(ilk?ilk.miktar:0); },0); })();
-    var pct = bas>0 ? mo.total/bas*100 : 0;
-    pctEl.textContent = (mo.total>=0?'▲ ':'▼ ')+'%'+Math.abs(pct).toFixed(2);
+    var pct = Number(mo.pct);
+    pctEl.textContent = Number.isFinite(pct)
+      ? ((mo.total>=0?'▲ ':'▼ ')+'%'+Math.abs(pct).toFixed(2))
+      : '—';
     pctEl.className = 'mopct '+(mo.total>=0?'gp':'gn');
   }
 }
@@ -12009,7 +12030,7 @@ async function fetchAllFunds_V19_OVERRIDE_DISABLED(){
     if (button) button.disabled = false;
   };
 
-  console.log('ORKA V34.1 hazır: Fon Detay Paneli eklendi; yalnızca aktif portföy fonları güncelleniyor.');
+  console.log('ORKA V34.2 hazır: Aylık yüzde getirileri önceki ay kapanış fon toplamına göre hesaplanıyor.');
 })();
 </script>
 
