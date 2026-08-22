@@ -2649,12 +2649,6 @@ tbody tr:hover{background:rgba(0,180,255,0.035);}
   .month-compact-total{border-left:0;border-top:1px solid rgba(79,163,255,.35);padding:10px 0 0;justify-items:start;}
 }
 
-
-/* ORKA V34.9 — Güvenli UI temizliği.
-   Formül Yapısı DOM'da kalır; hesaplama/JS zinciri bozulmasın diye sadece görünmez yapılır. */
-body:has(.fgrid) .fbox:has(.fgrid){display:none!important;}
-p.stitle:has(+ .fbox .fgrid){display:none!important;}
-
 </style>
 
 <script>
@@ -2857,8 +2851,8 @@ window.addEventListener('unhandledrejection', function(ev){
   </table></div>
 </div>
 
-<p class="stitle">Formül Yapısı</p>
-<div class="fbox"><div class="fgrid">
+<p class="stitle" style="display:none!important">Formül Yapısı</p>
+<div class="fbox" style="display:none!important"><div class="fgrid">
   <div class="fitem"><div class="finame">Günlük TL Yansıması</div><div class="ficode">= Fon_Değeri × Getiri_%</div><div class="fidesc">Önceki günkü fon değeri × girilen yüzde oranı</div></div>
   <div class="fitem"><div class="finame">Gün Sonu Fon Değeri</div><div class="ficode">= Önceki + TL_Yansıması</div><div class="fidesc">Her gün kümülatif olarak güncellenir</div></div>
   <div class="fitem"><div class="finame">Sepet Toplamı</div><div class="ficode">= DFI + TLY + PHE + CPT</div><div class="fidesc">Dört fonun gün sonu değerlerinin toplamı</div></div>
@@ -4050,7 +4044,27 @@ function isFonSatildi(fon){
 // Satılan fonlar hesap/geçmiş kayıtlarında korunur; ancak kartlarda, günlük detaylarda,
 // tahmin/analiz listelerinde ve aylık drilldown tablolarında gösterilmez.
 function getPortfoyGorunenFonlar(){
-  return getTumFonlar().filter(function(f){ return !isFonSatildi(f); });
+  // ORKA V35:
+  // Güncel portföy ekranlarında sadece BUGÜN itibarıyla son işlem miktarı > 0 olan fonlar görünür.
+  // Geçmişte bulunmuş/satılmış fonlar MONTH_DATA ve geçmiş raporlarda korunur.
+  try{
+    var today=getAppToday();
+    var todayStr=String(today.getDate()).padStart(2,'0')+'.'
+      +String(today.getMonth()+1).padStart(2,'0')+'.'
+      +today.getFullYear();
+
+    var aktif=(typeof getAktifFonlar==='function') ? getAktifFonlar(todayStr) : [];
+    var deleted=loadDeletedFonlar();
+
+    return Array.from(new Set((aktif||[]).map(function(f){
+      return String(f||'').trim().toUpperCase();
+    }).filter(function(f){
+      return f && deleted.indexOf(f)<0;
+    })));
+  }catch(e){
+    // Güvenli yedek: eski davranış.
+    return getTumFonlar().filter(function(f){ return !isFonSatildi(f); });
+  }
 }
 
 // ORKA V34.1: Ağ/veri güncellemelerinde yalnızca bugün portföyde aktif olan fonlar kullanılır.
@@ -5068,7 +5082,8 @@ function genelVarlikFonToplami(fonBakiye){
       var hesap=compute(merged);
       fonBakiye=hesap&&hesap.bakiye?hesap.bakiye:{};
     }
-    return Object.keys(fonBakiye||{}).reduce(function(t,k){ return t+(Number(fonBakiye[k])||0); },0);
+    var aktifFonlar=(typeof getPortfoyGorunenFonlar==='function') ? getPortfoyGorunenFonlar() : Object.keys(fonBakiye||{});
+    return aktifFonlar.reduce(function(t,k){ return t+(Number((fonBakiye||{})[k])||0); },0);
   }catch(e){ return 0; }
 }
 function genelVarlikHisseToplami(){
@@ -5151,7 +5166,7 @@ function renderPortfolioPie(bakiye){
   var legend=document.getElementById('portfolio-pie-legend');
   var totalEl=document.getElementById('portfolio-pie-total');
   if(!donut||!legend||!totalEl) return;
-  var fonlar=getTumFonlar().map(function(f){
+  var fonlar=getPortfoyGorunenFonlar().map(function(f){
     var val=Number((bakiye||{})[f]||0);
     return {code:f,value:val,color:getFonRenk(f)};
   }).filter(function(x){ return x.value>0; });
@@ -12311,7 +12326,7 @@ async function fetchAllFunds_V19_OVERRIDE_DISABLED(){
     if (button) button.disabled = false;
   };
 
-  console.log('ORKA V34.9 hazır: Çalışan V34.7 bazında Formül Yapısı güvenli biçimde gizlendi ve yalnız aktif fon kartları gösteriliyor.');
+  console.log('ORKA V35 hazır: Fon kartları ve fon toplamları yalnızca güncel aktif portföy fonlarından üretiliyor; Formül Yapısı güvenli şekilde gizlendi.');
 })();
 </script>
 
@@ -12623,33 +12638,6 @@ async function fetchAllFunds_V19_OVERRIDE_DISABLED(){
 
   console.log('ORKA V34.1.1 hazır: Fon detayında performans grafiği bugünden önceki 5 tamamlanmış işlem gününü gösteriyor.');
 })();
-
-// ORKA V34.9 — Portföyden çıkarılmış fon kartlarını ekrandan temizle.
-// Geçmiş aylık rapor verilerine dokunmaz; sadece ana FONLAR kart alanını filtreler.
-function orkaFilterActiveFundCards(){
-  try{
-    var active=(typeof gorunenFonlar!=='undefined' && Array.isArray(gorunenFonlar))
-      ? gorunenFonlar.map(function(x){return String(x).toUpperCase();})
-      : [];
-    if(!active.length) return;
-
-    document.querySelectorAll('.fcard').forEach(function(card){
-      var code=String(
-        card.getAttribute('data-fon') ||
-        card.getAttribute('data-code') ||
-        ((card.querySelector('.fcode')||card.querySelector('.fcod')||{}).textContent||'')
-      ).trim().toUpperCase();
-      if(code && active.indexOf(code)<0) card.style.display='none';
-      else if(code) card.style.display='';
-    });
-  }catch(e){}
-}
-document.addEventListener('DOMContentLoaded',function(){
-  setTimeout(orkaFilterActiveFundCards,50);
-  setTimeout(orkaFilterActiveFundCards,700);
-  setTimeout(orkaFilterActiveFundCards,1800);
-});
-
 </script>
 
 </body>
