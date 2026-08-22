@@ -1,0 +1,20 @@
+ORKA V36 — Fon Kartları Kök Sorun Düzeltmesi
+
+Kök neden bulundu:
+V34.5'te eski aylık özet tablosunu kapatmak için eklenen if(false) bloğu yanlış yerde kapanıyordu.
+Bu nedenle aynı blok içinde kalan:
+- Toplam Fon Sepeti
+- Hero özetleri
+- Portföy donut grafiği
+- Dinamik fon kartları
+- Günlük/haftalık/aylık kart değerleri
+hiç çalışmıyordu.
+
+V36:
+1. Yanlış if(false) bloğunu ve eski alt özet kodunu tamamen temizler.
+2. Hero + fon kartları + grafik render akışını yeniden aktif eder.
+3. Statik DFI/TLY/PHE/CPT placeholder kartlarını kaldırır.
+4. Ana ekranda yalnız bugünkü aktif portföy fonları dinamik oluşturulur.
+5. Geçmiş aylık raporlarda tarihsel fonlar korunur.
+6. Formül Yapısı güvenli display:none olarak kalır.
+7. Yükleme durumunda 'Fon ekranı hesaplanıyor' ve tamamlandığında aktif fon isimleri görünür.

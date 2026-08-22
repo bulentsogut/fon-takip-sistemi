@@ -2793,12 +2793,7 @@ window.addEventListener('unhandledrejection', function(ev){
 </div>
 
 <p class="stitle">Fonlar</p>
-<div class="fund-row" id="fund-row">
-  <div class="fcard dfi"><div class="fname">DFI</div><div class="hlabel" style="margin-top:4px">Atlas Portföy Serbest Fon</div><div class="ftotal" id="fc-dfi">—</div><div class="fret" id="fc-dfiret">—</div><div class="fprice-row"><div><div class="fprice-label">Birim Fiyat</div><div class="fprice-val dfi-c" id="fp-dfi">—</div></div><div><div class="fprice-label">Bugün</div><div class="fday-ret" id="fd-dfi">—</div></div></div></div>
-  <div class="fcard tly"><div class="fname">TLY</div><div class="hlabel" style="margin-top:4px">Tera Portföy Birinci Serbest Fon</div><div class="ftotal" id="fc-tly">—</div><div class="fret" id="fc-tlyret">—</div><div class="fprice-row"><div><div class="fprice-label">Birim Fiyat</div><div class="fprice-val tly-c" id="fp-tly">—</div></div><div><div class="fprice-label">Bugün</div><div class="fday-ret" id="fd-tly">—</div></div></div></div>
-  <div class="fcard phe"><div class="fname">PHE</div><div class="hlabel" style="margin-top:4px">Pusula Portföy Hisse Senedi Fonu</div><div class="ftotal" id="fc-phe">—</div><div class="fret" id="fc-pheret">—</div><div class="fprice-row"><div><div class="fprice-label">Birim Fiyat</div><div class="fprice-val phe-c" id="fp-phe">—</div></div><div><div class="fprice-label">Bugün</div><div class="fday-ret" id="fd-phe">—</div></div></div></div>
-  <div class="fcard cpt"><div class="fname">CPT</div><div class="hlabel" style="margin-top:4px">Rota Portföy Çip Teknolojileri</div><div class="ftotal" id="fc-cpt">—</div><div class="fret" id="fc-cptret">—</div><div class="fprice-row"><div><div class="fprice-label">Birim Fiyat</div><div class="fprice-val cpt-c" id="fp-cpt">—</div></div><div><div class="fprice-label">Bugün</div><div class="fday-ret" id="fd-cpt">—</div></div></div></div>
-</div>
+<div class="fund-row" id="fund-row"><div class="portfolio-empty" id="fund-cards-loading">Aktif fonlar hesaplanıyor…</div></div>
 
 <div class="chart-box">
   <p class="stitle" style="margin-bottom:10px">Aylık Getiri</p>
@@ -4044,27 +4039,34 @@ function isFonSatildi(fon){
 // Satılan fonlar hesap/geçmiş kayıtlarında korunur; ancak kartlarda, günlük detaylarda,
 // tahmin/analiz listelerinde ve aylık drilldown tablolarında gösterilmez.
 function getPortfoyGorunenFonlar(){
-  // ORKA V35:
-  // Güncel portföy ekranlarında sadece BUGÜN itibarıyla son işlem miktarı > 0 olan fonlar görünür.
-  // Geçmişte bulunmuş/satılmış fonlar MONTH_DATA ve geçmiş raporlarda korunur.
+  // ORKA V36 — Ana ekranda yalnız BUGÜN itibarıyla aktif olan fonlar.
+  // Geçmiş aylık raporlarda tarihsel fonlar ayrı veri yapısında korunur.
+  var today=getAppToday();
+  var todayStr=String(today.getDate()).padStart(2,'0')+'.'
+    +String(today.getMonth()+1).padStart(2,'0')+'.'
+    +today.getFullYear();
+
+  var deleted=loadDeletedFonlar();
+  var aktif=getAktifFonlar(todayStr)||[];
+
+  // IJC gibi özel başlangıç setleri işlem tablosu dışında tutulmuş olabilir.
   try{
-    var today=getAppToday();
-    var todayStr=String(today.getDate()).padStart(2,'0')+'.'
-      +String(today.getMonth()+1).padStart(2,'0')+'.'
-      +today.getFullYear();
+    if(typeof IJC_BASLANGIC_SET!=='undefined'){
+      IJC_BASLANGIC_SET.forEach(function(t){
+        var f=String(t.fon||'').toUpperCase();
+        if(!f || deleted.indexOf(f)>=0) return;
+        var miktar=getMiktarAtDate(todayStr,f);
+        var satis=getSatisTarihi(f);
+        if(miktar>0 && !satis && aktif.indexOf(f)<0) aktif.push(f);
+      });
+    }
+  }catch(e){}
 
-    var aktif=(typeof getAktifFonlar==='function') ? getAktifFonlar(todayStr) : [];
-    var deleted=loadDeletedFonlar();
-
-    return Array.from(new Set((aktif||[]).map(function(f){
-      return String(f||'').trim().toUpperCase();
-    }).filter(function(f){
-      return f && deleted.indexOf(f)<0;
-    })));
-  }catch(e){
-    // Güvenli yedek: eski davranış.
-    return getTumFonlar().filter(function(f){ return !isFonSatildi(f); });
-  }
+  return Array.from(new Set(aktif.map(function(f){
+    return String(f||'').trim().toUpperCase();
+  }).filter(function(f){
+    return f && deleted.indexOf(f)<0;
+  })));
 }
 
 // ORKA V34.1: Ağ/veri güncellemelerinde yalnızca bugün portföyde aktif olan fonlar kullanılır.
@@ -5206,6 +5208,10 @@ function renderPortfolioPie(bakiye){
 }
 
 function render(){
+  try{
+    var lu=document.getElementById('last-update');
+    if(lu) lu.innerHTML='Fon ekranı hesaplanıyor: <span style="color:var(--cyan)">aktif portföy hazırlanıyor…</span>';
+  }catch(e){}
   const usr=loadR();
   const merged={};
   Object.keys(PREFILLED).forEach(d=>{merged[d]={...PREFILLED[d]};});
@@ -5431,51 +5437,8 @@ function render(){
     tbody.appendChild(row);
   });
 
-  // ORKA V34.5 — Eski alt aylık özet tablosu kaldırıldı.
-  // Aylık verilerin tamamı artık yukarıdaki tek "AYLIK FON GETİRİ TOPLAMLARI" bölümünde gösterilir.
-  if(false){
-  // Aktif aydan önceki ayın özetini dinamik ekle
-  var oncekiKey = prevMonthKey(aktifAy);
-  if(oncekiKey && MONTH_DATA[oncekiKey]){
-    var prevMo = MONTH_DATA[oncekiKey];
-    if(prevMo && prevMo.total!=null){
-      var tfonlar = getPortfoyGorunenFonlar();
-      var hw=document.createElement('tr');hw.className='wrow prow';
-      var colCount = 1 + tfonlar.length*3 + 3;
-      hw.innerHTML='<td colspan="'+colCount+'"><span class="wlabel" style="color:var(--muted)">▸ '+monthDisplay(oncekiKey)+' Özeti</span></td>';
-      tbody.appendChild(hw);
-      var mtr=document.createElement('tr');mtr.className='prow';
-      var mtHtml='<td>'+monthDisplay(oncekiKey)+'</td>';
-      tfonlar.forEach(function(f){
-        var fl=f.toLowerCase();
-        var fd=(prevMo.funds||{})[fl]||{};
-        var pct=fd.pct||0; var tl=fd.tl||0;
-        var renk=getFonRenk(f);
-        mtHtml+='<td class="fon-sep" style="color:'+renk+';text-align:center">'+(pct?((pct>0?'+':'')+pct.toFixed(2)+'%'):'—')+'</td>';
-        mtHtml+='<td style="color:'+renk+'">'+(tl?fmt(tl):'—')+'</td>';
-        mtHtml+='<td>—</td>';
-      });
-      var prevPctTmp=prevMo.total?0:0;
-      mtHtml+='<td class="fon-sep '+(prevMo.total>=0?'gp':'gn')+'">'+(prevMo.total>=0?'▲ ':'▼ ')+'</td>';
-      mtHtml+='<td class="'+(prevMo.total>=0?'gp':'gn')+'">'+fmt(prevMo.total)+'</td>';
-      mtHtml+='<td class="tcol">—</td>';
-      mtr.innerHTML=mtHtml;
-      tbody.appendChild(mtr);
-    }
-  }
-
-  [{lbl:'Önceki Ay (NİSAN)',d:'%7.17',dt:'+₺42.420',t:'%10.09',tt:'+₺102.003',p:'%9.61',pt:'+₺76.285',c:'—',ct:'—',pct:'%6.43',kz:'+₺271.534'},
-   {lbl:'Mart',d:'%8.90',dt:'+₺61.198',t:'%16.47',tt:'+₺126.939',p:'%12.51',pt:'+₺66.999',c:'—',ct:'—',pct:'%80.59',kz:'+₺255.135'},
-   {lbl:'Şubat',d:'%7.57',dt:'+₺59.438',t:'%15.23',tt:'+₺92.872',p:'%0.96',pt:'+₺144',c:'—',ct:'—',pct:'▼%2.80',kz:'+₺141.281'},
-   {lbl:'Ocak',d:'%8.33',dt:'+₺57.794',t:'%10.04',tt:'+₺32.100',p:'—',pt:'—',c:'—',ct:'—',pct:'%2.88',kz:'+₺145.354'},
-  ].forEach(m=>{
-    const hw=document.createElement('tr');hw.className='wrow prow';
-    hw.innerHTML=`<td colspan="12"><span class="wlabel" style="color:var(--muted)">▸ ${m.lbl} Özeti</span></td>`;
-    tbody.appendChild(hw);
-    const tr=document.createElement('tr');tr.className='prow';
-    tr.innerHTML=`<td>${m.lbl}</td><td class="dfi-c">${m.d}</td><td class="dfi-c">${m.dt}</td><td class="tly-c">${m.t}</td><td class="tly-c">${m.tt}</td><td class="phe-c">${m.p}</td><td class="phe-c">${m.pt}</td><td class="cpt-c">${m.c}</td><td class="cpt-c">${m.ct}</td><td class="gp">${m.pct}</td><td class="gp">${m.kz}</td><td class="tcol">—</td>`;
-    tbody.appendChild(tr);
-  });
+  // ORKA V36 — Eski alt aylık özet kodu tamamen kaldırıldı.
+  // Aşağıdaki Özet / Hero / Fon Kartları render akışı artık normal şekilde çalışır.
 
   // Özet
   var GERCEK_BASLANGIC_DEGERI = 1356444;
@@ -5605,6 +5568,10 @@ function render(){
         +'</div>'
         +'</div></div>';
     }).join('');
+    try{
+      var lu2=document.getElementById('last-update');
+      if(lu2) lu2.innerHTML='Fon kartları hazır: <span style="color:var(--green)">'+tumFonlar.join(' · ')+'</span>';
+    }catch(e){}
   }
   // Status bar'daki fon listesini güncelle
   var fonlarEl = document.querySelector('.status-item span');
@@ -5642,8 +5609,6 @@ function render(){
     });
   });
 }
-
-  }
 
 function updateAktifAyDays(merged, rows){
   var ayKey = aktifAy; // 'MAY' veya 'HAZ'
@@ -12326,7 +12291,7 @@ async function fetchAllFunds_V19_OVERRIDE_DISABLED(){
     if (button) button.disabled = false;
   };
 
-  console.log('ORKA V35 hazır: Fon kartları ve fon toplamları yalnızca güncel aktif portföy fonlarından üretiliyor; Formül Yapısı güvenli şekilde gizlendi.');
+  console.log('ORKA V36 hazır: Kart renderını durduran yanlış if(false) kaldırıldı; yalnız güncel aktif fonlar dinamik gösteriliyor.');
 })();
 </script>
 
