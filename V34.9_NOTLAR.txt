@@ -1,0 +1,12 @@
+ORKA V34.9 — Güvenli Temizlik / Aktif Fonlar
+
+BAZ: Çalışan ORKA V34.7
+
+1. V34.8 kullanılmadı; V34.7'den yeniden üretildi.
+2. Formül Yapısı HTML/JS'den silinmedi. Yalnızca CSS ile gizlendi.
+   Böylece fon verisi yükleme ve hesaplama zincirine müdahale edilmedi.
+3. Ana FONLAR kart alanında portföyden çıkarılmış fonlar gizlenir.
+   Aktif/görünen fon listesi esas alınır.
+4. Geçmiş aylık özetlerde geçmişte gerçekten bulunan fonlar korunur.
+   Yani geçmiş rapor ile güncel portföy kartları birbirinden ayrılmıştır.
+5. V34.7'deki “aya göre yalnız o ayda bulunan fonlar” aylık özet yapısı korunmuştur.
