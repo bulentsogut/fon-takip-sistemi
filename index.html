@@ -2503,6 +2503,13 @@ tbody tr:hover{background:rgba(0,180,255,0.035);}
 @media(max-width:900px){.fund-detail-metrics{grid-template-columns:repeat(2,minmax(0,1fr));}.fund-detail-grid{grid-template-columns:1fr;}}
 @media(max-width:560px){.fund-detail-overlay{padding:8px}.fund-detail-head,.fund-detail-body{padding:14px}.fund-detail-metrics{grid-template-columns:1fr 1fr}.fund-detail-metric-value{font-size:.85rem}}
 
+
+/* ORKA V34.3 — Günlük Detay aylık toplam yüzde satırı */
+.month-pct-total-row td{
+  border-top:2px solid rgba(79,163,255,.24)!important;
+  background:rgba(79,163,255,.035);
+}
+
 </style>
 
 <script>
@@ -5139,6 +5146,61 @@ function render(){
     wtr2.innerHTML=wHtml;
     tbody.appendChild(wtr2);
   });
+
+  // ORKA V34.3 — Her fonun aktif ay içindeki anlık toplam yüzde getirisi.
+  // Günlük detay tablosundaki fon % sütunlarıyla birebir aynı hizada gösterilir.
+  // Mevcut ORKA/Excel mantığıyla günlük yüzdeler toplanır; gelecekteki boş günler 0 etkiler.
+  var monthPctRow=document.createElement('tr');
+  monthPctRow.className='wrow month-pct-total-row';
+  var monthPctHtml='<td><span class="wlabel" style="color:#69c9ff">AY TOPLAM %</span></td>';
+
+  var monthGeneralTL=0;
+  var monthOpeningTotal=0;
+  if(rows && rows.length && rows[0] && rows[0].wkBas){
+    monthOpeningTotal=tumFonlar.reduce(function(s,f){
+      return s + (Number(rows[0].wkBas[f])||0);
+    },0);
+  }
+
+  tumFonlar.forEach(function(f){
+    var fPct=0;
+    var fTL=0;
+
+    rows.forEach(function(wk){
+      (wk.days||[]).forEach(function(day){
+        var det=day.fonDetay ? (day.fonDetay[f]||{}) : {};
+        fPct += Number(det.pct)||0;
+        fTL += Number(det.tl)||0;
+      });
+    });
+
+    monthGeneralTL += fTL;
+
+    var renk=getFonRenk(f);
+    var pctCls=fPct>0?'gp':fPct<0?'gn':'gz';
+    var pctText=Math.abs(fPct)>0.0000001
+      ? ((fPct>0?'+':'')+fPct.toFixed(3)+'%')
+      : '—';
+
+    // Yüzde ilgili fonun günlük % kolonunun tam altında yer alır.
+    monthPctHtml+='<td class="fon-sep '+pctCls+'" style="text-align:center;font-family:var(--mono);font-size:0.68rem;font-weight:800;color:'+renk+'">'+pctText+'</td>';
+
+    // Bu satır sadece yüzde toplamı satırıdır; TL ve BAK kolonları boş bırakılır.
+    monthPctHtml+='<td></td><td></td>';
+  });
+
+  var monthGeneralPct=monthOpeningTotal>0 ? (monthGeneralTL/monthOpeningTotal*100) : 0;
+  var monthGeneralCls=monthGeneralPct>0?'gp':monthGeneralPct<0?'gn':'gz';
+  var monthGeneralText=Math.abs(monthGeneralPct)>0.0000001
+    ? ((monthGeneralPct>0?'+':'')+monthGeneralPct.toFixed(3)+'%')
+    : '—';
+
+  monthPctHtml+='<td class="fon-sep '+monthGeneralCls+'" style="font-family:var(--mono);font-size:0.68rem;font-weight:800">'+monthGeneralText+'</td>';
+  monthPctHtml+='<td class="'+(monthGeneralTL>=0?'gp':'gn')+'" style="font-family:var(--mono);font-size:0.65rem;font-weight:700">'+fmt(monthGeneralTL)+'</td>';
+  monthPctHtml+='<td></td>';
+
+  monthPctRow.innerHTML=monthPctHtml;
+  tbody.appendChild(monthPctRow);
 
   // Aktif aydan önceki ayın özetini dinamik ekle
   var oncekiKey = prevMonthKey(aktifAy);
@@ -12030,7 +12092,7 @@ async function fetchAllFunds_V19_OVERRIDE_DISABLED(){
     if (button) button.disabled = false;
   };
 
-  console.log('ORKA V34.2 hazır: Aylık yüzde getirileri önceki ay kapanış fon toplamına göre hesaplanıyor.');
+  console.log('ORKA V34.3 hazır: Günlük detay tablosuna fon bazında aktif ayın anlık toplam yüzde satırı eklendi.');
 })();
 </script>
 
