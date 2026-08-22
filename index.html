@@ -2475,7 +2475,7 @@ tbody tr:hover{background:rgba(0,180,255,0.035);}
 .fund-detail-name{font-family:var(--mono);font-size:.72rem;color:var(--muted);margin-top:5px;max-width:760px;}
 .fund-detail-close{background:rgba(255,71,87,.09);border:1px solid rgba(255,71,87,.3);color:#ff7382;border-radius:9px;padding:8px 12px;cursor:pointer;font-family:var(--mono);font-size:.72rem;}
 .fund-detail-body{padding:20px 22px 24px;}
-.fund-detail-metrics{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;margin-bottom:16px;}
+.fund-detail-metrics{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:12px;margin-bottom:16px;}
 .fund-detail-metric{background:rgba(8,24,36,.8);border:1px solid rgba(79,163,255,.14);border-radius:12px;padding:13px 14px;min-height:84px;}
 .fund-detail-metric-label{font-family:var(--mono);font-size:.61rem;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em;}
 .fund-detail-metric-value{font-family:var(--mono);font-weight:800;font-size:1rem;color:#dcecff;overflow-wrap:anywhere;}
@@ -2648,6 +2648,19 @@ tbody tr:hover{background:rgba(0,180,255,0.035);}
   .month-compact-wrap{grid-template-columns:1fr;}
   .month-compact-total{border-left:0;border-top:1px solid rgba(79,163,255,.35);padding:10px 0 0;justify-items:start;}
 }
+
+
+/* ORKA V37 — Fon detay yatırımcı / net para girişi */
+.fund-detail-metric-sub{
+  margin-top:7px;
+  font-family:var(--mono);
+  font-size:.58rem;
+  line-height:1.35;
+  color:var(--muted);
+}
+.fund-detail-metric-sub.up{color:#2ed573;}
+.fund-detail-metric-sub.down{color:#ff5c7a;}
+.fund-detail-metric-sub.neutral{color:#8fa9bf;}
 
 </style>
 
@@ -12291,7 +12304,7 @@ async function fetchAllFunds_V19_OVERRIDE_DISABLED(){
     if (button) button.disabled = false;
   };
 
-  console.log('ORKA V36 hazır: Kart renderını durduran yanlış if(false) kaldırıldı; yalnız güncel aktif fonlar dinamik gösteriliyor.');
+  console.log('ORKA V37 hazır: Fon detayına yatırımcı sayısı, dünkü fark ve tahmini net para girişi/çıkışı eklendi.');
 })();
 </script>
 
@@ -12485,6 +12498,183 @@ async function fetchAllFunds_V19_OVERRIDE_DISABLED(){
     }).join('')+'</div>';
   }
 
+
+  // ORKA V37 — TEFAS güncel yatırımcı / fon büyüklüğü ve günlük snapshot geçmişi
+  var FD_STATS_HISTORY_KEY='orka_fund_stats_history_v37';
+
+  function fdDateKey(v){
+    if(!v) return '';
+    var str=String(v).trim();
+    var m=str.match(/^(\d{1,2})[\.\/-](\d{1,2})[\.\/-](\d{4})/);
+    if(m) return m[3]+'-'+String(m[2]).padStart(2,'0')+'-'+String(m[1]).padStart(2,'0');
+    var d=new Date(str);
+    if(!isNaN(d.getTime())) return d.toISOString().slice(0,10);
+    return str.slice(0,10);
+  }
+
+  function fdLoadStatsHistory(){
+    try{return JSON.parse(localStorage.getItem(FD_STATS_HISTORY_KEY)||'{}')||{};}catch(e){return{};}
+  }
+
+  function fdSaveStatsHistory(h){
+    try{localStorage.setItem(FD_STATS_HISTORY_KEY,JSON.stringify(h||{}));}catch(e){}
+  }
+
+  function fdSnapshotStats(code, info){
+    info=info||{};
+    var size=Number(info.size||info.portfoyBuyuklugu||info.portfoyBuyukluk||0);
+    var investors=parseInt(info.investors||info.yatirimciSayisi||0,10)||0;
+    var dailyReturn=Number(info.dailyReturn||info.gunlukGetiri||0);
+    var date=fdDateKey(info.date||info.tarih||'');
+    if(!date || (!size && !investors)) return;
+
+    var h=fdLoadStatsHistory();
+    if(!h[code]) h[code]={};
+    h[code][date]={
+      date:date,
+      size:size,
+      investors:investors,
+      dailyReturn:dailyReturn
+    };
+
+    // Eski tek-gün PREV_KEY kaydını da, tarihi farklıysa geçmişe taşı.
+    try{
+      var oldPrev=JSON.parse(localStorage.getItem('fon_prev_stats')||'{}')||{};
+      var p=oldPrev[code];
+      var pd=fdDateKey(p&&p.date);
+      if(p && pd && pd!==date && !h[code][pd]){
+        h[code][pd]={
+          date:pd,
+          size:Number(p.size||0),
+          investors:parseInt(p.investors||0,10)||0,
+          dailyReturn:Number(p.dailyReturn||0)
+        };
+      }
+    }catch(e){}
+
+    // Fon başına son 45 günü tut.
+    var keys=Object.keys(h[code]).sort();
+    while(keys.length>45){
+      delete h[code][keys.shift()];
+    }
+    fdSaveStatsHistory(h);
+  }
+
+  function fdStatsComparison(code, currentInfo){
+    fdSnapshotStats(code,currentInfo);
+    var h=fdLoadStatsHistory();
+    var rows=Object.keys((h&&h[code])||{}).sort().map(function(k){return h[code][k];});
+    if(!rows.length) return {current:null,prev:null,prevPrev:null};
+
+    var current=rows[rows.length-1]||null;
+    var prev=rows.length>=2?rows[rows.length-2]:null;
+    var prevPrev=rows.length>=3?rows[rows.length-3]:null;
+    return {current:current,prev:prev,prevPrev:prevPrev};
+  }
+
+  function fdSignedInt(n){
+    n=Number(n||0);
+    return (n>0?'+':'')+Math.round(n).toLocaleString('tr-TR');
+  }
+
+  function fdSignedMoney(n){
+    n=Number(n||0);
+    return (n>0?'+':'')+fdMoney(n);
+  }
+
+  function fdMetricDeltaClass(n){
+    n=Number(n||0);
+    return n>0?'up':n<0?'down':'neutral';
+  }
+
+  // Yaklaşık net para girişi:
+  // Bugünkü fon büyüklüğü - dünkü fon büyüklüğünün bugünkü fiyat getirisiyle taşınmış değeri.
+  function fdEstimatedNetFlow(cur, prev){
+    if(!cur || !prev || !(Number(cur.size)>0) || !(Number(prev.size)>0)) return null;
+    var r=Number(cur.dailyReturn||0)/100;
+    return Number(cur.size) - Number(prev.size)*(1+r);
+  }
+
+  async function fdFetchFreshTefasStats(code){
+    try{
+      if(typeof tefasPost!=='function') return null;
+      var rows=await tefasPost('fonBilgiGetir',{fonKodu:code});
+      var b=Array.isArray(rows)?rows[0]:null;
+      if(!b) return null;
+      function pick(keys){
+        for(var i=0;i<keys.length;i++){
+          var v=b[keys[i]];
+          if(v!==undefined && v!==null && v!==''){
+            var n=(typeof v==='number')?v:parseFloat(String(v).replace(/\./g,'').replace(',','.').replace(/[^0-9.-]/g,''));
+            if(isFinite(n)) return n;
+          }
+        }
+        return 0;
+      }
+      return {
+        size:pick(['portfoyBuyuklugu','portfoyBuyukluk','PORTFOYBUYUKLUK','PORTFOYBUYUKLUGU']),
+        investors:parseInt(pick(['yatirimciSayisi','YATIRIMCISAYISI','YatirimciSayisi']),10)||0,
+        dailyReturn:pick(['gunlukGetiri','GUNLUKGETIRI','GunlukGetiri','GETIRI']),
+        date:b.tarih||b.TARIH||b.Tarih||'',
+        source:'TEFAS'
+      };
+    }catch(e){
+      console.warn('ORKA V37 TEFAS yatırımcı/büyüklük alınamadı:',code,e&&e.message?e.message:e);
+      return null;
+    }
+  }
+
+  function fdRenderInvestorFlowStats(code, info){
+    info=info||{};
+    var cmp=fdStatsComparison(code,info);
+    var cur=cmp.current;
+    var prev=cmp.prev;
+    var prevPrev=cmp.prevPrev;
+
+    var investorEl=document.getElementById('fd-investors-value');
+    var investorSub=document.getElementById('fd-investors-sub');
+    var flowEl=document.getElementById('fd-flow-value');
+    var flowSub=document.getElementById('fd-flow-sub');
+
+    if(investorEl){
+      var inv=cur?Number(cur.investors||0):Number(info.investors||0);
+      investorEl.textContent=inv?Math.round(inv).toLocaleString('tr-TR'):'—';
+    }
+    if(investorSub){
+      if(cur&&prev&&cur.investors&&prev.investors){
+        var dInv=Number(cur.investors)-Number(prev.investors);
+        investorSub.className='fund-detail-metric-sub '+fdMetricDeltaClass(dInv);
+        investorSub.textContent='Düne göre '+fdSignedInt(dInv)+' kişi';
+      }else{
+        investorSub.className='fund-detail-metric-sub neutral';
+        investorSub.textContent='Önceki gün verisi biriktiriliyor';
+      }
+    }
+
+    var flow=fdEstimatedNetFlow(cur,prev);
+    if(flowEl){
+      flowEl.textContent=(flow===null)?'—':fdSignedMoney(flow);
+      if(flow!==null) flowEl.style.color=fdColor(flow);
+    }
+
+    if(flowSub){
+      var prevFlow=fdEstimatedNetFlow(prev,prevPrev);
+      if(flow!==null && prevFlow!==null){
+        var flowDiff=flow-prevFlow;
+        flowSub.className='fund-detail-metric-sub '+fdMetricDeltaClass(flowDiff);
+        flowSub.textContent='Önceki güne göre '+fdSignedMoney(flowDiff);
+      }else if(cur&&prev&&cur.size&&prev.size){
+        // İki gün varsa en azından fon büyüklüğü farkını göster.
+        var sizeDiff=Number(cur.size)-Number(prev.size);
+        flowSub.className='fund-detail-metric-sub '+fdMetricDeltaClass(sizeDiff);
+        flowSub.textContent='Fon büyüklüğü farkı '+fdSignedMoney(sizeDiff);
+      }else{
+        flowSub.className='fund-detail-metric-sub neutral';
+        flowSub.textContent='Önceki gün verisi biriktiriliyor';
+      }
+    }
+  }
+
   async function fdFetchFreshEkofin(code){
     try{
       var ctrl=new AbortController();
@@ -12536,6 +12726,8 @@ async function fetchAllFunds_V19_OVERRIDE_DISABLED(){
       +'<div class="fund-detail-metric"><div class="fund-detail-metric-label">Setten Bu Yana K/Z</div><div class="fund-detail-metric-value" style="color:'+fdColor(pnl)+'">'+(lastSet.amount?((pnl>=0?'+':'')+fdMoney(pnl)+' · '+fdPct(pnlPct)):'—')+'</div></div>'
       +'<div class="fund-detail-metric"><div class="fund-detail-metric-label">Birim Fiyat</div><div class="fund-detail-metric-value">'+fdEsc(priceText)+'</div></div>'
       +'<div class="fund-detail-metric"><div class="fund-detail-metric-label">Bugün</div><div class="fund-detail-metric-value" style="color:'+fdColor(today)+'">'+(fdElText('fd-'+code.toLowerCase())||'—')+'</div></div>'
+      +'<div class="fund-detail-metric"><div class="fund-detail-metric-label">Yatırımcı Sayısı</div><div class="fund-detail-metric-value" id="fd-investors-value">—</div><div class="fund-detail-metric-sub neutral" id="fd-investors-sub">TEFAS alınıyor…</div></div>'
+      +'<div class="fund-detail-metric"><div class="fund-detail-metric-label">Net Para Girişi / Çıkışı</div><div class="fund-detail-metric-value" id="fd-flow-value">—</div><div class="fund-detail-metric-sub neutral" id="fd-flow-sub">TEFAS alınıyor…</div></div>'
       +'</div>'
       +'<div class="fund-detail-grid">'
       +'<div class="fund-detail-panel"><div class="fund-detail-panel-title">PORTFÖY İÇERİĞİ / AĞIRLIKLAR</div>'
@@ -12559,7 +12751,11 @@ async function fetchAllFunds_V19_OVERRIDE_DISABLED(){
     overlay.addEventListener('click',function(e){if(e.target===overlay) closeFundDetail();});
     document.body.appendChild(overlay);
 
-    // Ağırlıkları panel açıldığında gerçekten Ekofin'den çek.
+    // Yatırımcı / para girişi için mevcut TEFAS cache'i hemen göster.
+    fdRenderInvestorFlowStats(code,info);
+
+    // TEFAS istatistikleri ve Ekofin ağırlıkları aynı anda tazelenir.
+    var tefasStatsPromise=fdFetchFreshTefasStats(code);
     var fresh=await fdFetchFreshEkofin(code);
     if(!document.getElementById('fund-detail-overlay')) return;
     var body=document.getElementById('fd-holdings-body');
@@ -12594,6 +12790,19 @@ async function fetchAllFunds_V19_OVERRIDE_DISABLED(){
         +'<div class="fund-detail-meta-item">Kayıtlı varlık<br><b>'+hs2.length+' kalem</b></div>'
         +'<div class="fund-detail-meta-item">Ağırlık toplamı<br><b>%'+total2.toFixed(2)+'</b></div>'
         +'<div class="fund-detail-meta-item">Ağırlık kaynağı<br><b>ORKA cache</b></div>';
+    }
+
+    // TEFAS yatırımcı / fon büyüklüğü cevabını uygula.
+    try{
+      var freshStats=await tefasStatsPromise;
+      if(freshStats){
+        tefasInfo[code]=Object.assign({},tefasInfo[code]||{},freshStats);
+        fdRenderInvestorFlowStats(code,tefasInfo[code]);
+      }else{
+        fdRenderInvestorFlowStats(code,info);
+      }
+    }catch(e){
+      fdRenderInvestorFlowStats(code,info);
     }
   };
 
