@@ -2560,6 +2560,16 @@ tbody tr:hover{background:rgba(0,180,255,0.035);}
   opacity:1!important;
 }
 
+
+/* ORKA V34.5 — Tek aylık özet tablosu: eski özetin TL verileri de yeni tabloda */
+.month-total-fon-tl{
+  font-family:var(--mono)!important;
+  font-size:.72rem!important;
+  font-weight:850!important;
+  text-align:right!important;
+  opacity:1!important;
+}
+
 </style>
 
 <script>
@@ -5235,21 +5245,27 @@ function render(){
     var html='<td><span class="month-total-label">'+label+'</span></td>';
 
     tumFonlar.forEach(function(f){
-      var fPct=0, hasData=false;
+      var fPct=0, fTL=0, hasData=false;
       (mo.days||[]).forEach(function(day){
         var det=(day.fonDetay && day.fonDetay[f]) ? day.fonDetay[f] : null;
         if(det && Object.prototype.hasOwnProperty.call(det,'pct')){
           fPct += Number(det.pct)||0;
+          fTL += Number(det.tl)||0;
           hasData=true;
         }
       });
 
       var renk=getFonRenk(f);
       var cls=fPct>0?'gp':fPct<0?'gn':'gz';
+      var tlCls=fTL>0?'gp':fTL<0?'gn':'gz';
       var pctText=hasData ? ((fPct>0?'+':'')+fPct.toFixed(3)+'%') : '—';
+      var tlText=hasData ? ((fTL>0?'+':'')+fmt(fTL)) : '—';
 
+      // Eski alt özet tablosundaki iki temel veri artık burada:
+      // % sütununda aylık fon yüzdesi, TL sütununda aylık fon K/Z.
       html+='<td class="fon-sep month-total-pct '+cls+'" style="color:'+renk+'">'+pctText+'</td>';
-      html+='<td class="month-total-empty">—</td><td class="month-total-empty">—</td>';
+      html+='<td class="month-total-fon-tl '+tlCls+'">'+tlText+'</td>';
+      html+='<td class="month-total-empty">—</td>';
     });
 
     var generalPct=Number(mo.pct);
@@ -5267,6 +5283,9 @@ function render(){
     tbody.appendChild(totalRow);
   });
 
+  // ORKA V34.5 — Eski alt aylık özet tablosu kaldırıldı.
+  // Aylık verilerin tamamı artık yukarıdaki tek "AYLIK FON GETİRİ TOPLAMLARI" bölümünde gösterilir.
+  if(false){
   // Aktif aydan önceki ayın özetini dinamik ekle
   var oncekiKey = prevMonthKey(aktifAy);
   if(oncekiKey && MONTH_DATA[oncekiKey]){
@@ -5475,6 +5494,8 @@ function render(){
     });
   });
 }
+
+  }
 
 function updateAktifAyDays(merged, rows){
   var ayKey = aktifAy; // 'MAY' veya 'HAZ'
@@ -12157,7 +12178,7 @@ async function fetchAllFunds_V19_OVERRIDE_DISABLED(){
     if (button) button.disabled = false;
   };
 
-  console.log('ORKA V34.4 hazır: Günlük detay altında tüm ayların fon bazlı toplam yüzdeleri belirgin şekilde gösteriliyor.');
+  console.log('ORKA V34.5 hazır: Eski alt aylık özet gizlendi; yüzde ve TL aylık verileri tek yeni tabloda birleştirildi.');
 })();
 </script>
 

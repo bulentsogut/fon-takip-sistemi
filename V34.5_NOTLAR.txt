@@ -1,0 +1,10 @@
+ORKA V34.5 — Tek Aylık Özet Tablosu
+
+- Eski alttaki ayrı aylık özet tablosu artık ekranda gösterilmez.
+- Ocak'tan aktif aya kadar aylık veriler yalnızca yeni “AYLIK FON GETİRİ TOPLAMLARI” bölümünde gösterilir.
+- Eski tablodaki fon bazlı aylık TL K/Z verileri yeni tabloya taşındı.
+- Her fon için:
+    % sütunu = aylık toplam yüzde getiri
+    TL sütunu = aylık toplam TL K/Z
+- Genel portföy aylık yüzde ve TL toplamları sağdaki genel kolonlarda gösterilmeye devam eder.
+- Böylece aynı aylık veriyi gösteren iki ayrı tablo yerine tek ve belirgin bir tablo kullanılır.
