@@ -1,95 +1,111 @@
-// Vercel Serverless Function: /api/fvt?code=TLY
-//
-// Gerçek FVT API'si (DevTools Network sekmesinden doğrulandı):
-//   https://fvt.com.tr/api/funds/{KOD}/distribution
-// Yanıt şekli: { success, data: { items: [...], meta: { aciklamaTarihi, ... } }, timestamp }
-// Bu şekil, index.html içindeki loadFVTPortfolio() fonksiyonunun zaten
-// beklediği `data.data.items` / `data.data.meta` yapısıyla birebir uyuşuyor,
-// bu yüzden burada tek iş: gerçek endpoint'e gidip yanıtı olduğu gibi
-// (CORS başlıklarıyla) tarayıcıya iletmek. Eski kod var olmayan onlarca
-// URL'yi tahmin ederek deniyordu; hepsi kaldırıldı.
-
-function setCors(res) {
+// api/fvt.js - Vercel
+export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Accept');
-}
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  if (req.method === 'OPTIONS') { res.status(200).end(); return; }
 
-function cleanCode(code) {
-  return String(code || '').toUpperCase().trim().replace(/[^A-Z0-9]/g, '');
-}
+  const fonKodu = req.query.fon;
+  const istek   = req.query.istek;
 
-function candidateUrls(code) {
-  const c = encodeURIComponent(code);
-  return [
-    `https://fvt.com.tr/api/funds/${c}/distribution`,
-    `https://www.fvt.com.tr/api/funds/${c}/distribution` // yedek (www ile)
-  ];
-}
+  if (!fonKodu) {
+    res.status(400).json({ error: 'fon parametresi gerekli' });
+    return;
+  }
 
-function fvtHeaders(code) {
-  return {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126 Safari/537.36',
-    'Accept': 'application/json, text/plain, */*',
-    'Accept-Language': 'tr-TR,tr;q=0.9,en-US;q=0.7,en;q=0.6',
-    'Referer': `https://fvt.com.tr/fonlar/yatirim-fonlari/${encodeURIComponent(code)}`,
+  const headers = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+    'Accept': 'application/json',
+    'Referer': 'https://fvt.com.tr/',
     'Origin': 'https://fvt.com.tr'
   };
-}
 
-export default async function handler(req, res) {
-  setCors(res);
-  if (req.method === 'OPTIONS') return res.status(204).end();
-  if (req.method !== 'GET') return res.status(405).json({ ok: false, error: 'Only GET is supported' });
-
-  const code = cleanCode((req.query && (req.query.code || req.query.kod || req.query.fon)) || '');
-  const debug = String((req.query && req.query.debug) || '') === '1';
-  if (!code) return res.status(400).json({ ok: false, error: 'Missing code parameter' });
-
-  const attempts = [];
-
-  for (const url of candidateUrls(code)) {
+  // Gunluk getiri istegi
+  if (istek === 'getiri') {
     try {
-      const upstream = await fetch(url, { headers: fvtHeaders(code) });
-      const text = await upstream.text();
-      attempts.push({ url, status: upstream.status, len: text.length });
-
-      if (!upstream.ok) continue;
-
-      let data;
-      try { data = JSON.parse(text); }
-      catch (e) {
-        attempts[attempts.length - 1].jsonError = e.message;
-        continue;
+      // Once /api/funds/ dene, 404 gelirse /api/stocks/ dene (BYF fonlar icin)
+      let fonUrl = 'https://fvt.com.tr/api/funds/' + fonKodu.toUpperCase();
+      let response = await fetch(fonUrl, { headers });
+      if (!response.ok) {
+        // BYF endpoint dene
+        fonUrl = 'https://fvt.com.tr/api/stocks/' + fonKodu.toUpperCase();
+        response = await fetch(fonUrl, { headers });
       }
-
-      const items = (data && data.data && Array.isArray(data.data.items)) ? data.data.items : [];
-      if (!items.length) {
-        attempts[attempts.length - 1].parsed = 0;
-        continue;
+      // Asagidaki response.ok kontrolu icin response'u override et
+      const _response = response;
+      if (!_response.ok) { res.status(_response.status).json({ error: 'FVT HTTP ' + _response.status }); return; }
+      const data = await _response.json();
+      const priceHistory = data.data && data.data.priceHistory;
+      let dailyReturn = null;
+      if (priceHistory && priceHistory.length >= 2) {
+        const todayPrice = parseFloat(priceHistory[0].fiyat);
+        const yesterdayPrice = parseFloat(priceHistory[1].fiyat);
+        if (yesterdayPrice > 0) {
+          dailyReturn = parseFloat(((todayPrice - yesterdayPrice) / yesterdayPrice * 100).toFixed(4));
+        }
       }
-
-      const payload = {
-        ok: true,
-        code,
-        source: url,
-        success: data.success,
-        data: data.data,       // items + meta -> client tarafı doğrudan bunu bekliyor
-        timestamp: data.timestamp
-      };
-      if (debug) payload.debug = { attempts };
-
-      res.setHeader('Cache-Control', 's-maxage=900, stale-while-revalidate=1800');
-      return res.status(200).json(payload);
+      const fonData = (data.data && data.data.fund) ? data.data.fund : (data.data || {});
+      if (dailyReturn === null && fonData.getiri) dailyReturn = parseFloat(fonData.getiri);
+      res.status(200).json({ fon: fonKodu.toUpperCase(), dailyReturn });
+      return;
     } catch (err) {
-      attempts.push({ url, error: err && err.message ? err.message : String(err) });
+      res.status(500).json({ error: err.message });
+      return;
     }
   }
 
-  return res.status(200).json({
-    ok: false,
-    code,
-    error: 'FVT distribution endpoint failed or returned empty data',
-    attempts: debug ? attempts : undefined
-  });
+  // Portfoy dagılımı
+  const url = 'https://fvt.com.tr/api/funds/' + fonKodu.toUpperCase() + '/distribution';
+  try {
+    const response = await fetch(url, { headers });
+    if (!response.ok) { res.status(response.status).json({ error: 'FVT HTTP ' + response.status }); return; }
+    const data = await response.json();
+    const items = (data.data && data.data.items) || [];
+
+    const holdings = items
+      .filter(item => item.hisseKodu && item.hisseKodu.trim() !== '')
+      .map(item => {
+        const kod = item.hisseKodu.trim();
+        let tip;
+        const sirketAdi = (item.sirketAdi || '').trim();
+        // BYF listesi - veri yok, cash say
+        const BYF = ['GLDTRF','GMSTRF','ZPX3GF','ZPX30F']; // TPKGY/TPKGYF1 fund olarak bırak — manuel değer girilebilsin
+        if (BYF.indexOf(kod) !== -1) {
+          tip = 'cash';
+        } else if (item.etf === 1) {
+          tip = 'fund';
+        } else if (item.yabanci === 1) {
+          tip = 'us';
+        } else if (sirketAdi === '') {
+          tip = 'fund'; // isim bos = fon
+        } else if (item.hissekategori >= 20 && item.hissekategori <= 40) {
+          tip = 'fund'; // fon kategorisi
+        } else {
+          // Son kontrol: FVT'de /api/funds/ endpoint'i var mi?
+          // Bu async oldugundan burada yapamiyoruz
+          // Onceki tip tespitlerini kullan
+          tip = 'bist';
+        }
+        return {
+          kod, tip,
+          ad: (item.sirketAdi || '').trim(),
+          agirlik: parseFloat(item.agirlik) || 0,
+          sektor: item.sektor || '',
+          etf: item.etf === 1,
+          yabanci: item.yabanci === 1
+        };
+      })
+      .filter(h => h.agirlik > 0)
+      .sort((a, b) => b.agirlik - a.agirlik);
+
+    const meta = (data.data && data.data.meta) || {};
+    res.status(200).json({
+      fon: fonKodu.toUpperCase(),
+      holdings,
+      aciklamaTarihi: meta.aciklamaTarihi || '',
+      toplamAgirlik: holdings.reduce((s, h) => s + h.agirlik, 0)
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 }

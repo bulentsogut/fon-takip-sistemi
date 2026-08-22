@@ -5215,6 +5215,19 @@ function render(){
                   ekim:'EKİM',kasim:'KASIM',aralik:'ARALIK'};
   var monthOrder=['ocak','subat','mart','nisan','mayis','haziran','temmuz','agustos','eylul','ekim','kasim','aralik'];
 
+  // Günlük detay başlığındaki fon kolonları mümkün olduğunca tüm tarihsel fonları kapsasın.
+  // Satılmış fonların geçmiş aylık getirileri kaybolmasın.
+  try{
+    if(typeof getTumFonlar==='function'){
+      var tarihselFonlar=getTumFonlar();
+      if(Array.isArray(tarihselFonlar) && tarihselFonlar.length){
+        tarihselFonlar.forEach(function(f){
+          if(tumFonlar.indexOf(f)<0) tumFonlar.push(f);
+        });
+      }
+    }
+  }catch(e){}
+
   var allMonthKeys=Object.keys(MONTH_DATA||{}).filter(function(k){
     var mo=MONTH_DATA[k];
     return mo && Array.isArray(mo.days) && mo.days.length;
@@ -5235,6 +5248,23 @@ function render(){
     tbody.appendChild(sep);
   }
 
+  // ORKA V34.6 — Eski alt özet tablosundaki gerçek geçmiş ay fon verileri.
+  // MONTH_DATA.days içinde geçmiş fonDetay bulunmadığında bu kayıtlar kullanılır.
+  var LEGACY_MONTH_FUND_SUMMARY={
+    'ocak-2026':{
+      DFI:{pct:8.33,tl:57794}, TLY:{pct:10.04,tl:32100}
+    },
+    'subat-2026':{
+      DFI:{pct:7.57,tl:59438}, TLY:{pct:15.23,tl:92872}, PHE:{pct:0.96,tl:144}
+    },
+    'mart-2026':{
+      DFI:{pct:8.90,tl:61198}, TLY:{pct:16.47,tl:126939}, PHE:{pct:12.51,tl:66999}
+    },
+    'nisan-2026':{
+      DFI:{pct:7.17,tl:42420}, TLY:{pct:10.09,tl:102003}, PHE:{pct:9.61,tl:76285}
+    }
+  };
+
   allMonthKeys.forEach(function(mKey){
     var mo=MONTH_DATA[mKey]||{};
     var totalRow=document.createElement('tr');
@@ -5246,14 +5276,36 @@ function render(){
 
     tumFonlar.forEach(function(f){
       var fPct=0, fTL=0, hasData=false;
-      (mo.days||[]).forEach(function(day){
-        var det=(day.fonDetay && day.fonDetay[f]) ? day.fonDetay[f] : null;
-        if(det && Object.prototype.hasOwnProperty.call(det,'pct')){
-          fPct += Number(det.pct)||0;
-          fTL += Number(det.tl)||0;
+
+      // 1) Öncelik: MONTH_DATA içinde daha önce hesaplanmış fon aylık özeti.
+      var storedFund=(mo.funds||{})[String(f).toLowerCase()] || (mo.funds||{})[String(f).toUpperCase()];
+      if(storedFund && (storedFund.pct!=null || storedFund.tl!=null)){
+        fPct=Number(storedFund.pct)||0;
+        fTL=Number(storedFund.tl)||0;
+        hasData=true;
+      }
+
+      // 2) Günlük fonDetay varsa ay toplamını günlük kayıtlardan üret.
+      if(!hasData){
+        (mo.days||[]).forEach(function(day){
+          var det=(day.fonDetay && (day.fonDetay[f]||day.fonDetay[String(f).toUpperCase()]||day.fonDetay[String(f).toLowerCase()])) || null;
+          if(det && Object.prototype.hasOwnProperty.call(det,'pct')){
+            fPct += Number(det.pct)||0;
+            fTL += Number(det.tl)||0;
+            hasData=true;
+          }
+        });
+      }
+
+      // 3) Ocak–Nisan eski alt tabloda bulunan geçmiş kayıtlar.
+      if(!hasData){
+        var legacy=(LEGACY_MONTH_FUND_SUMMARY[mKey]||{})[String(f).toUpperCase()];
+        if(legacy){
+          fPct=Number(legacy.pct)||0;
+          fTL=Number(legacy.tl)||0;
           hasData=true;
         }
-      });
+      }
 
       var renk=getFonRenk(f);
       var cls=fPct>0?'gp':fPct<0?'gn':'gz';
@@ -12178,7 +12230,7 @@ async function fetchAllFunds_V19_OVERRIDE_DISABLED(){
     if (button) button.disabled = false;
   };
 
-  console.log('ORKA V34.5 hazır: Eski alt aylık özet gizlendi; yüzde ve TL aylık verileri tek yeni tabloda birleştirildi.');
+  console.log('ORKA V34.6 hazır: Eski aylık fon yüzde ve TL verileri yeni tek tabloda geri yüklendi.');
 })();
 </script>
 
