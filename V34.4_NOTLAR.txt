@@ -1,0 +1,9 @@
+ORKA V34.4 — Tüm Aylar / Belirgin Fon Yüzdeleri
+
+- Günlük Detay tablosunun altında yalnız aktif ay değil, MONTH_DATA içinde bulunan TÜM aylar gösterilir.
+- Ocak, Şubat, Mart ... aktif aya kadar her ay ayrı satırdır.
+- Her fonun aylık toplam yüzde getirisi kendi günlük % sütununun tam altında görünür.
+- Satırlar koyulaştırıldı; yazılar büyütüldü, kalınlaştırıldı ve kontrast artırıldı.
+- Aylık bölümün başına belirgin bir başlık/ayırıcı eklendi.
+- Genel portföy aylık yüzdesi ve TL getirisi sağdaki genel kolonlarda korunur.
+- V34.3 ve önceki fon detay özellikleri korunmuştur.
