@@ -1,6 +1,0 @@
-ORKA V34.8
-- Fon Takip ekranındaki “Formül Yapısı” açıklama tablosu kaldırıldı.
-- Günlük TL Yansıması, Gün Sonu Fon Değeri, Sepet Toplamı, Günlük % Değişim,
-  Aylık Getiri ve Toplam K/Z açıklama kartları artık ekranda görünmez.
-- Hesaplama fonksiyonlarına dokunulmadı.
-- V34.7 aylık fon özet yapısı aynen korunmuştur.

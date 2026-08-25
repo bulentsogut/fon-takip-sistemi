@@ -1,9 +1,0 @@
-ORKA V34 — Gerçek Fon Detay Verileri
-1. Güncel Değer: fon kartındaki ORKA hesaplanmış gerçek TL değeri okunur.
-2. Son Portföy Seti: ORKA işlem geçmişindeki son pozitif set ve tarihi kullanılır.
-3. Setten Bu Yana K/Z: gerçek güncel değer ile son set arasındaki farktan hesaplanır.
-4. Birim Fiyat ve Bugün: fon kartındaki TEFAS/ORKA değerleri doğrudan kullanılır.
-5. Performans: günlük/haftalık/aylık yerine ORKA hesap motorundaki son 5 işlem günü gösterilir.
-6. Portföy Ağırlıkları: fon detay paneli açıldığında /api/ekofin üzerinden canlı çekilir.
-7. Ekofin canlı sorgusu başarısız olursa mevcut ORKA cache yedek olarak gösterilir.
-8. V33'teki Türkçe TL metni parse hatası (₺2.085.000 değerinin ₺2 okunması) giderildi.
