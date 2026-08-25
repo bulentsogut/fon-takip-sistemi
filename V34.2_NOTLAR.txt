@@ -1,8 +1,0 @@
-ORKA V34.2 — Aylık Yüzde Düzeltmesi
-
-- Mayıs, Haziran, Temmuz ve sonraki dinamik aylarda eksik kalan aylık yüzde getirisi düzeltildi.
-- Formül: Aylık TL K/Z / Ay Açılış Fon Toplamı × 100.
-- Ay açılış fon toplamı zincir hesapta bir önceki ayın kapanış fon toplamıdır.
-- Aylık TL getiri tutarları değiştirilmedi.
-- Ocak–Nisan sabit özet değerleri korunmuştur.
-- V34.1 fon detay ekranı ve önceki 5 işlem günü düzeltmesi korunmuştur.
