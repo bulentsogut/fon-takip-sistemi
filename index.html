@@ -2847,14 +2847,7 @@ window.addEventListener('unhandledrejection', function(ev){
     <div style="display:flex;align-items:center;gap:8px"><button class="ay-btn ay-btn-aktif" data-ay="MAY" onclick="ayDegistir('MAY')" style="font-family:var(--mono);font-size:0.65rem;padding:3px 10px;border-radius:6px;border:1px solid rgba(0,180,255,0.4);background:rgba(0,180,255,0.12);color:#00b4ff;cursor:pointer;">Mayıs</button><button class="ay-btn" data-ay="HAZ" onclick="ayDegistir('HAZ')" style="font-family:var(--mono);font-size:0.65rem;padding:3px 10px;border-radius:6px;border:1px solid rgba(0,180,255,0.2);background:transparent;color:var(--muted);cursor:pointer;">Haziran</button><span style="font-size:0.65rem;color:var(--muted)"><span class="live-dot"></span>Yeşil kutular TEFAS’tan otomatik dolduruldu</span></div>
   </div>
   <div class="tscroll"><table>
-    <thead><tr>
-      <th>Tarih</th>
-      <th style="color:var(--dfi)">DFI %</th><th style="color:var(--dfi)">DFI TL</th>
-      <th style="color:var(--tly)">TLY %</th><th style="color:var(--tly)">TLY TL</th>
-      <th style="color:var(--phe)">PHE %</th><th style="color:var(--phe)">PHE TL</th>
-      <th style="color:var(--cpt)">CPT %</th><th style="color:var(--cpt)">CPT TL</th>
-      <th>% Değişim</th><th>Günlük K/Z</th><th>Sepet Toplamı</th>
-    </tr></thead>
+    <thead><tr id="fon-daily-thead"><th>Tarih</th><th>% Değişim</th><th>Günlük K/Z</th><th>Sepet Toplamı</th></tr></thead>
     <tbody id="tbody"></tbody>
   </table></div>
 </div>
@@ -4051,16 +4044,27 @@ function isFonSatildi(fon){
 // Portföy ekranlarında görünmesi gereken aktif fonlar.
 // Satılan fonlar hesap/geçmiş kayıtlarında korunur; ancak kartlarda, günlük detaylarda,
 // tahmin/analiz listelerinde ve aylık drilldown tablolarında gösterilmez.
-function getPortfoyGorunenFonlar(){
-  // ORKA V37.1 — Güncel portföyün gerçek fon listesi.
-  // Geçmiş aylık raporlarda DFI/CPT/IJC gibi tarihsel fonlar korunur,
-  // ancak ana portföy ekranında yalnız güncel elde tutulan fonlar görünür.
-  var CURRENT_PORTFOLIO_FUNDS=['TLY','PHE'];
+function getCurrentPortfolioFunds(){
+  // ORKA V39 — TEK DOĞRULUK KAYNAĞI
+  // Güncel portföy; Portföy Yönetimi'ndeki işlem kayıtlarından türetilir.
+  // Son miktarı > 0 olan fon aktiftir. Satış (0) anında çıkar, yeni fon anında eklenir.
+  var today=getAppToday();
+  var todayStr=String(today.getDate()).padStart(2,'0')+'.'
+    +String(today.getMonth()+1).padStart(2,'0')+'.'
+    +today.getFullYear();
 
   var deleted=loadDeletedFonlar();
-  return CURRENT_PORTFOLIO_FUNDS.filter(function(f){
-    return deleted.indexOf(f)<0;
-  });
+  var aktif=(typeof getAktifFonlar==='function' ? getAktifFonlar(todayStr) : []) || [];
+
+  return Array.from(new Set(aktif.map(function(f){
+    return String(f||'').trim().toUpperCase();
+  }).filter(function(f){
+    return f && deleted.indexOf(f)<0;
+  }))).sort();
+}
+
+function getPortfoyGorunenFonlar(){
+  return getCurrentPortfolioFunds();
 }
 
 // ORKA V34.1: Ağ/veri güncellemelerinde yalnızca bugün portföyde aktif olan fonlar kullanılır.
@@ -5216,7 +5220,8 @@ function render(){
   const result=compute(merged);
   const{rows}=result;
   renderGenelVarlikOzeti(result.bakiye);
-  const tumFonlar=getPortfoyGorunenFonlar();
+  const tumFonlar=getCurrentPortfolioFunds();
+  // Günlük Detay: yalnız güncel aktif fonlar; Portföy ekranıyla aynı kaynak.
   // Tablo başlıklarını dinamik güncelle
   var thead = document.querySelector('#tbody').closest('table').querySelector('thead tr');
   if(thead){
@@ -5812,6 +5817,27 @@ function renderTefasCardsHTML(){
   }).join('');
 }
 
+
+// ORKA V39 — Portföy değişikliklerinden sonra tüm güncel fon görünümlerini tek kaynaktan yenile.
+function syncCurrentFundViews(reason){
+  try{
+    renderTefasCardsHTML();
+    render();
+    if(typeof fetchAllFunds==='function') fetchAllFunds();
+
+    var funds=getCurrentPortfolioFunds();
+    console.log('ORKA V39 portföy senkronu:', reason||'', funds);
+
+    var lu=document.getElementById('last-update');
+    if(lu){
+      lu.innerHTML='Aktif fonlar: <span style="color:var(--green)">'
+        +(funds.length?funds.join(' · '):'Yok')+'</span>';
+    }
+  }catch(e){
+    console.error('ORKA V39 portföy senkron hatası:',e);
+  }
+}
+
 // ── Portföy Yönetimi ──────────────────────────────────
 function openPortfoyModal(){
   var trx = loadTrx();
@@ -5920,8 +5946,7 @@ function satFon(fon){
 
   var modal = document.getElementById('portfoy-modal');
   if(modal) modal.remove();
-  renderTefasCardsHTML();
-  render();
+  syncCurrentFundViews('sat:'+fon);
   toast(fon+' satıldı. Satış kaydı Fon Alım/Satım Geçmişi’ne eklendi.','ok');
 }
 
@@ -5963,8 +5988,7 @@ function silFon(fon) {
 
   var modal = document.getElementById('portfoy-modal');
   if (modal) modal.remove();
-  renderTefasCardsHTML();
-  render();
+  syncCurrentFundViews('sil:'+fon);
   toast(fon + ' fonu ve tüm verileri silindi.', 'ok');
 }
 
@@ -5980,9 +6004,7 @@ function yeniFonEkle(){
   extra.push({tarih: todayStr, fon: kod, miktar: miktar, not:'Portföy yönetimi - ekle', ts: Date.now()});
   persistTrxExtra(extra);
   document.getElementById('portfoy-modal').remove();
-  renderTefasCardsHTML();
-  render();
-  fetchAllFunds();
+  syncCurrentFundViews('ekle:'+kod);
   toast(kod+' portföye eklendi.','ok');
 }
 
@@ -6025,7 +6047,7 @@ function fonGuncelle(fon){
   extra.forEach(function(t){ DEFAULT_TRX_EXTRA.push(t); });
 
   document.getElementById('portfoy-modal').remove();
-  render();
+  syncCurrentFundViews('guncelle:'+fon);
   toast(fon+' güncellendi — '+fonTarih+' tarihinden itibaren ₺'+yeniMiktar.toLocaleString('tr-TR')+' olarak işletiliyor.','ok');
 }
 
@@ -6310,8 +6332,32 @@ if(!_lsGet(TRX_KEY)){
 const saved=loadR();
 
 
+
+function orkaCheckFundConsistency(){
+  try{
+    var truth=getCurrentPortfolioFunds();
+    var tableHeaders=Array.from(document.querySelectorAll('#tbody'))
+      .flatMap(function(tb){
+        var tr=tb.closest('table')&&tb.closest('table').querySelector('thead tr');
+        if(!tr) return [];
+        return Array.from(tr.querySelectorAll('th')).map(function(x){return String(x.textContent||'').trim();});
+      });
+    var daily=tableHeaders.filter(function(x){return /%$/.test(x) && !/^%/.test(x);})
+      .map(function(x){return x.replace(/%$/,'').trim().toUpperCase();});
+
+    var missing=truth.filter(function(f){return daily.indexOf(f)<0;});
+    var extra=daily.filter(function(f){return truth.indexOf(f)<0;});
+    if(missing.length||extra.length){
+      console.error('ORKA V39 TUTARLILIK HATASI',{aktif:truth,gunlukDetay:daily,eksik:missing,fazla:extra});
+    }else{
+      console.log('ORKA V39 tutarlılık OK:',truth);
+    }
+  }catch(e){}
+}
+
 // Fon Takip ayları artık bugünün tarihine göre otomatik açılır.
 initTakipAyOtomasyon();
+setTimeout(orkaCheckFundConsistency,250);
 try{const c=JSON.parse(_lsGet(TKEY));if(c&&(Date.now()-c.ts)<3600000){tefasInfo=c.info||{};document.getElementById('last-update').innerHTML=`Cache: <span style="color:var(--gold)">${new Date(c.ts).toLocaleTimeString('tr-TR')}</span>`;renderTefasCards();}}catch{}
 
 
@@ -12285,7 +12331,7 @@ async function fetchAllFunds_V19_OVERRIDE_DISABLED(){
     if (button) button.disabled = false;
   };
 
-  console.log('ORKA V37.1 hazır: Ana portföy fon listesi TLY ve PHE olarak düzeltildi; CPT yalnız geçmiş raporlarda korunuyor.');
+  console.log('ORKA V39 hazır: Portföy kartları, Günlük Detay ve arka plan güncellemeleri tek aktif-fon kaynağına bağlandı.');
 })();
 </script>
 
