@@ -1,8 +1,0 @@
-ORKA V34.6
-- V34.5'te boş kalan geçmiş ay fon hücreleri düzeltildi.
-- Yeni aylık tablo veri önceliği:
-  1) MONTH_DATA.funds kayıtlı aylık fon özeti
-  2) MONTH_DATA.days günlük fonDetay toplamı
-  3) Eski alt tabloda bulunan Ocak-Nisan gerçek geçmiş kayıtları
-- Eski alt tablo geri getirilmedi.
-- Satılmış/tarihsel fonların geçmiş aylık verilerinin kaybolmaması için tarihsel fon listesi korunur.
