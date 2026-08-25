@@ -4052,34 +4052,15 @@ function isFonSatildi(fon){
 // Satılan fonlar hesap/geçmiş kayıtlarında korunur; ancak kartlarda, günlük detaylarda,
 // tahmin/analiz listelerinde ve aylık drilldown tablolarında gösterilmez.
 function getPortfoyGorunenFonlar(){
-  // ORKA V36 — Ana ekranda yalnız BUGÜN itibarıyla aktif olan fonlar.
-  // Geçmiş aylık raporlarda tarihsel fonlar ayrı veri yapısında korunur.
-  var today=getAppToday();
-  var todayStr=String(today.getDate()).padStart(2,'0')+'.'
-    +String(today.getMonth()+1).padStart(2,'0')+'.'
-    +today.getFullYear();
+  // ORKA V37.1 — Güncel portföyün gerçek fon listesi.
+  // Geçmiş aylık raporlarda DFI/CPT/IJC gibi tarihsel fonlar korunur,
+  // ancak ana portföy ekranında yalnız güncel elde tutulan fonlar görünür.
+  var CURRENT_PORTFOLIO_FUNDS=['TLY','PHE'];
 
   var deleted=loadDeletedFonlar();
-  var aktif=getAktifFonlar(todayStr)||[];
-
-  // IJC gibi özel başlangıç setleri işlem tablosu dışında tutulmuş olabilir.
-  try{
-    if(typeof IJC_BASLANGIC_SET!=='undefined'){
-      IJC_BASLANGIC_SET.forEach(function(t){
-        var f=String(t.fon||'').toUpperCase();
-        if(!f || deleted.indexOf(f)>=0) return;
-        var miktar=getMiktarAtDate(todayStr,f);
-        var satis=getSatisTarihi(f);
-        if(miktar>0 && !satis && aktif.indexOf(f)<0) aktif.push(f);
-      });
-    }
-  }catch(e){}
-
-  return Array.from(new Set(aktif.map(function(f){
-    return String(f||'').trim().toUpperCase();
-  }).filter(function(f){
-    return f && deleted.indexOf(f)<0;
-  })));
+  return CURRENT_PORTFOLIO_FUNDS.filter(function(f){
+    return deleted.indexOf(f)<0;
+  });
 }
 
 // ORKA V34.1: Ağ/veri güncellemelerinde yalnızca bugün portföyde aktif olan fonlar kullanılır.
@@ -12304,7 +12285,7 @@ async function fetchAllFunds_V19_OVERRIDE_DISABLED(){
     if (button) button.disabled = false;
   };
 
-  console.log('ORKA V37 hazır: Fon detayına yatırımcı sayısı, dünkü fark ve tahmini net para girişi/çıkışı eklendi.');
+  console.log('ORKA V37.1 hazır: Ana portföy fon listesi TLY ve PHE olarak düzeltildi; CPT yalnız geçmiş raporlarda korunuyor.');
 })();
 </script>
 

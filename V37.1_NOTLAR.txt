@@ -1,0 +1,12 @@
+ORKA V37.1 — CPT Aktif Portföy Düzeltmesi
+
+Kök neden:
+- CPT için 06.05.2026 tarihli 19.998 TL pozitif başlangıç kaydı vardı.
+- CPT için daha sonra 0 / satış kaydı bulunmadığı için işlem motoru CPT'yi hâlâ aktif kabul ediyordu.
+
+Düzeltme:
+- Ana güncel portföy fon listesi TLY ve PHE olarak tanımlandı.
+- CPT, DFI, IJC gibi eski fonlar ana fon kartlarında, güncel fon toplamında,
+  donut grafikte ve arka plan TEFAS/Ekofin güncellemelerinde görünmez.
+- Geçmiş aylık raporlarda geçmişte gerçekten bulunmuş fonlar korunur.
+- V37 yatırımcı sayısı ve net para girişi özellikleri aynen korunmuştur.
