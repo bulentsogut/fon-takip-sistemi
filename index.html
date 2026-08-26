@@ -36,7 +36,10 @@ var FON_FIREBASE_KEYS = [
   'fon_trx_v5',
   'fon_trx_extra_v1',
   'fon_deleted_funds_v1',
+  'fon_archived_funds_v1',
   'fon_satis_gecmisi_v1',
+  'fon_tahmin_secili_fonlar_v1',
+  'fon_tahmin_ozel_fonlar_v1',
   // Hisse Takip verileri
   'hisse_portfoy_v1',
   'hisse_deleted_v1',
@@ -226,11 +229,16 @@ function fonFirebaseApply(data){
         incoming = Object.keys(salesMap).map(function(k){ return salesMap[k]; });
       }
       fonFirebaseWriteLocal(key, incoming);
+      if(key === 'fon_trx_extra_v1' && typeof persistTrxExtra === 'function'){
+        try{ persistTrxExtra(incoming); }catch(e){}
+      }
     });
   }finally{ _fonFirebaseApplying = false; }
 }
 function fonFirebaseRefreshUI(){
   function run(){
+    try{ if(typeof loadCustomFundsIntoRegistry === 'function') loadCustomFundsIntoRegistry(); }catch(e){}
+    try{ if(typeof loadSelectedFundIds === 'function' && typeof selectedFundIds !== 'undefined') selectedFundIds = loadSelectedFundIds(); }catch(e){}
     try{ if(typeof initTakipAyOtomasyon === 'function') initTakipAyOtomasyon(); }catch(e){}
     try{ if(typeof render === 'function') render(); }catch(e){}
     try{ if(typeof renderTefasCards === 'function') renderTefasCards(); }catch(e){}
@@ -245,18 +253,23 @@ function fonFirebaseStart(){
   var db = fonFirebaseInit();
   if(!db) return;
   try{
-    db.ref(_fonFirebasePath).once('value').then(function(snap){
-      var data = snap.val();
+    var ref=db.ref(_fonFirebasePath);
+    var first=true;
+    ref.on('value', function(snap){
+      var data=snap.val();
       if(data){
         fonFirebaseApply(data);
         fonFirebaseRefreshUI();
-        _fonFirebaseReady = true;
-        if(typeof toast === 'function') toast('☁ Firebase fon/hisse verileri yüklendi', 'info');
-      }else{
+        _fonFirebaseReady=true;
+        if(first && typeof toast==='function') toast('☁ Firebase portföy verileri senkronlandı', 'info');
+      }else if(first){
         fonFirebaseSave(true);
-        _fonFirebaseReady = true;
+        _fonFirebaseReady=true;
       }
-    }).catch(function(e){ console.warn('Fon Firebase okuma hatası:', e); });
+      first=false;
+    }, function(e){
+      console.warn('Fon Firebase canlı okuma hatası:', e);
+    });
   }catch(e){ console.warn('Fon Firebase başlatma hatası:', e); }
 }
 window.addEventListener('load', function(){ setTimeout(fonFirebaseStart, 500); });
@@ -2729,7 +2742,7 @@ window.addEventListener('unhandledrejection', function(ev){
 
 <div class="status-bar">
   <div class="status-item">Kaynak: <span>Ekofin → TEFAS yedek</span></div>
-  <div class="status-item">Fonlar: <span>DFI · TLY · PHE · CPT</span></div>
+  <div class="status-item">Fonlar: <span>—</span></div>
   <div class="status-item" id="last-update">Son güncelleme: <span>—</span></div>
   <div class="loading-overlay" id="loading"><div class="spinner"></div> Çekiliyor…</div>
   <div class="bar-acts">
@@ -3752,7 +3765,7 @@ function renderHisseler() {
 
 
 
-const SK='fon_v5'; const TKEY='fon_tefas_v3'; const TRX_KEY='fon_trx_v5'; const TRX_EXTRA_KEY='fon_trx_extra_v1'; const DELETED_FON_KEY='fon_deleted_funds_v1';
+const SK='fon_v5'; const TKEY='fon_tefas_v3'; const TRX_KEY='fon_trx_v5'; const TRX_EXTRA_KEY='fon_trx_extra_v1'; const DELETED_FON_KEY='fon_deleted_funds_v1'; const ARCHIVED_FON_KEY='fon_archived_funds_v1';
 
 // localStorage erişim wrapper — file:// protokolünde de çalışır
 var _memStore = {}; // in-memory fallback
@@ -3811,6 +3824,35 @@ function saveDeletedFonlar(arr){
   (arr||[]).forEach(function(x){ x=String(x||'').toUpperCase().trim(); if(x) uniq[x]=true; });
   try{ _lsSet(DELETED_FON_KEY, JSON.stringify(Object.keys(uniq))); }catch(e){}
 }
+
+// ORKA V40 — CURRENT ve HISTORY ayrımı
+function loadArchivedFonState(){
+  try{
+    var raw=JSON.parse(_lsGet(ARCHIVED_FON_KEY)||'{}');
+    if(Array.isArray(raw)){
+      var converted={};
+      raw.forEach(function(f){ f=String(f||'').toUpperCase(); if(f) converted[f]={archived:true,ts:0}; });
+      return converted;
+    }
+    return raw && typeof raw==='object' ? raw : {};
+  }catch(e){ return {}; }
+}
+function saveArchivedFonState(state){
+  try{ _lsSet(ARCHIVED_FON_KEY, JSON.stringify(state||{})); }catch(e){}
+}
+function setFonArchived(fon, archived, reason){
+  fon=String(fon||'').toUpperCase().trim();
+  if(!fon) return;
+  var state=loadArchivedFonState();
+  state[fon]={archived:!!archived,ts:Date.now(),reason:reason||''};
+  saveArchivedFonState(state);
+}
+function isFonArchived(fon){
+  fon=String(fon||'').toUpperCase().trim();
+  var rec=loadArchivedFonState()[fon];
+  return !!(rec && rec.archived);
+}
+
 function isFonDeleted(fon){
   fon = String(fon||'').toUpperCase();
   return loadDeletedFonlar().indexOf(fon) >= 0;
@@ -4044,22 +4086,40 @@ function isFonSatildi(fon){
 // Portföy ekranlarında görünmesi gereken aktif fonlar.
 // Satılan fonlar hesap/geçmiş kayıtlarında korunur; ancak kartlarda, günlük detaylarda,
 // tahmin/analiz listelerinde ve aylık drilldown tablolarında gösterilmez.
+function ensurePortfolioArchiveMigration(){
+  var state=loadArchivedFonState();
+  var changed=false;
+  try{
+    var today=getAppToday();
+    var todayStr=String(today.getDate()).padStart(2,'0')+'.'
+      +String(today.getMonth()+1).padStart(2,'0')+'.'+today.getFullYear();
+    getTumFonlar().forEach(function(f){
+      if(getMiktarAtDate(todayStr,f)<=0 && getSatisTarihi(f)){
+        if(!state[f] || !state[f].archived){
+          state[f]={archived:true,ts:Date.now(),reason:'satış kaydı'};
+          changed=true;
+        }
+      }
+    });
+  }catch(e){}
+  if(!state.CPT){
+    state.CPT={archived:true,ts:Date.now(),reason:'V40 legacy CPT current-state migration'};
+    changed=true;
+  }
+  if(changed) saveArchivedFonState(state);
+}
 function getCurrentPortfolioFunds(){
-  // ORKA V39 — TEK DOĞRULUK KAYNAĞI
-  // Güncel portföy; Portföy Yönetimi'ndeki işlem kayıtlarından türetilir.
-  // Son miktarı > 0 olan fon aktiftir. Satış (0) anında çıkar, yeni fon anında eklenir.
+  ensurePortfolioArchiveMigration();
   var today=getAppToday();
   var todayStr=String(today.getDate()).padStart(2,'0')+'.'
     +String(today.getMonth()+1).padStart(2,'0')+'.'
     +today.getFullYear();
-
   var deleted=loadDeletedFonlar();
-  var aktif=(typeof getAktifFonlar==='function' ? getAktifFonlar(todayStr) : []) || [];
-
+  var aktif=getAktifFonlar(todayStr)||[];
   return Array.from(new Set(aktif.map(function(f){
     return String(f||'').trim().toUpperCase();
   }).filter(function(f){
-    return f && deleted.indexOf(f)<0;
+    return f && deleted.indexOf(f)<0 && !isFonArchived(f);
   }))).sort();
 }
 
@@ -5826,7 +5886,8 @@ function syncCurrentFundViews(reason){
     if(typeof fetchAllFunds==='function') fetchAllFunds();
 
     var funds=getCurrentPortfolioFunds();
-    console.log('ORKA V39 portföy senkronu:', reason||'', funds);
+    console.log('ORKA V40 portföy senkronu:', reason||'', funds);
+    setTimeout(function(){ try{orkaCheckFundConsistency();}catch(e){} },120);
 
     var lu=document.getElementById('last-update');
     if(lu){
@@ -5842,7 +5903,7 @@ function syncCurrentFundViews(reason){
 function openPortfoyModal(){
   var trx = loadTrx();
   // Mevcut aktif fonları listele
-  var tumFonlar = getTumFonlar();
+  var tumFonlar = getCurrentPortfolioFunds();
   var today = new Date();
   var todayStr = String(today.getDate()).padStart(2,'0')+'.'+String(today.getMonth()+1).padStart(2,'0')+'.'+today.getFullYear();
   var todayISO = today.getFullYear()+'-'+String(today.getMonth()+1).padStart(2,'0')+'-'+String(today.getDate()).padStart(2,'0');
@@ -5876,6 +5937,28 @@ function openPortfoyModal(){
       </div>
     </div>`;
   });
+
+  var archivedState=loadArchivedFonState();
+  var archivedSet={};
+  getTumFonlar().forEach(function(f){
+    if(tumFonlar.indexOf(f)<0 && !isFonDeleted(f)) archivedSet[f]=true;
+  });
+  Object.keys(archivedState||{}).forEach(function(f){
+    if(archivedState[f] && archivedState[f].archived && tumFonlar.indexOf(f)<0 && !isFonDeleted(f)) archivedSet[f]=true;
+  });
+  var archivedFunds=Object.keys(archivedSet).sort();
+  if(archivedFunds.length){
+    html += '<div style="font-size:0.7rem;color:#4e6a82;text-transform:uppercase;letter-spacing:2px;margin:18px 0 10px;">Satılmış / Arşivlenmiş Fonlar</div>';
+    html += '<div style="font-size:0.64rem;color:#6f8ba2;margin-bottom:8px;">Bu fonlar güncel portföyde değildir; işlem ve satış geçmişleri korunur.</div>';
+    archivedFunds.forEach(function(f){
+      var renk=getFonRenk(f);
+      var satis=getSatisTarihi(f)||'—';
+      html += '<div style="display:flex;align-items:center;gap:10px;margin-bottom:7px;padding:9px 10px;background:rgba(255,255,255,0.018);border:1px solid rgba(255,255,255,0.05);border-radius:8px;">'
+        +'<div style="font-family:Syne,sans-serif;font-weight:800;color:'+renk+';width:55px">'+f+'</div>'
+        +'<div style="flex:1;color:#6f8ba2;font-size:0.66rem">Güncel değil · Satış: '+satis+' · Geçmiş korunuyor</div>'
+        +'</div>';
+    });
+  }
 
   // Yeni fon ekle
   html += '<div style="font-size:0.7rem;color:#4e6a82;text-transform:uppercase;letter-spacing:2px;margin:16px 0 10px;">Yeni Fon Ekle</div>';
@@ -5935,6 +6018,7 @@ function satFon(fon){
   });
   extra.push({tarih: fonTarih, fon: fon, miktar: 0, not:'Portföy yönetimi - sat', ts: Date.now()});
   persistTrxExtra(extra);
+  setFonArchived(fon,true,'satış');
   var satisKontrol=loadFonSatisGecmisi().some(function(x){
     return String(x.fon||'').toUpperCase()===fon && x.satisTarihi===fonTarih;
   });
@@ -5958,6 +6042,7 @@ function silFon(fon) {
 
   // 1. Silinen fon listesini kalıcı kaydet. Böylece DFI/TLY gibi varsayılan fonlar tekrar ekrana dönmez.
   markFonDeleted(fon);
+  setFonArchived(fon,true,'kalıcı silme');
 
   // 2. liveRates'ten bu fonun tüm günlük verilerini sil
   Object.keys(liveRates).forEach(function(d) {
@@ -5997,6 +6082,7 @@ function yeniFonEkle(){
   var miktar = parseFloat(document.getElementById('pm-yeni-miktar').value)||0;
   if(!kod || miktar <= 0){ alert('Fon kodu ve miktar giriniz.'); return; }
   unmarkFonDeleted(kod);
+  setFonArchived(kod,false,'yeniden/ilk ekleme');
   var extra = [];
   try{ extra = JSON.parse(_lsGet(TRX_EXTRA_KEY))||[]; }catch(e){}
   var today = new Date();
@@ -6040,6 +6126,9 @@ function fonGuncelle(fon){
   } else {
     extra.push({tarih: fonTarih, fon: fon.toUpperCase(), miktar: yeniMiktar});
   }
+
+  if(yeniMiktar>0) setFonArchived(fon,false,'portföy güncelleme');
+  else setFonArchived(fon,true,'0 bakiye güncelleme');
 
   // localStorage'a yaz ve in-memory diziyi senkronize et
   try{ _lsSet(TRX_EXTRA_KEY, JSON.stringify(extra)); }catch{}
@@ -6347,10 +6436,16 @@ function orkaCheckFundConsistency(){
 
     var missing=truth.filter(function(f){return daily.indexOf(f)<0;});
     var extra=daily.filter(function(f){return truth.indexOf(f)<0;});
+    var report={aktif:truth,gunlukDetay:daily,eksik:missing,fazla:extra};
     if(missing.length||extra.length){
-      console.error('ORKA V39 TUTARLILIK HATASI',{aktif:truth,gunlukDetay:daily,eksik:missing,fazla:extra});
+      console.error('ORKA V40 PORTFÖY BÜTÜNLÜK HATASI',report);
     }else{
-      console.log('ORKA V39 tutarlılık OK:',truth);
+      console.log('ORKA V40 PORTFÖY BÜTÜNLÜK OK',report);
+    }
+    var lu=document.getElementById('last-update');
+    if(lu && !missing.length && !extra.length){
+      lu.innerHTML='Portföy bütünlüğü: <span style="color:var(--green)">OK</span>'
+        +' · Aktif: <span style="color:var(--cyan)">'+(truth.length?truth.join(' · '):'Yok')+'</span>';
     }
   }catch(e){}
 }
@@ -6766,7 +6861,7 @@ function colorForFundCode(code) {
 
 function loadCustomFundsIntoRegistry() {
   try {
-    const raw = localStorage.getItem(CUSTOM_FUNDS_STORAGE_KEY);
+    const raw = _lsGet(CUSTOM_FUNDS_STORAGE_KEY);
     const parsed = raw ? JSON.parse(raw) : {};
     if (parsed && typeof parsed === 'object') {
       Object.keys(parsed).forEach(function(code){
@@ -6791,7 +6886,7 @@ function saveCustomFundsFromRegistry() {
     Object.keys(FUNDS).forEach(function(code){
       if (FUNDS[code] && FUNDS[code].custom) out[code] = FUNDS[code];
     });
-    localStorage.setItem(CUSTOM_FUNDS_STORAGE_KEY, JSON.stringify(out));
+    _lsSet(CUSTOM_FUNDS_STORAGE_KEY, JSON.stringify(out));
   } catch(e) {}
 }
 
@@ -6862,7 +6957,7 @@ let selectedFundIds = loadSelectedFundIds();
 
 function loadSelectedFundIds() {
   try {
-    const raw = localStorage.getItem(SELECTED_FUNDS_STORAGE_KEY);
+    const raw = _lsGet(SELECTED_FUNDS_STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
       const valid = Array.isArray(parsed) ? parsed.filter(id => FUNDS[id]) : [];
@@ -6873,13 +6968,15 @@ function loadSelectedFundIds() {
 }
 
 function saveSelectedFundIds() {
-  try { localStorage.setItem(SELECTED_FUNDS_STORAGE_KEY, JSON.stringify(selectedFundIds)); } catch(e) {}
+  try { _lsSet(SELECTED_FUNDS_STORAGE_KEY, JSON.stringify(selectedFundIds)); } catch(e) {}
 }
 
 function getSelectedFundEntries() {
-  if (!Array.isArray(selectedFundIds) || selectedFundIds.length === 0) selectedFundIds = Object.keys(FUNDS);
-  selectedFundIds = selectedFundIds.filter(id => FUNDS[id]);
-  return selectedFundIds.map(id => [id, FUNDS[id]]);
+  var ids=(typeof getCurrentPortfolioFunds==='function') ? getCurrentPortfolioFunds() : [];
+  return ids.map(function(id){
+    var fund=ensureFundDefinition(id) || FUNDS[id];
+    return [id,fund];
+  }).filter(function(x){ return !!x[1]; });
 }
 
 function renderFundSelector() {
@@ -9406,7 +9503,7 @@ function saveTahminSnapshots(data) {
 
 // Bugünün tahminini kaydet (saat 23:00 otomatiği veya manuel)
 function snapshotTahminler(manuel) {
-  var FON_KODLAR = ['DFI', 'TLY', 'PHE', 'CPT', 'IJC', 'PBR'];
+  var FON_KODLAR = (typeof getCurrentPortfolioFunds==='function') ? getCurrentPortfolioFunds() : [];
   var bugun = new Date();
   var tarih = String(bugun.getDate()).padStart(2,'0') + '.' +
               String(bugun.getMonth()+1).padStart(2,'0') + '.' +
@@ -9463,7 +9560,7 @@ function renderKiyasTablosu() {
   var ofsetler   = {};
   try { ofsetler = JSON.parse(localStorage.getItem('fon_hesaplanan_ofset')) || {}; } catch(e) {}
 
-  var FON_KODLAR = ['DFI', 'TLY', 'PHE', 'CPT', 'IJC', 'PBR'];
+  var FON_KODLAR = (typeof getCurrentPortfolioFunds==='function') ? getCurrentPortfolioFunds() : [];
 
   var tarihler = Object.keys(snapshots).sort(function(a, b) {
     return parseTarih(b) - parseTarih(a);
@@ -9628,7 +9725,7 @@ function parseTarih(str) {
 function hesaplaVeUygulaOfset() {
   var snapshots = getTahminSnapshots();
   var rates     = getTakipGercekRates();
-  var FON_KODLAR = ['DFI', 'TLY', 'PHE', 'CPT', 'IJC', 'PBR'];
+  var FON_KODLAR = (typeof getCurrentPortfolioFunds==='function') ? getCurrentPortfolioFunds() : [];
 
   // Tahmin kaydı olan tarihleri bul, bugünden önceki son 5 günü al
   var today = new Date(); today.setHours(0,0,0,0);
@@ -9771,7 +9868,7 @@ var ADAPTIF_OFSET_MODU = localStorage.getItem('fon_adaptif_ofset_modu') || 'none
 if (ADAPTIF_OFSET_MODU === 'nihai') { ADAPTIF_OFSET_MODU = 'none'; try { localStorage.setItem('fon_adaptif_ofset_modu', 'none'); } catch(e) {} }
 var ADAPTIF_HESAP_GORUNUMU = null;
 
-function adaptifFonListesi() { return (typeof getSelectedFundEntries === 'function') ? getSelectedFundEntries().map(function(e){return e[0];}) : ['DFI', 'TLY', 'PHE', 'CPT', 'IJC', 'PBR']; }
+function adaptifFonListesi() { return (typeof getCurrentPortfolioFunds==='function') ? getCurrentPortfolioFunds() : []; }
 
 function adaptifRenk(fon) {
   return fon === 'TLY' ? '#4fa3ff'
@@ -12331,7 +12428,7 @@ async function fetchAllFunds_V19_OVERRIDE_DISABLED(){
     if (button) button.disabled = false;
   };
 
-  console.log('ORKA V39 hazır: Portföy kartları, Günlük Detay ve arka plan güncellemeleri tek aktif-fon kaynağına bağlandı.');
+  console.log('ORKA V40 hazır: Portföy kartları, Günlük Detay ve arka plan güncellemeleri tek aktif-fon kaynağına bağlandı.');
 })();
 </script>
 
