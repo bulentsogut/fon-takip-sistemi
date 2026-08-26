@@ -38,6 +38,7 @@ var FON_FIREBASE_KEYS = [
   'fon_deleted_funds_v1',
   'fon_archived_funds_v1',
   'fon_satis_gecmisi_v1',
+  'fon_position_ledger_v42',
   'fon_tahmin_secili_fonlar_v1',
   'fon_tahmin_ozel_fonlar_v1',
   // Hisse Takip verileri
@@ -4167,12 +4168,12 @@ const DEFAULT_FON_SATIS_GECMISI = [
     alimTarihi:'',
     satisTarihi:'17.06.2026',
     portfoydeGun:null,
-    alimTutari:271890,
-    satisTutari:590000,
-    karZarar:318110,
-    karZararPct:1.17,
+    alimTutari:0,
+    satisTutari:0,
+    karZarar:0,
+    karZararPct:0,
     ts:new Date(2026,5,17).getTime(),
-    not:'Geçmişe manuel eklenen DFI satış kaydı'
+    not:'DFI satış tarihi seed; V41 TEFAS fiyatlarıyla hesaplar'
   }
 ];
 function mergeDefaultFonSatisGecmisi(arr){
@@ -4221,6 +4222,391 @@ function ilkFonAlimKaydi(fon, satisTarihi){
   aday.sort(function(a,b){ return a.ts-b.ts; });
   return aday[0] || null;
 }
+
+
+// ORKA V42 — FON POZİSYON DEFTERİ
+// İlk giriş, ara toplam-tutar checkpointleri ve çıkış aynı defterde tutulur.
+const POSITION_LEDGER_KEY_V42='fon_position_ledger_v42';
+
+function loadPositionLedgerV42(){
+  try{
+    var x=JSON.parse(_lsGet(POSITION_LEDGER_KEY_V42)||'{}');
+    return x && typeof x==='object' ? x : {};
+  }catch(e){ return {}; }
+}
+function savePositionLedgerV42(x){
+  try{ _lsSet(POSITION_LEDGER_KEY_V42,JSON.stringify(x||{})); }catch(e){}
+}
+function trxDateTsV42(t){
+  var d=parseFonDateStr(t&&t.tarih);
+  return d?d.getTime():0;
+}
+function getFundTimelineV42(fon,exitDate){
+  fon=String(fon||'').toUpperCase();
+  var exit=parseFonDateStr(exitDate);
+  var arr=[];
+  try{
+    DEFAULT_TRX.concat(DEFAULT_TRX_EXTRA||[]).forEach(function(t){
+      if(String(t.fon||'').toUpperCase()!==fon) return;
+      var d=parseFonDateStr(t.tarih);
+      if(!d || (exit && d>exit)) return;
+      arr.push({
+        tarih:t.tarih, fon:fon, miktar:parseTRNumber(t.miktar),
+        ts:Number(t.ts||d.getTime()), source:t.not||'trx',
+        eventType:t.eventType||''
+      });
+    });
+  }catch(e){}
+  try{
+    (IJC_BASLANGIC_SET||[]).forEach(function(t){
+      if(String(t.fon||'').toUpperCase()!==fon) return;
+      var d=parseFonDateStr(t.tarih);
+      if(!d || (exit && d>exit)) return;
+      arr.push({
+        tarih:t.tarih, fon:fon, miktar:parseTRNumber(t.miktar),
+        ts:Number(t.ts||d.getTime()), source:'IJC_BASLANGIC_SET',
+        eventType:'CHECKPOINT'
+      });
+    });
+  }catch(e){}
+
+  var byDate={};
+  arr.sort(function(a,b){return (a.ts||0)-(b.ts||0);}).forEach(function(x){
+    byDate[x.tarih]=x;
+  });
+  return Object.keys(byDate).map(function(k){return byDate[k];})
+    .sort(function(a,b){return trxDateTsV42(a)-trxDateTsV42(b);});
+}
+
+async function buildFundPositionLedgerV42(fon,exitDate){
+  fon=String(fon||'').toUpperCase();
+  var timeline=getFundTimelineV42(fon,exitDate);
+  if(!timeline.length) return null;
+
+  var saleEvent=null;
+  for(var z=timeline.length-1;z>=0;z--){
+    if(parseTRNumber(timeline[z].miktar)===0){
+      saleEvent=timeline[z]; break;
+    }
+  }
+  if(!saleEvent && exitDate) saleEvent={tarih:exitDate,fon:fon,miktar:0,source:'history',eventType:'EXIT'};
+  if(!saleEvent) return null;
+
+  var saleDate=parseFonDateStr(saleEvent.tarih);
+  var positive=timeline.filter(function(x){
+    var d=parseFonDateStr(x.tarih);
+    return parseTRNumber(x.miktar)>0 && d && d<=saleDate;
+  });
+  if(!positive.length) return null;
+
+  var prices=await loadFonHistoricalPricesV41(fon);
+  if(!prices || !prices.length) return null;
+
+  var steps=[];
+  var units=0;
+  var netInvested=0;
+  var totalCashIn=0;
+  var totalCashOutBeforeSale=0;
+
+  for(var i=0;i<positive.length;i++){
+    var cp=positive[i];
+    var hit=pickHistoricalPriceV41(prices,cp.tarih,'entry');
+    if(!hit || !(hit.price>0)) continue;
+
+    var total=parseTRNumber(cp.miktar);
+    var expectedBefore=units*hit.price;
+    var cashFlow=(units<=0) ? total : total-expectedBefore;
+
+    units += cashFlow/hit.price;
+    netInvested += cashFlow;
+    if(cashFlow>=0) totalCashIn+=cashFlow;
+    else totalCashOutBeforeSale+=Math.abs(cashFlow);
+
+    // Checkpoint toplam TL tutarı authoritative'dir.
+    units=total/hit.price;
+
+    steps.push({
+      type:i===0?'ENTRY':'CHECKPOINT',
+      tarih:cp.tarih,
+      fiyatTarihi:formatFonPriceDateV41(hit.date),
+      toplamTutar:total,
+      birimFiyat:hit.price,
+      oncekiTeorikDeger:expectedBefore,
+      nakitAkisi:cashFlow,
+      adet:units,
+      source:cp.source||'',
+      eventType:cp.eventType||''
+    });
+  }
+
+  if(!steps.length || !(units>0)) return null;
+
+  var exitHit=pickHistoricalPriceV41(prices,saleEvent.tarih,'exit');
+  if(!exitHit || !(exitHit.price>0)) return null;
+
+  var soldTotal=units*exitHit.price;
+  var realizedPnL=soldTotal-netInvested;
+  var realizedPct=netInvested>0 ? realizedPnL/netInvested : 0;
+
+  var result={
+    fon:fon,
+    entryDate:steps[0].tarih,
+    exitDate:saleEvent.tarih,
+    entryTotal:steps[0].toplamTutar,
+    entryPrice:steps[0].birimFiyat,
+    entryPriceDate:steps[0].fiyatTarihi,
+    exitPrice:exitHit.price,
+    exitPriceDate:formatFonPriceDateV41(exitHit.date),
+    finalUnits:units,
+    soldTotal:soldTotal,
+    netInvested:netInvested,
+    totalCashIn:totalCashIn,
+    totalCashOutBeforeSale:totalCashOutBeforeSale,
+    realizedPnL:realizedPnL,
+    realizedPct:realizedPct,
+    checkpoints:steps,
+    method:'V42 Pozisyon Defteri · toplam TL checkpoint + TEFAS fiyat'
+  };
+
+  var book=loadPositionLedgerV42();
+  if(!book[fon]) book[fon]={};
+  book[fon][saleEvent.tarih]=result;
+  savePositionLedgerV42(book);
+  return result;
+}
+
+async function rebuildAllPositionLedgersV42(){
+  var sales=loadFonSatisGecmisi();
+  var saleMap={};
+
+  (sales||[]).forEach(function(x){
+    if(x&&x.fon&&x.satisTarihi){
+      saleMap[String(x.fon).toUpperCase()+'|'+x.satisTarihi]={
+        fon:String(x.fon).toUpperCase(), satisTarihi:x.satisTarihi
+      };
+    }
+  });
+
+  try{
+    DEFAULT_TRX.concat(DEFAULT_TRX_EXTRA||[]).forEach(function(t){
+      if(t&&t.fon&&t.tarih&&parseTRNumber(t.miktar)===0){
+        saleMap[String(t.fon).toUpperCase()+'|'+t.tarih]={
+          fon:String(t.fon).toUpperCase(), satisTarihi:t.tarih
+        };
+      }
+    });
+  }catch(e){}
+
+  var rows=[];
+  var keys=Object.keys(saleMap);
+  for(var i=0;i<keys.length;i++){
+    var meta=saleMap[keys[i]];
+    try{
+      var pos=await buildFundPositionLedgerV42(meta.fon,meta.satisTarihi);
+      if(pos) rows.push(pos);
+    }catch(e){
+      console.warn('V42 pozisyon defteri kurulamadı:',meta,e);
+    }
+  }
+  return rows;
+}
+
+function applyPositionLedgerToSalesHistoryV42(positionRows){
+  var arr=loadFonSatisGecmisi();
+  (positionRows||[]).forEach(function(pos){
+    var idx=arr.findIndex(function(x){
+      return String(x.fon||'').toUpperCase()===pos.fon &&
+        String(x.satisTarihi||'')===String(pos.exitDate);
+    });
+    var base=idx>=0 ? arr[idx] : {
+      id:pos.fon+'_'+pos.exitDate+'_v42',
+      fon:pos.fon, satisTarihi:pos.exitDate, ts:Date.now()
+    };
+
+    base.alimTarihi=pos.entryDate;
+    base.satisTarihi=pos.exitDate;
+    base.portfoydeGun=daysBetweenFonDates(pos.entryDate,pos.exitDate);
+
+    base.alimTutari=pos.entryTotal;
+    base.satisTutari=pos.soldTotal;
+    base.netYatirilanSermaye=pos.netInvested;
+    base.toplamNakitGiris=pos.totalCashIn;
+    base.araNakitCikis=pos.totalCashOutBeforeSale;
+
+    base.karZarar=pos.realizedPnL;
+    base.karZararPct=pos.realizedPct;
+    base.alimFiyati=pos.entryPrice;
+    base.satisFiyati=pos.exitPrice;
+    base.fiyatAlimTarihi=pos.entryPriceDate;
+    base.fiyatSatisTarihi=pos.exitPriceDate;
+    base.adet=pos.finalUnits;
+    base.hesapYontemi=pos.method;
+    base.checkpointSayisi=(pos.checkpoints||[]).length;
+    base.not='V42 pozisyon defteriyle hesaplandı';
+
+    if(idx>=0) arr[idx]=base; else arr.push(base);
+  });
+
+  saveFonSatisGecmisi(arr);
+  try{ if(typeof fonFirebaseSave==='function') fonFirebaseSave(true); }catch(e){}
+  return arr;
+}
+
+async function rebuildFonSatisGecmisiV42(){
+  var positions=await rebuildAllPositionLedgersV42();
+  return applyPositionLedgerToSalesHistoryV42(positions);
+}
+
+// ORKA V41 — Gerçekleşmiş fon K/Z tek standardı:
+// Giriş tutarı ve giriş/çıkış tarihlerindeki TEFAS birim fiyatları kullanılır.
+// Adet = Giriş Tutarı / Giriş Fiyatı
+// Satış Değeri = Adet × Çıkış Fiyatı
+// Gerçekleşen K/Z = Satış Değeri - Giriş Tutarı
+var _fonHistoricalPriceCacheV41={};
+
+function fonDateToYmd(tarih){
+  var d=parseFonDateStr(tarih);
+  if(!d) return '';
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+}
+function tefasRowDateV41(row){
+  var raw=row && (row.tarih||row.TARIH||row.Tarih||row.date||row.DATE);
+  if(!raw) return null;
+  var d=new Date(raw);
+  if(!isNaN(d.getTime())) return d;
+  var m=String(raw).match(/^(\d{1,2})[\.\/-](\d{1,2})[\.\/-](\d{4})/);
+  return m ? new Date(Number(m[3]),Number(m[2])-1,Number(m[1])) : null;
+}
+function tefasRowPriceV41(row){
+  return pickNumber(row||{},['fiyat','FIYAT','Fiyat','fonFiyat','FONFIYAT','price','PRICE']);
+}
+async function loadFonHistoricalPricesV41(fon){
+  fon=String(fon||'').toUpperCase();
+  if(_fonHistoricalPriceCacheV41[fon]) return _fonHistoricalPriceCacheV41[fon];
+
+  var rows=await tefasPost('fonFiyatBilgiGetir',{fonKodu:fon,periyod:12});
+  var out=(rows||[]).map(function(r){
+    var d=tefasRowDateV41(r), p=tefasRowPriceV41(r);
+    return d && p>0 ? {date:d,ymd:d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'),price:p} : null;
+  }).filter(Boolean).sort(function(a,b){return a.date-b.date;});
+
+  _fonHistoricalPriceCacheV41[fon]=out;
+  return out;
+}
+function pickHistoricalPriceV41(rows,tarih,side){
+  var target=parseFonDateStr(tarih);
+  if(!target || !rows || !rows.length) return null;
+  var ymd=fonDateToYmd(tarih);
+  var exact=rows.find(function(x){return x.ymd===ymd;});
+  if(exact) return {price:exact.price,date:exact.date,exact:true};
+
+  // İşlem tarihi tatil/hafta sonu ise:
+  // girişte ilk sonraki değerleme günü, çıkışta son önceki değerleme günü.
+  if(side==='entry'){
+    for(var i=0;i<rows.length;i++){
+      if(rows[i].date>=target) return {price:rows[i].price,date:rows[i].date,exact:false};
+    }
+  }else{
+    for(var j=rows.length-1;j>=0;j--){
+      if(rows[j].date<=target) return {price:rows[j].price,date:rows[j].date,exact:false};
+    }
+  }
+  return null;
+}
+function formatFonPriceDateV41(d){
+  if(!d) return '';
+  return String(d.getDate()).padStart(2,'0')+'.'+String(d.getMonth()+1).padStart(2,'0')+'.'+d.getFullYear();
+}
+async function hesaplaFonGerceklesenKZV41(fon,alimTarihi,satisTarihi,alimTutari){
+  fon=String(fon||'').toUpperCase();
+  alimTutari=parseTRNumber(alimTutari);
+  if(!fon || !alimTarihi || !satisTarihi || !(alimTutari>0)) return null;
+
+  var rows=await loadFonHistoricalPricesV41(fon);
+  var entry=pickHistoricalPriceV41(rows,alimTarihi,'entry');
+  var exit=pickHistoricalPriceV41(rows,satisTarihi,'exit');
+  if(!entry || !exit || !(entry.price>0) || !(exit.price>0)) return null;
+
+  var adet=alimTutari/entry.price;
+  var satisTutari=adet*exit.price;
+  var kz=satisTutari-alimTutari;
+  var pct=(exit.price/entry.price)-1;
+
+  return {
+    alimFiyati:entry.price,
+    satisFiyati:exit.price,
+    fiyatAlimTarihi:formatFonPriceDateV41(entry.date),
+    fiyatSatisTarihi:formatFonPriceDateV41(exit.date),
+    fiyatAlimExact:entry.exact,
+    fiyatSatisExact:exit.exact,
+    adet:adet,
+    alimTutari:alimTutari,
+    satisTutari:satisTutari,
+    karZarar:kz,
+    karZararPct:pct,
+    hesapYontemi:'TEFAS giriş/çıkış birim fiyatı'
+  };
+}
+
+async function rebuildFonSatisGecmisiV41(){
+  var arr=loadFonSatisGecmisi();
+  var tum=[];
+  try{ tum=DEFAULT_TRX.concat(DEFAULT_TRX_EXTRA||[]); }catch(e){ tum=loadTrx(); }
+
+  // 0 bakiye hareketlerinden eksik satış kayıtlarını oluştur.
+  tum.forEach(function(t){
+    if(!t || parseTRNumber(t.miktar)!==0 || !t.fon || !t.tarih) return;
+    var fon=String(t.fon).toUpperCase();
+    var exists=arr.some(function(x){
+      return String(x.fon||'').toUpperCase()===fon && String(x.satisTarihi||'')===String(t.tarih);
+    });
+    if(!exists){
+      arr.push({
+        id:fon+'_'+t.tarih+'_price_rebuild',
+        fon:fon,
+        alimTarihi:null,
+        satisTarihi:t.tarih,
+        ts:Number(t.ts||Date.now())
+      });
+    }
+  });
+
+  // Her geçmiş satış kaydını fiyat bazlı baştan hesapla.
+  for(var i=0;i<arr.length;i++){
+    var x=arr[i];
+    var fon=String(x.fon||'').toUpperCase();
+    if(!fon || !x.satisTarihi) continue;
+
+    var alim=ilkFonAlimKaydi(fon,x.satisTarihi);
+    if(!alim) continue;
+
+    try{
+      var calc=await hesaplaFonGerceklesenKZV41(fon,alim.tarih,x.satisTarihi,alim.miktar);
+      if(calc){
+        x.alimTarihi=alim.tarih;
+        x.portfoydeGun=daysBetweenFonDates(alim.tarih,x.satisTarihi);
+        x.alimTutari=calc.alimTutari;
+        x.satisTutari=calc.satisTutari;
+        x.karZarar=calc.karZarar;
+        x.karZararPct=calc.karZararPct;
+        x.alimFiyati=calc.alimFiyati;
+        x.satisFiyati=calc.satisFiyati;
+        x.fiyatAlimTarihi=calc.fiyatAlimTarihi;
+        x.fiyatSatisTarihi=calc.fiyatSatisTarihi;
+        x.adet=calc.adet;
+        x.hesapYontemi=calc.hesapYontemi;
+        x.not='TEFAS tarihsel fiyatlarıyla yeniden hesaplandı';
+      }
+    }catch(e){
+      console.warn('ORKA V41 tarihsel K/Z hesaplanamadı:',fon,x.satisTarihi,e);
+    }
+  }
+
+  saveFonSatisGecmisi(arr);
+  try{ if(typeof fonFirebaseSave==='function') fonFirebaseSave(true); }catch(e){}
+  return arr;
+}
+
 function fonSatisGecmisiKaydet(fon, satisTarihi, satisTutari){
   fon=String(fon||'').toUpperCase();
   satisTutari=parseTRNumber(satisTutari);
@@ -4309,19 +4695,32 @@ function formatGunSayisi(gun){
   var ay=Math.floor(gun/30), kalan=gun%30;
   return ay+' ay'+(kalan?' '+kalan+' gün':'');
 }
-function openFonAlimSatimGecmisi(){
-  var arr=reconcileFonSatisGecmisi().slice().sort(function(a,b){ return (b.ts||0)-(a.ts||0); });
+async function openFonAlimSatimGecmisi(){
+  var wait=document.createElement('div');
+  wait.id='fon-satis-recalc-wait';
+  wait.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.68);z-index:10020;display:flex;align-items:center;justify-content:center;color:#00ffc8;font-family:DM Mono,monospace;font-size:.78rem;';
+  wait.innerHTML='<div style="padding:18px 22px;border:1px solid rgba(0,255,200,.28);border-radius:12px;background:#0d1520;">Pozisyon defteri kuruluyor · giriş, ara toplamlar ve çıkış TEFAS fiyatlarıyla hesaplanıyor…</div>';
+  document.body.appendChild(wait);
+
+  var arr=[];
+  try{
+    arr=(await rebuildFonSatisGecmisiV42()).slice().sort(function(a,b){ return (b.ts||0)-(a.ts||0); });
+  }catch(e){
+    console.warn('V42 geçmiş yeniden hesaplama hatası:',e);
+    arr=reconcileFonSatisGecmisi().slice().sort(function(a,b){ return (b.ts||0)-(a.ts||0); });
+  }
+  var w=document.getElementById('fon-satis-recalc-wait'); if(w) w.remove();
   var html='<div id="fon-satis-modal" style="position:fixed;inset:0;background:rgba(0,0,0,0.84);z-index:10000;display:flex;align-items:center;justify-content:center;padding:18px;">';
   html+='<div style="width:min(980px,96vw);max-height:88vh;overflow:auto;background:#0d1520;border:1px solid rgba(0,255,200,0.28);border-radius:16px;box-shadow:0 20px 80px rgba(0,0,0,0.55);">';
   html+='<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:18px 22px;border-bottom:1px solid rgba(0,255,200,0.14);">';
-  html+='<div><div style="font-family:Syne,sans-serif;font-size:1.1rem;font-weight:800;color:#00ffc8;letter-spacing:.5px;">FON ALIM/SATIM GEÇMİŞİ</div><div style="font-family:DM Mono,monospace;font-size:.68rem;color:#4e6a82;margin-top:5px;">Satılan fonlarda tarih, portföyde kalma süresi ve gerçekleşen kâr/zarar</div></div>';
+  html+='<div><div style="font-family:Syne,sans-serif;font-size:1.1rem;font-weight:800;color:#00ffc8;letter-spacing:.5px;">FON ALIM/SATIM GEÇMİŞİ</div><div style="font-family:DM Mono,monospace;font-size:.68rem;color:#4e6a82;margin-top:5px;">Satılan fonlarda giriş ve ara toplam checkpointleri ile TEFAS fiyatlarına göre gerçekleşen kâr/zarar</div></div>';
   html+='<button onclick="document.getElementById(\'fon-satis-modal\').remove()" style="background:rgba(255,71,87,0.12);border:1px solid rgba(255,71,87,0.35);color:#ff4757;font-family:DM Mono,monospace;font-size:.75rem;padding:8px 12px;border-radius:8px;cursor:pointer;">✕ Kapat</button>';
   html+='</div>';
   if(!arr.length){
     html+='<div style="padding:28px;color:#4e6a82;font-family:DM Mono,monospace;font-size:.78rem;line-height:1.8;text-align:center;">Henüz satılmış fon kaydı yok.<br>Portföy ekranında bir fon için <b style="color:#ff4757">Sat</b> dediğinde kayıt burada oluşacak.</div>';
   }else{
     html+='<div style="overflow-x:auto;padding:16px 18px 22px;"><table style="width:100%;border-collapse:collapse;font-family:DM Mono,monospace;font-size:.74rem;min-width:820px;">';
-    html+='<thead><tr style="color:#4e6a82;text-transform:uppercase;letter-spacing:1.2px;font-size:.62rem;background:rgba(0,0,0,.22);"><th style="text-align:left;padding:10px;">Fon</th><th style="text-align:right;padding:10px;">Alım Tarihi</th><th style="text-align:right;padding:10px;">Satım Tarihi</th><th style="text-align:right;padding:10px;">Portföyde</th><th style="text-align:right;padding:10px;">Alım Tutarı</th><th style="text-align:right;padding:10px;">Satım Tutarı</th><th style="text-align:right;padding:10px;">K/Z TL</th><th style="text-align:right;padding:10px;">K/Z %</th></tr></thead><tbody>';
+    html+='<thead><tr style="color:#4e6a82;text-transform:uppercase;letter-spacing:1.2px;font-size:.62rem;background:rgba(0,0,0,.22);"><th style="text-align:left;padding:10px;">Fon</th><th style="text-align:right;padding:10px;">Alım Tarihi</th><th style="text-align:right;padding:10px;">Satım Tarihi</th><th style="text-align:right;padding:10px;">Portföyde</th><th style="text-align:right;padding:10px;">İlk Giriş</th><th style="text-align:right;padding:10px;">Net Yatırılan</th><th style="text-align:right;padding:10px;">Alım Fiyatı</th><th style="text-align:right;padding:10px;">Satım Fiyatı</th><th style="text-align:right;padding:10px;">Satılan Toplam</th><th style="text-align:right;padding:10px;">K/Z TL</th><th style="text-align:right;padding:10px;">K/Z %</th></tr></thead><tbody>';
     arr.forEach(function(x){
       var cls=(parseTRNumber(x.karZarar)>=0)?'color:#2ed573':'color:#ff4757';
       var pct=parseTRNumber(x.karZararPct);
@@ -4331,10 +4730,20 @@ function openFonAlimSatimGecmisi(){
       html+='<td style="text-align:right;padding:10px;color:#d8e8ff;">'+(x.satisTarihi||'—')+'</td>';
       html+='<td style="text-align:right;padding:10px;color:#d8e8ff;">'+formatGunSayisi(x.portfoydeGun)+'</td>';
       html+='<td style="text-align:right;padding:10px;color:#9ab8d8;">'+fmt(parseTRNumber(x.alimTutari))+'</td>';
+      html+='<td style="text-align:right;padding:10px;color:#9ab8d8;">'+fmt(parseTRNumber(x.netYatirilanSermaye||x.alimTutari))+'</td>';
+      html+='<td style="text-align:right;padding:10px;color:#9ab8d8;">'+(parseTRNumber(x.alimFiyati)>0?parseTRNumber(x.alimFiyati).toLocaleString('tr-TR',{minimumFractionDigits:4,maximumFractionDigits:6}):'—')+'</td>';
+      html+='<td style="text-align:right;padding:10px;color:#9ab8d8;">'+(parseTRNumber(x.satisFiyati)>0?parseTRNumber(x.satisFiyati).toLocaleString('tr-TR',{minimumFractionDigits:4,maximumFractionDigits:6}):'—')+'</td>';
       html+='<td style="text-align:right;padding:10px;color:#9ab8d8;">'+fmt(parseTRNumber(x.satisTutari))+'</td>';
       html+='<td style="text-align:right;padding:10px;font-weight:800;'+cls+'">'+fmt(parseTRNumber(x.karZarar))+'</td>';
       html+='<td style="text-align:right;padding:10px;font-weight:800;'+cls+'">'+(pct>=0?'▲ ':'▼ ')+Math.abs(pct*100).toFixed(2)+'%</td>';
       html+='</tr>';
+      if(parseInt(x.checkpointSayisi||0,10)>1){
+        html+='<tr><td colspan="11" style="padding:6px 10px 12px;color:#56758f;font-size:.58rem;border-bottom:1px solid rgba(255,255,255,.04);">'
+          +'Pozisyon defteri: '+parseInt(x.checkpointSayisi||0,10)+' checkpoint · '
+          +'Toplam nakit giriş '+fmt(parseTRNumber(x.toplamNakitGiris||0))+' · '
+          +'Ara nakit çıkış '+fmt(parseTRNumber(x.araNakitCikis||0))
+          +'</td></tr>';
+      }
     });
     html+='</tbody></table></div>';
   }
@@ -6002,6 +6411,7 @@ function satFon(fon){
   var hesapTutari = getMiktarAtDate(fonTarih, fon);
   var satisTutari = modalTutari > 0 ? modalTutari : hesapTutari;
   try{
+    // İlk kayıt oluşturulur; gerçekleşen tutar/KZ fiyat bazlı motor tarafından yeniden hesaplanır.
     fonSatisGecmisiKaydet(fon, fonTarih, satisTutari);
   }catch(e){
     console.warn('Satış geçmişi kaydedilemedi:', e);
@@ -6027,6 +6437,11 @@ function satFon(fon){
     return;
   }
   try{ if(typeof fonFirebaseSave === 'function') fonFirebaseSave(true); }catch(e){}
+  try{
+    rebuildFonSatisGecmisiV42().then(function(){
+      console.log('ORKA V42 satış geçmişi pozisyon defteriyle güncellendi:',fon,fonTarih);
+    });
+  }catch(e){}
 
   var modal = document.getElementById('portfoy-modal');
   if(modal) modal.remove();
@@ -6087,7 +6502,7 @@ function yeniFonEkle(){
   try{ extra = JSON.parse(_lsGet(TRX_EXTRA_KEY))||[]; }catch(e){}
   var today = new Date();
   var todayStr = String(today.getDate()).padStart(2,'0')+'.'+String(today.getMonth()+1).padStart(2,'0')+'.'+today.getFullYear();
-  extra.push({tarih: todayStr, fon: kod, miktar: miktar, not:'Portföy yönetimi - ekle', ts: Date.now()});
+  extra.push({tarih: todayStr, fon: kod, miktar: miktar, eventType:'ENTRY', not:'Portföy yönetimi - ekle', ts: Date.now()});
   persistTrxExtra(extra);
   document.getElementById('portfoy-modal').remove();
   syncCurrentFundViews('ekle:'+kod);
@@ -6122,9 +6537,9 @@ function fonGuncelle(fon){
     if(Math.abs(extra[idx].miktar - yeniMiktar) < 0.01){
       toast('Bu tarih ve tutar zaten kayıtlı.','info'); return;
     }
-    extra[idx].miktar = yeniMiktar; // Aynı tarih, farklı miktar → güncelle
+    extra[idx].miktar = yeniMiktar; extra[idx].eventType='CHECKPOINT'; // Aynı tarih, farklı toplam → checkpoint
   } else {
-    extra.push({tarih: fonTarih, fon: fon.toUpperCase(), miktar: yeniMiktar});
+    extra.push({tarih: fonTarih, fon: fon.toUpperCase(), miktar: yeniMiktar, eventType:(yeniMiktar>0?'CHECKPOINT':'EXIT'), ts:Date.now()});
   }
 
   if(yeniMiktar>0) setFonArchived(fon,false,'portföy güncelleme');
@@ -6192,8 +6607,8 @@ function bakSave(inp, fon, tarih) {
   } catch(e2) {}
   var idx = extra.findIndex(function(t) { return t.fon.toUpperCase() === fon.toUpperCase() && t.tarih === tam; });
   var eskiMiktar = idx >= 0 ? extra[idx].miktar : null;
-  if (idx >= 0) { extra[idx].eskiMiktar = eskiMiktar; extra[idx].miktar = v; extra[idx].ts = Date.now(); extra[idx].not = 'BAK tablodan'; }
-  else extra.push({ tarih: tam, fon: fon.toUpperCase(), miktar: v, eskiMiktar: null, not: 'BAK tablodan', ts: Date.now() });
+  if (idx >= 0) { extra[idx].eskiMiktar = eskiMiktar; extra[idx].miktar = v; extra[idx].ts = Date.now(); extra[idx].not = 'BAK tablodan'; extra[idx].eventType='CHECKPOINT'; }
+  else extra.push({ tarih: tam, fon: fon.toUpperCase(), miktar: v, eskiMiktar: null, eventType:'CHECKPOINT', not: 'BAK tablodan', ts: Date.now() });
   try { _lsSet(TRX_EXTRA_KEY, JSON.stringify(extra)); } catch(e2) {}
   DEFAULT_TRX_EXTRA.length = 0;
   extra.forEach(function(t) { DEFAULT_TRX_EXTRA.push(t); });
@@ -12428,7 +12843,7 @@ async function fetchAllFunds_V19_OVERRIDE_DISABLED(){
     if (button) button.disabled = false;
   };
 
-  console.log('ORKA V40 hazır: Portföy kartları, Günlük Detay ve arka plan güncellemeleri tek aktif-fon kaynağına bağlandı.');
+  console.log('ORKA V42 hazır: Portföy kartları, Günlük Detay ve arka plan güncellemeleri tek aktif-fon kaynağına bağlandı.');
 })();
 </script>
 
