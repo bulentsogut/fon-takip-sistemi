@@ -4234,14 +4234,20 @@ function getPortfoyGorunenFonlar(){
 // ORKA V34.1: Ağ/veri güncellemelerinde yalnızca bugün portföyde aktif olan fonlar kullanılır.
 // Satılmış fonlar geçmiş raporlarda korunur ancak TEFAS/Ekofin arka plan isteklerine dahil edilmez.
 function getAktifGuncellemeFonlari(){
-  var fonlar = [];
-  try {
-    if (typeof getPortfoyGorunenFonlar === 'function') fonlar = getPortfoyGorunenFonlar() || [];
-  } catch(e) {}
-  fonlar = Array.from(new Set((fonlar || []).map(function(f){
-    return String(f || '').trim().toUpperCase();
+  // V48: Ağırlık güncelle butonu hem aktif portföyü hem Getiri Tahmin watchlist'ini tarar.
+  // Böylece THF gibi portföyde olmayan tahmin fonları da Ekofin/FVT güncellemesine girer.
+  var fonlar=[];
+  try{
+    if(typeof getPortfoyGorunenFonlar==='function')
+      fonlar=fonlar.concat(getPortfoyGorunenFonlar()||[]);
+  }catch(e){}
+  try{
+    if(typeof getSelectedFundEntries==='function')
+      fonlar=fonlar.concat(getSelectedFundEntries().map(function(e){return e[0];}));
+  }catch(e){}
+  return Array.from(new Set(fonlar.map(function(f){
+    return String(f||'').trim().toUpperCase();
   }).filter(Boolean)));
-  return fonlar;
 }
 
 const fmt=n=>isNaN(n)||n==null?'—':(n<0?'-':'')+'₺'+Math.abs(n).toLocaleString('tr-TR',{minimumFractionDigits:0,maximumFractionDigits:0});
@@ -7186,6 +7192,22 @@ const saved=loadR();
 
 
 
+
+function orkaPredictionDataAuditV48(code){
+  code=String(code||'').toUpperCase().trim();
+  var f=FUNDS[code]||{};
+  var hs=Array.isArray(f.holdings)?f.holdings:[];
+  var report={
+    code:code,
+    selected:(selectedFundIds||[]).indexOf(code)>=0,
+    holdings:hs.length,
+    weightTotal:hs.reduce(function(t,h){return t+(Number(h.weight)||0);},0),
+    sample:hs.slice(0,8).map(function(h){return {code:h.code,weight:h.weight,type:h.type};})
+  };
+  console.log('ORKA V48 TAHMİN VERİ AUDIT',report);
+  return report;
+}
+
 function orkaPredictionWatchlistAuditV46(){
   try{
     var ids=getSelectedFundEntries().map(function(e){return e[0];});
@@ -8005,38 +8027,69 @@ function refreshPredictionFundV47(code){
   code=String(code||'').toUpperCase().trim();
   if(!code) return Promise.resolve(false);
 
-  // Tanımı garanti et.
-  try{ ensureFundDefinition(code); }catch(e){}
+  var fund=ensureFundDefinition(code);
+  if(!fund) return Promise.resolve(false);
 
-  // Mevcut projedeki fon portföy okuyucularını aynı fon için çalıştır.
-  var jobs=[];
-  try{
-    if(typeof loadEkofinPortfolio==='function')
-      jobs.push(Promise.resolve(loadEkofinPortfolio(code)));
-  }catch(e){}
-  try{
-    if(typeof loadFVTPortfolio==='function')
-      jobs.push(Promise.resolve(loadFVTPortfolio(code)));
-  }catch(e){}
+  // V48 KÖK DÜZELTME:
+  // V47 loadEkofinPortfolio/loadFVTPortfolio sonuçlarını sadece bekliyor,
+  // fakat dönen holdings'i FUNDS[code].holdings'e hiç yazmıyordu.
+  // Şimdi ana birleşik kaynak motoru kullanılır ve sonuç registry'ye uygulanır.
+  return Promise.resolve(loadPortfolioAnySource(code)).then(function(result){
+    if(!result || !Array.isArray(result.holdings) || !result.holdings.length){
+      console.warn('ORKA V48 tahmin fonu portföy içeriği gelmedi:',code,result);
+      if(typeof setStatus==='function')
+        setStatus('error',code+' için Ekofin/FVT portföy ağırlığı alınamadı.');
+      return false;
+    }
 
-  // Genel fon veri yenileyicileri varsa onları da çalıştır.
-  try{
-    if(typeof fetchFundData==='function')
-      jobs.push(Promise.resolve(fetchFundData(code)));
-  }catch(e){}
-  try{
-    if(typeof fetchFonData==='function')
-      jobs.push(Promise.resolve(fetchFonData(code)));
-  }catch(e){}
+    var current=Array.isArray(FUNDS[code].holdings)?FUNDS[code].holdings.slice():[];
 
-  return Promise.allSettled(jobs).then(function(results){
-    // Kaynaklardan gelen holdings FUNDS registry'ye işlenmiş olabilir.
-    try{ if(typeof saveCustomFundsFromRegistry==='function') saveCustomFundsFromRegistry(); }catch(e){}
+    // Yeni/custom fonun mevcut holdings'i boşsa güvenlik filtresinin
+    // eski liste korumasına takılmadan doğrudan gerçek kaynağı kabul et.
+    if(current.length===0){
+      FUNDS[code].holdings=result.holdings.slice();
+    }else{
+      if(!isCandidateSafeForReplace(code,current,result)){
+        console.warn('ORKA V48 tahmin fonu kaynak güvenlik filtresine takıldı:',code,result.source);
+        return false;
+      }
+      FUNDS[code].holdings=mergeHoldingsPreserveExisting(current,result.holdings);
+    }
+
+    normalizeAllHoldingTypes();
+    FUNDS[code].aciklamaTarihi=result.aciklamaTarihi||FUNDS[code].aciklamaTarihi||'';
+    FUNDS[code].custom=true;
+
+    // Hem custom registry hem ağırlık override kalıcı olsun.
+    try{ saveCustomFundsFromRegistry(); }catch(e){}
+    try{ saveFVTPortfolioOverrides(); }catch(e){}
     try{ if(typeof fonFirebaseSave==='function') fonFirebaseSave(true); }catch(e){}
-    try{ if(typeof renderTahmin==='function') renderTahmin(); }catch(e){}
-    try{ if(typeof renderGetiriTahmin==='function') renderGetiriTahmin(); }catch(e){}
-    console.log('ORKA V47 tahmin fonu veri yenileme:',code,results);
-    return true;
+
+    // Önce kartları yeniden çiz, sonra hisselerin günlük fiyat/getirilerini çek.
+    try{ renderFunds(); }catch(e){}
+    try{ updateUI(); }catch(e){}
+    try{ if(typeof renderGercekPanel==='function') renderGercekPanel(); }catch(e){}
+    try{ if(typeof renderKiyasTablosu==='function') renderKiyasTablosu(); }catch(e){}
+
+    console.log('ORKA V48 tahmin fonu holdings uygulandı:',code,{
+      source:result.source,
+      count:result.holdings.length,
+      date:result.aciklamaTarihi||''
+    });
+
+    if(typeof setStatus==='function')
+      setStatus('loading',code+' ağırlıkları alındı ('+result.holdings.length+' kalem). Hisse/fon fiyatları güncelleniyor...');
+
+    // fetchAll zaten getSelectedFundEntries() yani tahmin watchlist holdings'lerini kullanıyor.
+    return Promise.resolve(typeof fetchAll==='function' ? fetchAll() : true).then(function(){
+      if(typeof setStatus==='function')
+        setStatus('live',code+' ağırlık ve hisse/fon verileri güncellendi — '+result.holdings.length+' kalem ['+(result.source||'kaynak')+']');
+      return true;
+    });
+  }).catch(function(e){
+    console.error('ORKA V48 tahmin fonu güncelleme hatası:',code,e);
+    if(typeof setStatus==='function') setStatus('error',code+' güncelleme hatası: '+(e.message||e));
+    return false;
   });
 }
 function refreshAllPredictionFundsV47(){
@@ -8068,7 +8121,10 @@ function addFundToPredictionWatchlistV46(code,name){
   }
 
   if(!Array.isArray(selectedFundIds)) selectedFundIds=loadSelectedFundIds();
-  if(selectedFundIds.indexOf(code)<0) addFundToPredictionWatchlistV46(code,(FUNDS[code]&&FUNDS[code].name)||code);
+  if(selectedFundIds.indexOf(code)<0){
+    selectedFundIds.push(code);
+    saveSelectedFundIds();
+  }
 
   try{ if(typeof renderTahmin==='function') renderTahmin(); }catch(e){}
   try{ if(typeof renderGetiriTahmin==='function') renderGetiriTahmin(); }catch(e){}
@@ -8143,48 +8199,35 @@ function renderFundSelector() {
 }
 
 async function addSelectedFundFromInput() {
-  const inp = document.getElementById('fundAddInput') || document.getElementById('fundAddSelect');
-  if (!inp) return;
-  const code = normalizeFundCode(inp.value);
-  if (!code) {
-    if (typeof setStatus === 'function') setStatus('error', 'Lütfen fon kodu yazın. Örnek: TP2, RHE, PBR');
+  const inp=document.getElementById('fundAddInput')||document.getElementById('fundAddSelect');
+  if(!inp) return;
+  const code=normalizeFundCode(inp.value);
+  if(!code){
+    if(typeof setStatus==='function') setStatus('error','Lütfen fon kodu yazın. Örnek: THF, TP2, RHE');
     return;
   }
 
-  const fund = ensureFundDefinition(code);
-  if (!fund) return;
+  const fund=ensureFundDefinition(code);
+  if(!fund) return;
 
-  if (!selectedFundIds.includes(code)) {
+  if(!selectedFundIds.includes(code)){
     selectedFundIds.push(code);
     saveSelectedFundIds();
   }
-  inp.value = '';
+
+  inp.value='';
   renderFunds();
   updateUI();
-  if (typeof renderGercekPanel === 'function') renderGercekPanel();
-  if (typeof renderKiyasTablosu === 'function') renderKiyasTablosu();
+  if(typeof renderGercekPanel==='function') renderGercekPanel();
+  if(typeof renderKiyasTablosu==='function') renderKiyasTablosu();
 
-  if (typeof setStatus === 'function') setStatus('loading', code + ' eklendi. Portföy içeriği alınıyor...');
+  if(typeof setStatus==='function') setStatus('loading',code+' eklendi. Ekofin/FVT portföy içeriği alınıyor...');
 
-  // Tanımlı olmayan veya içeriği boş fonlarda FVT'den portföy dağılımını çekmeyi dene.
-  if ((!fund.holdings || fund.holdings.length === 0) && typeof loadFVTPortfolio === 'function') {
-    try {
-      const result = await loadFVTPortfolio(code);
-      if (result && result.holdings && result.holdings.length > 0) {
-        FUNDS[code].holdings = result.holdings;
-        FUNDS[code].aciklamaTarihi = result.aciklamaTarihi || '';
-        FUNDS[code].custom = FUNDS[code].custom || !Object.prototype.hasOwnProperty.call(FUNDS, code);
-        saveCustomFundsFromRegistry();
-        renderFunds();
-        updateUI();
-        if (typeof setStatus === 'function') setStatus('live', code + ' eklendi, portföy içeriği alındı ve hafızaya kaydedildi.');
-        return;
-      }
-    } catch(e) {}
-  }
-
-  if (typeof setStatus === 'function') {
-    setStatus('live', code + ' eklendi ve hafızaya kaydedildi. Portföy içeriği gelmezse Ağırlıkları Güncelle butonunu kullanın.');
+  // V48: ekleme işleminin başarı kriteri sadece kartın oluşması değil,
+  // holdings'in gerçek kaynaktan gelerek FUNDS registry'ye yazılmasıdır.
+  var ok=await refreshPredictionFundV47(code);
+  if(!ok && typeof setStatus==='function'){
+    setStatus('error',code+' watchlist’e eklendi fakat portföy ağırlıkları kaynaktan alınamadı.');
   }
 }
 
@@ -9069,6 +9112,8 @@ async function fvtPortfoyGuncelle() {
     });
     renderFunds();
     updateUI();
+    try{ if(typeof renderGercekPanel==='function') renderGercekPanel(); }catch(e){}
+    try{ if(typeof renderKiyasTablosu==='function') renderKiyasTablosu(); }catch(e){}
     if (!sonuc || sonuc.updated === 0) {
       setStatus('error', 'Ekofin/FVT sonuç döndürmedi; mevcut ağırlıklar korundu.');
       return;
@@ -13557,7 +13602,7 @@ async function fetchAllFunds_V19_OVERRIDE_DISABLED(){
     if (button) button.disabled = false;
   };
 
-  console.log('ORKA V47 hazır: Portföy kartları, Günlük Detay ve arka plan güncellemeleri tek aktif-fon kaynağına bağlandı.');
+  console.log('ORKA V48 hazır: Portföy kartları, Günlük Detay ve arka plan güncellemeleri tek aktif-fon kaynağına bağlandı.');
 })();
 </script>
 
