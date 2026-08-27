@@ -7185,6 +7185,15 @@ const saved=loadR();
 
 
 
+
+function orkaPredictionWatchlistAuditV46(){
+  try{
+    var ids=getSelectedFundEntries().map(function(e){return e[0];});
+    console.log('ORKA V46 GETİRİ TAHMİN WATCHLIST',ids);
+    return ids;
+  }catch(e){ return []; }
+}
+
 function orkaMonthlyAuditV44(){
   try{
     var keys=monthRangeKeys('MAY',monthKeyFromDateObj(getAppToday()));
@@ -7973,16 +7982,66 @@ function loadSelectedFundIds() {
   return Object.keys(FUNDS);
 }
 
-function saveSelectedFundIds() {
-  try { _lsSet(SELECTED_FUNDS_STORAGE_KEY, JSON.stringify(selectedFundIds)); } catch(e) {}
+function saveSelectedFundIds(){
+  try{
+    selectedFundIds=Array.from(new Set((selectedFundIds||[]).map(function(x){
+      return String(x||'').toUpperCase().trim();
+    }).filter(Boolean)));
+    _lsSet(SELECTED_FUNDS_STORAGE_KEY, JSON.stringify(selectedFundIds));
+    try{ if(typeof fonFirebaseSave==='function') fonFirebaseSave(true); }catch(e){}
+  }catch(e){}
+}
+
+
+function addFundToPredictionWatchlistV46(code,name){
+  code=String(code||'').toUpperCase().trim();
+  if(!code) return false;
+
+  var fund=ensureFundDefinition(code) || FUNDS[code];
+  if(!fund){
+    try{
+      FUNDS[code]={code:code,name:String(name||code),color:'#69c9ff',holdings:[],aciklamaTarihi:''};
+      if(typeof saveCustomFundsFromRegistry==='function') saveCustomFundsFromRegistry();
+    }catch(e){ return false; }
+  }
+
+  if(!Array.isArray(selectedFundIds)) selectedFundIds=loadSelectedFundIds();
+  if(selectedFundIds.indexOf(code)<0) addFundToPredictionWatchlistV46(code,(FUNDS[code]&&FUNDS[code].name)||code);
+
+  try{ if(typeof renderTahmin==='function') renderTahmin(); }catch(e){}
+  try{ if(typeof renderGetiriTahmin==='function') renderGetiriTahmin(); }catch(e){}
+  try{ if(typeof renderFonSelector==='function') renderFonSelector(); }catch(e){}
+  try{ if(typeof fetchAllFunds==='function') fetchAllFunds(); }catch(e){}
+
+  console.log('ORKA V46 tahmin watchlist eklendi:',code,selectedFundIds);
+  return true;
+}
+
+function removeFundFromPredictionWatchlistV46(code){
+  code=String(code||'').toUpperCase().trim();
+  if(!Array.isArray(selectedFundIds)) selectedFundIds=loadSelectedFundIds();
+  selectedFundIds=selectedFundIds.filter(function(x){return String(x).toUpperCase()!==code;});
+  saveSelectedFundIds();
+  try{ if(typeof renderTahmin==='function') renderTahmin(); }catch(e){}
+  try{ if(typeof renderGetiriTahmin==='function') renderGetiriTahmin(); }catch(e){}
 }
 
 function getSelectedFundEntries() {
-  var ids=(typeof getCurrentPortfolioFunds==='function') ? getCurrentPortfolioFunds() : [];
-  return ids.map(function(id){
+  // V46: Getiri Tahmin ayrı watchlist kullanır; current portföyü değiştirmez.
+  if(!Array.isArray(selectedFundIds)) selectedFundIds=loadSelectedFundIds();
+
+  if(!selectedFundIds.length){
+    selectedFundIds=(typeof getCurrentPortfolioFunds==='function')
+      ? getCurrentPortfolioFunds().slice()
+      : [];
+    saveSelectedFundIds();
+  }
+
+  return selectedFundIds.map(function(id){
+    id=String(id||'').toUpperCase().trim();
     var fund=ensureFundDefinition(id) || FUNDS[id];
-    return [id,fund];
-  }).filter(function(x){ return !!x[1]; });
+    return fund ? [id,fund] : null;
+  }).filter(Boolean);
 }
 
 function renderFundSelector() {
@@ -10509,7 +10568,7 @@ function saveTahminSnapshots(data) {
 
 // Bugünün tahminini kaydet (saat 23:00 otomatiği veya manuel)
 function snapshotTahminler(manuel) {
-  var FON_KODLAR = (typeof getCurrentPortfolioFunds==='function') ? getCurrentPortfolioFunds() : [];
+  var FON_KODLAR = (typeof getSelectedFundEntries==='function') ? getSelectedFundEntries().map(function(e){return e[0];}) : [];
   var bugun = new Date();
   var tarih = String(bugun.getDate()).padStart(2,'0') + '.' +
               String(bugun.getMonth()+1).padStart(2,'0') + '.' +
@@ -10874,7 +10933,7 @@ var ADAPTIF_OFSET_MODU = localStorage.getItem('fon_adaptif_ofset_modu') || 'none
 if (ADAPTIF_OFSET_MODU === 'nihai') { ADAPTIF_OFSET_MODU = 'none'; try { localStorage.setItem('fon_adaptif_ofset_modu', 'none'); } catch(e) {} }
 var ADAPTIF_HESAP_GORUNUMU = null;
 
-function adaptifFonListesi() { return (typeof getCurrentPortfolioFunds==='function') ? getCurrentPortfolioFunds() : []; }
+function adaptifFonListesi() { return (typeof getSelectedFundEntries==='function') ? getSelectedFundEntries().map(function(e){return e[0];}) : []; }
 
 function adaptifRenk(fon) {
   return fon === 'TLY' ? '#4fa3ff'
@@ -13434,7 +13493,7 @@ async function fetchAllFunds_V19_OVERRIDE_DISABLED(){
     if (button) button.disabled = false;
   };
 
-  console.log('ORKA V45 hazır: Portföy kartları, Günlük Detay ve arka plan güncellemeleri tek aktif-fon kaynağına bağlandı.');
+  console.log('ORKA V46 hazır: Portföy kartları, Günlük Detay ve arka plan güncellemeleri tek aktif-fon kaynağına bağlandı.');
 })();
 </script>
 
