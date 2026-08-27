@@ -7993,6 +7993,68 @@ function saveSelectedFundIds(){
 }
 
 
+
+// ORKA V47 — GETİRİ TAHMİN DİNAMİK FON MOTORU
+// THF gibi sonradan eklenen fonlarda ağırlık/hisse güncellemesi de watchlist üzerinden çalışır.
+function getPredictionFundCodesV47(){
+  try{
+    return getSelectedFundEntries().map(function(e){return String(e[0]||'').toUpperCase();});
+  }catch(e){ return []; }
+}
+function refreshPredictionFundV47(code){
+  code=String(code||'').toUpperCase().trim();
+  if(!code) return Promise.resolve(false);
+
+  // Tanımı garanti et.
+  try{ ensureFundDefinition(code); }catch(e){}
+
+  // Mevcut projedeki fon portföy okuyucularını aynı fon için çalıştır.
+  var jobs=[];
+  try{
+    if(typeof loadEkofinPortfolio==='function')
+      jobs.push(Promise.resolve(loadEkofinPortfolio(code)));
+  }catch(e){}
+  try{
+    if(typeof loadFVTPortfolio==='function')
+      jobs.push(Promise.resolve(loadFVTPortfolio(code)));
+  }catch(e){}
+
+  // Genel fon veri yenileyicileri varsa onları da çalıştır.
+  try{
+    if(typeof fetchFundData==='function')
+      jobs.push(Promise.resolve(fetchFundData(code)));
+  }catch(e){}
+  try{
+    if(typeof fetchFonData==='function')
+      jobs.push(Promise.resolve(fetchFonData(code)));
+  }catch(e){}
+
+  return Promise.allSettled(jobs).then(function(results){
+    // Kaynaklardan gelen holdings FUNDS registry'ye işlenmiş olabilir.
+    try{ if(typeof saveCustomFundsFromRegistry==='function') saveCustomFundsFromRegistry(); }catch(e){}
+    try{ if(typeof fonFirebaseSave==='function') fonFirebaseSave(true); }catch(e){}
+    try{ if(typeof renderTahmin==='function') renderTahmin(); }catch(e){}
+    try{ if(typeof renderGetiriTahmin==='function') renderGetiriTahmin(); }catch(e){}
+    console.log('ORKA V47 tahmin fonu veri yenileme:',code,results);
+    return true;
+  });
+}
+function refreshAllPredictionFundsV47(){
+  var codes=getPredictionFundCodesV47();
+  var lu=document.getElementById('last-update');
+  var chain=Promise.resolve();
+  codes.forEach(function(code,ix){
+    chain=chain.then(function(){
+      if(lu) lu.innerHTML='Getiri Tahmin fonları güncelleniyor: <span style="color:var(--cyan)">'+(ix+1)+'/'+codes.length+'</span> · '+code;
+      return refreshPredictionFundV47(code);
+    });
+  });
+  return chain.then(function(){
+    if(lu) lu.innerHTML='Getiri Tahmin: <span style="color:var(--green)">ağırlık/hisse güncellemesi tamamlandı</span>';
+    return true;
+  });
+}
+
 function addFundToPredictionWatchlistV46(code,name){
   code=String(code||'').toUpperCase().trim();
   if(!code) return false;
@@ -8013,7 +8075,9 @@ function addFundToPredictionWatchlistV46(code,name){
   try{ if(typeof renderFonSelector==='function') renderFonSelector(); }catch(e){}
   try{ if(typeof fetchAllFunds==='function') fetchAllFunds(); }catch(e){}
 
-  console.log('ORKA V46 tahmin watchlist eklendi:',code,selectedFundIds);
+  console.log('ORKA V47 tahmin watchlist eklendi:',code,selectedFundIds);
+  // V47: yeni eklenen fon için portföy bileşimi/ağırlık verisini hemen getir.
+  setTimeout(function(){ refreshPredictionFundV47(code); },50);
   return true;
 }
 
@@ -13493,7 +13557,7 @@ async function fetchAllFunds_V19_OVERRIDE_DISABLED(){
     if (button) button.disabled = false;
   };
 
-  console.log('ORKA V46 hazır: Portföy kartları, Günlük Detay ve arka plan güncellemeleri tek aktif-fon kaynağına bağlandı.');
+  console.log('ORKA V47 hazır: Portföy kartları, Günlük Detay ve arka plan güncellemeleri tek aktif-fon kaynağına bağlandı.');
 })();
 </script>
 
@@ -14001,6 +14065,10 @@ async function fetchAllFunds_V19_OVERRIDE_DISABLED(){
 
   console.log('ORKA V34.1.1 hazır: Fon detayında performans grafiği bugünden önceki 5 tamamlanmış işlem gününü gösteriyor.');
 })();
+
+// V47 global hook: mevcut "ağırlık/hisse güncelle" akışından sonra çağrılabilir.
+window.orkaRefreshPredictionFunds = refreshAllPredictionFundsV47;
+
 </script>
 
 </body>
