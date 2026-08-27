@@ -339,7 +339,7 @@ function fonFirebaseStart(){
         fonFirebaseApply(data);
         fonFirebaseRefreshUI();
         _fonFirebaseReady=true;
-        if(first && typeof scheduleHistoricalBackfillV44==='function') scheduleHistoricalBackfillV44();
+        if(first && typeof scheduleCanonicalHistoryV45==='function') scheduleCanonicalHistoryV45();
         if(first && typeof toast==='function') toast('☁ Firebase portföy verileri senkronlandı', 'info');
       }else if(first){
         fonFirebaseSave(true);
@@ -3579,7 +3579,7 @@ function hazBaslangicHesapla(ayKey){
 
 // ORKA V44 — Bir ayın fon listesi CURRENT portföyden değil,
 // o ayın gerçek tarihsel pozisyonlarından türetilir.
-function getHistoricalFundsForMonthV44(ayKey){
+function getHistoricalFundsForMonthV45(ayKey){
   var funds={};
   var year=monthYearFromKey(ayKey);
   var month=monthNoFromKey(ayKey);
@@ -3604,7 +3604,7 @@ function updateAktifAyForMonth(ayKey, rows){
   var mo = MONTH_DATA[ayKey];
   if(!mo) return;
   var tumFonlar = getTumFonlar();
-  var gorunenFonlar = getHistoricalFundsForMonthV44(ayKey);
+  var gorunenFonlar = getHistoricalFundsForMonthV45(ayKey);
   var days = [];
   rows.forEach(function(wk){
     wk.days.forEach(function(row){
@@ -3646,7 +3646,8 @@ function updateAktifAyForMonth(ayKey, rows){
   mo.activeFunds=gorunenFonlar.map(function(f){ return f.toLowerCase(); });
   // Funds toplamları
   mo.funds={};
-  tumFonlar.forEach(function(f){
+  var historicalMonthFunds=getHistoricalFundsForMonthV45(ayKey);
+  historicalMonthFunds.forEach(function(f){
     var fl=f.toLowerCase();
     mo.funds[fl]={
       pct:days.reduce(function(s,d){ return s+(d[fl]?.pct||0); },0),
@@ -6201,10 +6202,15 @@ function render(){
       }
     });
 
-    // Sıfır/verisiz fonları ayıklayıp sadece o ayda gerçekten görünenleri bırak.
+    // V45: önce tarihsel portföy üyeliği, sonra veri.
+    // Böylece DFI satış sonrası Ağustos'a sızamaz; PHE Ağustos içinde satıldıysa o ayda görünür.
+    var historicalSet={};
+    getHistoricalFundsForMonthV45(mKey).forEach(function(f){historicalSet[String(f).toUpperCase()]=true;});
+
     var monthFundList=Object.keys(monthFunds).filter(function(f){
       var x=monthFunds[f]||{};
-      return Math.abs(Number(x.pct)||0)>0.0000001 || Math.abs(Number(x.tl)||0)>0.5;
+      return !!historicalSet[String(f).toUpperCase()] &&
+        (Math.abs(Number(x.pct)||0)>0.0000001 || Math.abs(Number(x.tl)||0)>0.5);
     });
 
     if(!monthFundList.length) return;
@@ -6426,7 +6432,7 @@ function updateAktifAyDays(merged, rows){
   // compute() çıktısından gün verilerini çevir:
   // row.fonDetay = {DFI:{pct,tl}, TLY:{pct,tl}, ...}  (büyük harf key)
   var tumFonlar = getTumFonlar();
-  var gorunenFonlar = getHistoricalFundsForMonthV44(ayKey);
+  var gorunenFonlar = getHistoricalFundsForMonthV45(ayKey);
   var days = [];
   rows.forEach(function(wk){
     wk.days.forEach(function(row){
@@ -7189,7 +7195,9 @@ function orkaMonthlyAuditV44(){
         total:Number(mo.total||0),
         pct:mo.pct==null?null:Number(mo.pct),
         funds:JSON.parse(JSON.stringify(mo.funds||{})),
-        historicalFunds:getHistoricalFundsForMonthV44(k)
+        historicalFunds:getHistoricalFundsForMonthV45(k),
+        fundCount:Object.keys(mo.funds||{}).length,
+        dayCount:(mo.days||[]).length
       };
     });
     console.log('ORKA V44 AYLIK ÖZET KONTROL',report);
@@ -7226,103 +7234,231 @@ function orkaCheckFundConsistency(){
 }
 
 
-// ORKA V44 — SATILMIŞ FON TARİHÇESİ ONARIMI
-// Aktif fon güncellemesi performans için yalnız current fonları çeker.
-// Ancak geçmiş aylarda PHE/DFI/IJC gibi satılmış fonların bir cihazda oranları eksikse,
-// TEFAS 12 aylık fiyat tarihçesinden yalnız EKSİK hücreler doldurulur.
-// Mevcut manuel/kayıtlı değerlerin üzerine yazılmaz.
-const HISTORY_BACKFILL_KEY_V44='fon_history_backfill_v44';
 
-function dateKeyFromDateV44(dt){
+// ORKA V45 — KANONİK TARİHSEL FON GETİRİ MOTORU
+//
+// V44 kök hata düzeltmesi:
+// TEFAS fiyat serisinde getiri "cur / prev - 1" olarak hesaplanırken
+// tarih PREV güne yazılmıştı. Doğrusu CURRENT fiyat tarihidir.
+// Bu 1 işlem günü kayması; satış/alış sınırlarında ve ay geçişlerinde
+// PHE/DFI gibi fonların aylık K/Z toplamlarını bozabiliyordu.
+//
+// V45 eski cihaz cache'lerini kaynak kabul etmez.
+// Mayıs 2026'dan bugüne tarihsel günlük fon getirilerini TEFAS fiyatlarından
+// aynı algoritmayla yeniden kurar ve telefon/PC için Firebase'e canonical olarak yazar.
+
+const CANONICAL_HISTORY_VERSION_V45='v45-date-aligned-20260827';
+const CANONICAL_HISTORY_KEY_V45='fon_canonical_history_v45';
+
+function ymdV45(dt){
+  return dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0')+'-'+String(dt.getDate()).padStart(2,'0');
+}
+function ddmmV45(dt){
   return String(dt.getDate()).padStart(2,'0')+'.'+String(dt.getMonth()+1).padStart(2,'0');
 }
-function isFundHistoricalActiveOnDateV44(fon,dt){
-  var ds=String(dt.getDate()).padStart(2,'0')+'.'
-    +String(dt.getMonth()+1).padStart(2,'0')+'.'+dt.getFullYear();
-  return getMiktarAtDate(ds,fon)>0;
+function fullDateV45(dt){
+  return String(dt.getDate()).padStart(2,'0')+'.'+String(dt.getMonth()+1).padStart(2,'0')+'.'+dt.getFullYear();
 }
-async function backfillHistoricalFundRatesV44(force){
+
+function getSaleDateFromHistoryV45(fon){
+  fon=String(fon||'').toUpperCase();
+  var dates=[];
   try{
-    var today=getAppToday();
-    var todayKey=today.getFullYear()+'-'+String(today.getMonth()+1).padStart(2,'0')+'-'+String(today.getDate()).padStart(2,'0');
-    var last='';
-    try{last=_lsGet(HISTORY_BACKFILL_KEY_V44)||'';}catch(e){}
-    if(!force && last===todayKey) return {changed:0,skipped:true};
-
-    var stored=loadR();
-    var funds=getTumFonlar();
-    var changed=0;
-
-    var lu=document.getElementById('last-update');
-    if(lu) lu.innerHTML='Tarihsel fon verileri kontrol ediliyor: <span style="color:var(--cyan)">0/'+funds.length+'</span>';
-
-    for(var fi=0;fi<funds.length;fi++){
-      var fon=funds[fi];
-      try{
-        var prices=await loadFonHistoricalPricesV41(fon);
-        if(prices && prices.length>1){
-          for(var i=1;i<prices.length;i++){
-            var prev=prices[i-1], cur=prices[i];
-            if(!(prev.price>0) || !(cur.price>0)) continue;
-
-            var dt=prev.date;
-            if(!dt || dt.getFullYear()!==today.getFullYear()) continue;
-            if(dt < new Date(today.getFullYear(),4,1) || dt > today) continue;
-            if(!isFundHistoricalActiveOnDateV44(fon,dt)) continue;
-
-            var dk=dateKeyFromDateV44(dt);
-            var fk=fon.toLowerCase();
-            if(!stored[dk]) stored[dk]={};
-
-            // Kayıt varsa dokunma. Sıfır da kasıtlı kayıt olabilir.
-            if(stored[dk][fk]===undefined || stored[dk][fk]===null){
-              stored[dk][fk]=parseFloat(((cur.price-prev.price)/prev.price*100).toFixed(4));
-              changed++;
-            }
-          }
-        }
-      }catch(e){
-        console.warn('V44 tarihsel rate backfill hata:',fon,e&&e.message?e.message:e);
+    (loadFonSatisGecmisi()||[]).forEach(function(x){
+      if(String(x.fon||'').toUpperCase()===fon && x.satisTarihi){
+        var d=parseFonDateStr(x.satisTarihi);
+        if(d) dates.push(d);
       }
-
-      if(lu) lu.innerHTML='Tarihsel fon verileri kontrol ediliyor: <span style="color:var(--cyan)">'+(fi+1)+'/'+funds.length+'</span> · '+fon;
-    }
-
-    if(changed>0){
-      saveR(stored);
-      liveRates=Object.assign({},PREFILLED_MAY,PREFILLED_HAZ,stored);
-      initTakipAyOtomasyon();
-      console.log('ORKA V44 HISTORY BACKFILL:',changed,'eksik tarih/fon hücresi tamamlandı.');
-    }
-
-    try{_lsSet(HISTORY_BACKFILL_KEY_V44,todayKey);}catch(e){}
-    return {changed:changed,skipped:false};
-  }catch(e){
-    console.warn('V44 history backfill genel hata:',e);
-    return {changed:0,error:String(e)};
-  }
+    });
+  }catch(e){}
+  try{
+    var st=getSatisTarihi(fon);
+    var sd=parseFonDateStr(st);
+    if(sd) dates.push(sd);
+  }catch(e){}
+  dates.sort(function(a,b){return a-b;});
+  return dates.length?dates[dates.length-1]:null;
 }
 
-function scheduleHistoricalBackfillV44(){
-  // Önce Firebase current/history verisini uygulasın; sonra eksik geçmişi onar.
+function getEntryDateV45(fon){
+  fon=String(fon||'').toUpperCase();
+  var rows=[];
+  try{
+    rows=loadTrx().filter(function(t){
+      return String(t.fon||'').toUpperCase()===fon && parseTRNumber(t.miktar)>0;
+    });
+  }catch(e){}
+  try{
+    (IJC_BASLANGIC_SET||[]).forEach(function(t){
+      if(String(t.fon||'').toUpperCase()===fon && parseTRNumber(t.miktar)>0) rows.push(t);
+    });
+  }catch(e){}
+  rows.sort(function(a,b){return parseFonDateStr(a.tarih)-parseFonDateStr(b.tarih);});
+  return rows.length?parseFonDateStr(rows[0].tarih):null;
+}
+
+// Tarihsel üyelik CURRENT portföyden bağımsızdır.
+// Satış tarihinde pozisyon 0 kabul edilir; o günün kapanış getirisi eklenmez.
+function wasFundHeldOnDateV45(fon,dt){
+  var entry=getEntryDateV45(fon);
+  if(!entry || dt<entry) return false;
+
+  var sale=getSaleDateFromHistoryV45(fon);
+  if(sale && dt>=sale) return false;
+
+  // Transaction defteri daha kesin bir 0/set kaydı içeriyorsa onu kullan.
+  try{
+    var amount=getMiktarAtDate(fullDateV45(dt),fon);
+    if(amount<=0 && (!sale || dt>=sale)) return false;
+  }catch(e){}
+  return true;
+}
+
+function getHistoricalFundsForMonthV45(ayKey){
+  var year=monthYearFromKey(ayKey);
+  var month=monthNoFromKey(ayKey);
+  var first=new Date(year,month-1,1);
+  var last=new Date(year,month,0);
+  var out=[];
+
+  getTumFonlar().forEach(function(f){
+    var entry=getEntryDateV45(f);
+    var sale=getSaleDateFromHistoryV45(f);
+    if(!entry) return;
+    // Ay içinde en az bir gün pozisyon var:
+    // giriş <= ay sonu AND satış yok veya satış > ay başı
+    if(entry<=last && (!sale || sale>first)){
+      out.push(String(f).toUpperCase());
+    }
+  });
+  return Array.from(new Set(out)).sort();
+}
+
+async function rebuildCanonicalHistoricalRatesV45(force){
+  var today=getAppToday();
+  var mark='';
+  try{mark=_lsGet(CANONICAL_HISTORY_KEY_V45)||'';}catch(e){}
+  var expectedMark=CANONICAL_HISTORY_VERSION_V45+'|'+ymdV45(today);
+
+  // Aynı sürüm aynı gün kurulmuşsa cihazda tekrar ağır sorgu çalıştırma.
+  if(!force && mark===expectedMark){
+    return {changed:0,skipped:true,version:CANONICAL_HISTORY_VERSION_V45};
+  }
+
+  var stored=loadR();
+  var meta=loadRatesMetaV44();
+  var funds=getTumFonlar();
+  var changed=0, inspected=0;
+
+  var minDate=new Date(today.getFullYear(),4,1); // 01.05.2026
+  var lu=document.getElementById('last-update');
+  if(lu) lu.innerHTML='Kanonik tarihçe kuruluyor: <span style="color:var(--cyan)">0/'+funds.length+'</span>';
+
+  for(var fi=0;fi<funds.length;fi++){
+    var fon=String(funds[fi]).toUpperCase();
+    try{
+      // V41 fiyat loader TEFAS 12 aylık fiyat serisini cache'ler.
+      var prices=await loadFonHistoricalPricesV41(fon);
+      if(prices && prices.length>1){
+        for(var i=1;i<prices.length;i++){
+          var prev=prices[i-1], cur=prices[i];
+          if(!prev || !cur || !(prev.price>0) || !(cur.price>0) || !cur.date) continue;
+
+          // DOĞRU TARİH: getiri current fiyat tarihine aittir.
+          var dt=cur.date;
+          if(dt<minDate || dt>today || dt.getFullYear()!==today.getFullYear()) continue;
+          if(!wasFundHeldOnDateV45(fon,dt)) continue;
+
+          var dk=ddmmV45(dt);
+          var fk=fon.toLowerCase();
+          var rate=parseFloat(((cur.price-prev.price)/prev.price*100).toFixed(6));
+
+          if(!stored[dk]) stored[dk]={};
+          var old=stored[dk][fk];
+
+          // TEFAS canonical tarihçe eski stale/zero/shifted hücrelerin üzerine yazabilir.
+          if(old===undefined || Math.abs(Number(old)-rate)>0.000001){
+            stored[dk][fk]=rate;
+            changed++;
+          }
+
+          if(!meta[dk]) meta[dk]={};
+          meta[dk][fk]={
+            ts:Date.now(),
+            source:'TEFAS_CANONICAL_V45',
+            version:CANONICAL_HISTORY_VERSION_V45
+          };
+          inspected++;
+        }
+      }
+    }catch(e){
+      console.warn('V45 canonical tarihçe hata:',fon,e&&e.message?e.message:e);
+    }
+
+    if(lu) lu.innerHTML='Kanonik tarihçe kuruluyor: <span style="color:var(--cyan)">'+(fi+1)+'/'+funds.length+'</span> · '+fon;
+  }
+
+  // Satış günlerinde kapanış getirisi uygulanmaz.
+  try{
+    getTumFonlar().forEach(function(fon){
+      var sd=getSaleDateFromHistoryV45(fon);
+      if(!sd || sd<minDate || sd>today) return;
+      var dk=ddmmV45(sd), fk=String(fon).toLowerCase();
+      if(stored[dk] && stored[dk][fk]!==undefined){
+        delete stored[dk][fk];
+        changed++;
+      }
+    });
+  }catch(e){}
+
+  saveR(stored);
+  saveRatesMetaV44(meta);
+  liveRates=Object.assign({},PREFILLED_MAY,PREFILLED_HAZ,stored);
+
+  // Tek deterministik zincirle bütün ayları yeniden hesapla.
+  initTakipAyOtomasyon();
+
+  try{_lsSet(CANONICAL_HISTORY_KEY_V45,expectedMark);}catch(e){}
+
+  // Canonical tarihçeyi cloud'a tek kaynak olarak yükselt.
+  try{
+    if(_fonFirebaseDb){
+      await _fonFirebaseDb.ref(_fonFirebasePath+'/fon_v5').set(fonFirebaseEncodeKeys(stored));
+      await _fonFirebaseDb.ref(_fonFirebasePath+'/fon_rates_meta_v44').set(fonFirebaseEncodeKeys(meta));
+      await _fonFirebaseDb.ref(_fonFirebasePath+'/fon_canonical_history_v45').set(expectedMark);
+      console.log('ORKA V45 CANONICAL CLOUD WRITE', {changed:changed,inspected:inspected});
+    }
+  }catch(e){
+    console.warn('V45 canonical Firebase write hata:',e);
+  }
+
+  return {changed:changed,inspected:inspected,skipped:false,version:CANONICAL_HISTORY_VERSION_V45};
+}
+
+function scheduleCanonicalHistoryV45(){
   setTimeout(function(){
-    backfillHistoricalFundRatesV44(false).then(function(r){
+    rebuildCanonicalHistoricalRatesV45(false).then(function(r){
       try{
         initTakipAyOtomasyon();
         orkaCheckFundConsistency();
+        if(typeof orkaMonthlyAuditV44==='function') orkaMonthlyAuditV44();
+
         var lu=document.getElementById('last-update');
-        if(lu) lu.innerHTML='Cihaz senkronu: <span style="color:var(--green)">OK</span>'
-          +' · Tarihsel onarım: '+Number((r&&r.changed)||0)+' hücre'
-          +' · Aktif: <span style="color:var(--cyan)">'+getCurrentPortfolioFunds().join(' · ')+'</span>';
+        if(lu){
+          lu.innerHTML='Tarihçe: <span style="color:var(--green)">V45 CANONICAL OK</span>'
+            +' · '+Number((r&&r.changed)||0)+' hücre düzeltildi'
+            +' · Aktif: <span style="color:var(--cyan)">'+getCurrentPortfolioFunds().join(' · ')+'</span>';
+        }
       }catch(e){}
     });
-  },1800);
+  },1200);
 }
+
 
 // Fon Takip ayları artık bugünün tarihine göre otomatik açılır.
 initTakipAyOtomasyon();
 setTimeout(orkaCheckFundConsistency,250);
-setTimeout(function(){ if(!_fonFirebaseReady && typeof scheduleHistoricalBackfillV44==='function') scheduleHistoricalBackfillV44(); },3500);
+setTimeout(function(){ if(!_fonFirebaseReady && typeof scheduleCanonicalHistoryV45==='function') scheduleCanonicalHistoryV45(); },3500);
 try{const c=JSON.parse(_lsGet(TKEY));if(c&&(Date.now()-c.ts)<3600000){tefasInfo=c.info||{};document.getElementById('last-update').innerHTML=`Cache: <span style="color:var(--gold)">${new Date(c.ts).toLocaleTimeString('tr-TR')}</span>`;renderTefasCards();}}catch{}
 
 
@@ -13298,7 +13434,7 @@ async function fetchAllFunds_V19_OVERRIDE_DISABLED(){
     if (button) button.disabled = false;
   };
 
-  console.log('ORKA V44 hazır: Portföy kartları, Günlük Detay ve arka plan güncellemeleri tek aktif-fon kaynağına bağlandı.');
+  console.log('ORKA V45 hazır: Portföy kartları, Günlük Detay ve arka plan güncellemeleri tek aktif-fon kaynağına bağlandı.');
 })();
 </script>
 
