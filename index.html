@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Fon Yönetim Merkezi — Takip & Tahmin · V51</title>
+<title>Fon Yönetim Merkezi — Takip & Tahmin · V52</title>
 <!-- ORKA_HISSE_VERI_KORUMA_RECOVERY_2026-07-23 -->
 <!-- ORKA_HISSE_SATIS_GECMISI_FIX_2026-07-23 -->
 <!-- ORKA_FON_SATIS_GECMISI_FIX_2026-07-22 -->
@@ -305,6 +305,62 @@ function fonFirebaseApply(data){
         addSales(localSales); addSales(incoming);
         incoming = Object.keys(salesMap).map(function(k){ return salesMap[k]; });
       }
+
+      // ORKA V52 — Getiri Tahmin cihaz senkronu: boş/eski bulut THF gibi fonları silemez.
+      if(key === 'fon_tahmin_secili_fonlar_v1'){
+        var localSel=fonFirebaseReadLocal(key)||[];
+        incoming=Array.from(new Set(
+          (Array.isArray(localSel)?localSel:[])
+            .concat(Array.isArray(incoming)?incoming:[])
+            .map(function(x){return String(x||'').toUpperCase().trim();})
+            .filter(Boolean)
+        ));
+      }
+
+      if(key === 'fon_tahmin_ozel_fonlar_v1'){
+        var localCustom=fonFirebaseReadLocal(key)||{};
+        var remoteCustom=(incoming && typeof incoming==='object')?incoming:{};
+        var mergedCustom={};
+        var customCodes={};
+        Object.keys(localCustom||{}).forEach(function(c){customCodes[c]=true;});
+        Object.keys(remoteCustom||{}).forEach(function(c){customCodes[c]=true;});
+        Object.keys(customCodes).forEach(function(c){
+          var l=(localCustom||{})[c]||{};
+          var r=(remoteCustom||{})[c]||{};
+          var lh=Array.isArray(l.holdings)?l.holdings:[];
+          var rh=Array.isArray(r.holdings)?r.holdings:[];
+          var base=(rh.length>=lh.length)?Object.assign({},l,r):Object.assign({},r,l);
+          // En zengin holdings kazanır; boş kayıt dolu kaydı silemez.
+          base.holdings=(rh.length>=lh.length?rh:lh).slice();
+          mergedCustom[c]=base;
+        });
+        incoming=mergedCustom;
+      }
+
+      if(key === 'fon_tahmin_fvt_portfoyler_v1'){
+        var localOvr=fonFirebaseReadLocal(key)||{};
+        var remoteOvr=(incoming && typeof incoming==='object')?incoming:{};
+        var mergedOvr={};
+        var ovrCodes={};
+        Object.keys(localOvr||{}).forEach(function(c){ovrCodes[c]=true;});
+        Object.keys(remoteOvr||{}).forEach(function(c){ovrCodes[c]=true;});
+        Object.keys(ovrCodes).forEach(function(c){
+          var l=(localOvr||{})[c]||{};
+          var r=(remoteOvr||{})[c]||{};
+          var lh=Array.isArray(l.holdings)?l.holdings:[];
+          var rh=Array.isArray(r.holdings)?r.holdings:[];
+          var lt=Date.parse(l.updatedAt||'')||0;
+          var rt=Date.parse(r.updatedAt||'')||0;
+          var chosen;
+          if(lh.length && !rh.length) chosen=l;
+          else if(rh.length && !lh.length) chosen=r;
+          else if(lh.length!==rh.length) chosen=(lh.length>rh.length?l:r);
+          else chosen=(rt>=lt?r:l);
+          mergedOvr[c]=chosen;
+        });
+        incoming=mergedOvr;
+      }
+
       fonFirebaseWriteLocal(key, incoming);
       if(key === 'fon_trx_extra_v1' && typeof persistTrxExtra === 'function'){
         try{ persistTrxExtra(incoming); }catch(e){}
@@ -314,9 +370,14 @@ function fonFirebaseApply(data){
 }
 function fonFirebaseRefreshUI(){
   function run(){
-    try{ if(typeof loadCustomFundsIntoRegistry === 'function') loadCustomFundsIntoRegistry();
-    try{ applyFundColorOverridesV50(); }catch(e){} }catch(e){}
+    try{ if(typeof loadCustomFundsIntoRegistry === 'function') loadCustomFundsIntoRegistry(); }catch(e){}
+    try{ if(typeof loadFVTPortfolioOverrides === 'function') loadFVTPortfolioOverrides(); }catch(e){}
+    try{ applyFundColorOverridesV50(); }catch(e){}
     try{ if(typeof loadSelectedFundIds === 'function' && typeof selectedFundIds !== 'undefined') selectedFundIds = loadSelectedFundIds(); }catch(e){}
+    try{ if(typeof renderFunds === 'function') renderFunds(); }catch(e){}
+    try{ if(typeof updateUI === 'function') updateUI(); }catch(e){}
+    try{ if(typeof renderGercekPanel === 'function') renderGercekPanel(); }catch(e){}
+    try{ if(typeof renderKiyasTablosu === 'function') renderKiyasTablosu(); }catch(e){}
     try{ if(typeof initTakipAyOtomasyon === 'function') initTakipAyOtomasyon(); }catch(e){}
     try{ if(typeof render === 'function') render(); }catch(e){}
     try{ if(typeof renderTefasCards === 'function') renderTefasCards(); }catch(e){}
@@ -2774,26 +2835,14 @@ window.addEventListener('unhandledrejection', function(ev){
 
 <script>
 window.ORKA_BUILD_INFO = {
-  version:'V51',
-  build:'KHA-Gunluk-Detay-Renk-Fix',
-  khaColor:'#FFB000'
+  version:'V52',
+  build:'KHA-Renk-THF-Kurtarma',
+  khaColor:'#FFB000',
+  thfRecovery:'Ekofin/KAP 2026-08-03'
 };
 console.log('ORKA BUILD AKTIF', window.ORKA_BUILD_INFO);
 </script>
 
-
-<style id="orka-v51-kha-color-fix">
-/* KHA: koyu temada mor yerine yüksek kontrastlı amber */
-.orka-kha-v51,
-.orka-kha-v51 *,
-[data-fund="KHA"],
-[data-fund="kha"],
-.fund-kha,
-.kha-color {
-  color:#FFB000 !important;
-  text-shadow:none !important;
-}
-</style>
 
 </head>
 <body>
@@ -2803,8 +2852,8 @@ background:rgba(8,15,30,.92);border:1px solid rgba(255,255,255,.18);
 border-radius:10px;padding:8px 11px;font:600 12px/1.2 system-ui,-apple-system,Segoe UI,sans-serif;
 color:#fff;box-shadow:0 6px 20px rgba(0,0,0,.28);backdrop-filter:blur(6px);
 ">
-  <div style="color:#FFB000">ORKA V51 AKTİF</div>
-  <div style="opacity:.72;font-weight:500;margin-top:3px">KHA Günlük Detay renk düzeltmesi</div>
+  <div style="color:#FFB000">ORKA V52 AKTİF</div>
+  <div style="opacity:.72;font-weight:500;margin-top:3px">KHA renk + THF veri kurtarma</div>
 </div>
 
 <div id="fcard-global-tooltip"></div>
@@ -4190,6 +4239,10 @@ const FON_RENKLER = {
   _default: ['#ff6b6b','#feca57','#48dbfb','#ff9ff3','#54a0ff','#5f27cd','#00d2d3','#ff9f43']
 };
 function getFonRenk(fon) {
+  fon=String(fon||'').toUpperCase().trim();
+  // ORKA V52: KHA kimlik rengi amber.
+  // Getiri/KZ hücreleri kendi gp/gn sınıflarıyla yeşil-kırmızı kalır.
+  if(fon==='KHA') return '#FFB000';
   if (FON_RENKLER[fon]) return FON_RENKLER[fon];
   var tumFonlar = getTumFonlar();
   var idx = tumFonlar.indexOf(fon);
@@ -8191,46 +8244,6 @@ const ORKA_FUND_COLOR_OVERRIDES_V50 = {
 };
 
 
-// ORKA V51 — Günlük Detay KHA sütunu kesin renk düzeltmesi.
-// V50 FUNDS rengini değiştirdi fakat Günlük Detay'ın bazı hücreleri
-// tarihsel/dinamik HTML'de eski inline mor rengi kullanıyordu.
-// Render sonrası KHA başlık kolonunu tespit edip tüm KHA hücrelerine class uygular.
-function applyDailyDetailKhaColorV51(){
-  try{
-    var tables=document.querySelectorAll('table');
-    tables.forEach(function(table){
-      var headerCells=Array.from(table.querySelectorAll('thead th'));
-      if(!headerCells.length){
-        var first=table.querySelector('tr');
-        if(first) headerCells=Array.from(first.children);
-      }
-      var khaCols=[];
-      headerCells.forEach(function(cell,idx){
-        var t=String(cell.textContent||'').trim().toUpperCase();
-        if(t==='KHA%' || t==='KHA TL' || t==='KHA BAK' || t.indexOf('KHA%')===0 || t.indexOf('KHA TL')===0 || t.indexOf('KHA BAK')===0){
-          khaCols.push(idx+1);
-          cell.classList.add('orka-kha-v51');
-        }
-      });
-      if(!khaCols.length) return;
-      Array.from(table.querySelectorAll('tr')).forEach(function(row){
-        khaCols.forEach(function(col){
-          var cell=row.children[col-1];
-          if(cell) cell.classList.add('orka-kha-v51');
-        });
-      });
-    });
-  }catch(e){}
-}
-
-function scheduleDailyDetailKhaColorV51(){
-  requestAnimationFrame(function(){
-    applyDailyDetailKhaColorV51();
-    setTimeout(applyDailyDetailKhaColorV51,80);
-    setTimeout(applyDailyDetailKhaColorV51,350);
-  });
-}
-
 function getFundDisplayColorV50(code, fallback){
   code=String(code||'').toUpperCase().trim();
   if(ORKA_FUND_COLOR_OVERRIDES_V50[code]) return ORKA_FUND_COLOR_OVERRIDES_V50[code];
@@ -8241,7 +8254,7 @@ function applyFundColorOverridesV50(){
   try{
     if(typeof FUNDS!=='undefined'){
       Object.keys(ORKA_FUND_COLOR_OVERRIDES_V50).forEach(function(code){
-        if(FUNDS[code]) getFundDisplayColorV50(code, FUNDS[code].color)=ORKA_FUND_COLOR_OVERRIDES_V50[code];
+        if(FUNDS[code]) FUNDS[code].color=ORKA_FUND_COLOR_OVERRIDES_V50[code];
       });
     }
   }catch(e){}
@@ -9018,6 +9031,52 @@ async function loadTefasNonStockPortfolio(fonKodu) {
   }
 }
 
+
+// ORKA V52 — THF acil kurtarma yedeği.
+// Canlı Ekofin/FVT her ikisi de geçici olarak başarısız olursa kartın boş kalmasını önler.
+// Kaynak: Ekofin/KAP portföy dağılımı, rapor tarihi 03.08.2026.
+// Canlı veri geldiğinde bu yedek otomatik olarak kullanılmaz.
+function getPredictionPortfolioRecoveryV52(code){
+  code=String(code||'').toUpperCase().trim();
+  if(code!=='THF') return null;
+  return {
+    source:'Ekofin Recovery',
+    sourceMessage:'Canlı kaynak geçici olarak alınamadı; 03.08.2026 Ekofin/KAP portföy dağılımı kullanıldı.',
+    aciklamaTarihi:'2026-08-03',
+    holdings:[
+    {code:'OZATD',name:'OZATD',weight:7.21,type:'bist',tip:'bist'},
+    {code:'ASELS',name:'ASELS',weight:7.16,type:'bist',tip:'bist'},
+    {code:'TERA',name:'TERA',weight:6.69,type:'bist',tip:'bist'},
+    {code:'TEHOL',name:'TEHOL',weight:5.58,type:'bist',tip:'bist'},
+    {code:'KARCL',name:'KARCL',weight:4.67,type:'bist',tip:'bist'},
+    {code:'MANAS',name:'MANAS',weight:4.34,type:'bist',tip:'bist'},
+    {code:'TRHOL',name:'TRHOL',weight:4.10,type:'bist',tip:'bist'},
+    {code:'YKBNK',name:'YKBNK',weight:3.81,type:'bist',tip:'bist'},
+    {code:'THYAO',name:'THYAO',weight:3.65,type:'bist',tip:'bist'},
+    {code:'BRSAN',name:'BRSAN',weight:3.64,type:'bist',tip:'bist'},
+    {code:'ORZAX',name:'ORZAX',weight:3.63,type:'bist',tip:'bist'},
+    {code:'KGYO',name:'KGYO',weight:3.62,type:'bist',tip:'bist'},
+    {code:'NETCD',name:'NETCD',weight:3.25,type:'bist',tip:'bist'},
+    {code:'BARMA',name:'BARMA',weight:3.12,type:'bist',tip:'bist'},
+    {code:'MCARD',name:'MCARD',weight:3.07,type:'bist',tip:'bist'},
+    {code:'ANELE',name:'ANELE',weight:2.81,type:'bist',tip:'bist'},
+    {code:'HALKB',name:'HALKB',weight:2.61,type:'bist',tip:'bist'},
+    {code:'GLRMK',name:'GLRMK',weight:2.43,type:'bist',tip:'bist'},
+    {code:'PEKGY',name:'PEKGY',weight:2.40,type:'bist',tip:'bist'},
+    {code:'EGEGY',name:'EGEGY',weight:2.35,type:'bist',tip:'bist'},
+    {code:'SVGYO',name:'SVGYO',weight:2.11,type:'bist',tip:'bist'},
+    {code:'TUPRS',name:'TUPRS',weight:2.06,type:'bist',tip:'bist'},
+    {code:'TABGD',name:'TABGD',weight:1.69,type:'bist',tip:'bist'},
+    {code:'ATATR',name:'ATATR',weight:1.59,type:'bist',tip:'bist'},
+    {code:'MOBTL',name:'MOBTL',weight:0.99,type:'bist',tip:'bist'},
+    {code:'EUPWR',name:'EUPWR',weight:0.95,type:'bist',tip:'bist'},
+    {code:'BSOKE',name:'BSOKE',weight:0.91,type:'bist',tip:'bist'},
+    {code:'RUZYE',name:'RUZYE',weight:0.91,type:'bist',tip:'bist'},
+    {code:'RNPOL',name:'RNPOL',weight:0.05,type:'bist',tip:'bist'}
+  ]
+  };
+}
+
 async function loadPortfolioAnySource(fonKodu) {
   fonKodu = String(fonKodu || '').trim().toUpperCase();
 
@@ -9044,6 +9103,10 @@ async function loadPortfolioAnySource(fonKodu) {
     fvt.source = fvt.source || 'FVT';
     return fvt;
   }
+
+  // V52: canlı kaynaklar boş dönerse yalnız bilinen kurtarma snapshot'ına düş.
+  var recovery = getPredictionPortfolioRecoveryV52(fonKodu);
+  if(recovery && recovery.holdings && recovery.holdings.length) return recovery;
 
   return null;
 }
@@ -9347,7 +9410,11 @@ async function refreshAllPortfoliosDetay(onProgress) {
   for (var w = 0; w < concurrency; w++) workers.push(worker());
   await Promise.all(workers);
 
-  if (updated > 0) saveFVTPortfolioOverrides();
+  if (updated > 0) {
+    saveFVTPortfolioOverrides();
+    try{ saveCustomFundsFromRegistry(); }catch(e){}
+    try{ if(typeof fonFirebaseSave==='function') fonFirebaseSave(true); }catch(e){}
+  }
   return { updated: updated, failed: failed, detay: detay };
 }
 
@@ -13704,7 +13771,7 @@ async function fetchAllFunds_V19_OVERRIDE_DISABLED(){
     if (button) button.disabled = false;
   };
 
-  console.log('ORKA V51 hazır: Portföy kartları, Günlük Detay ve arka plan güncellemeleri tek aktif-fon kaynağına bağlandı.');
+  console.log('ORKA V52 hazır: Portföy kartları, Günlük Detay ve arka plan güncellemeleri tek aktif-fon kaynağına bağlandı.');
 })();
 </script>
 
@@ -14218,26 +14285,6 @@ window.orkaRefreshPredictionFunds = refreshAllPredictionFundsV47;
 
 </script>
 
-
-<script>
-(function(){
-  function run(){ try{ scheduleDailyDetailKhaColorV51(); }catch(e){} }
-  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',run);
-  else run();
-
-  var pending=false;
-  try{
-    new MutationObserver(function(){
-      if(pending) return;
-      pending=true;
-      requestAnimationFrame(function(){
-        pending=false;
-        try{ applyDailyDetailKhaColorV51(); }catch(e){}
-      });
-    }).observe(document.body,{childList:true,subtree:true});
-  }catch(e){}
-})();
-</script>
 
 </body>
 </html>

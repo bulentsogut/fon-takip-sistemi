@@ -1,4 +1,4 @@
-// ORKA v15 - Ekofin data service
+// ORKA v52 - Ekofin data service
 // /api/ekofin?code=TLY[&mode=info][&debug=1]
 // Amaç: Ekofin'i tek ana kaynak yapmak; fiyat, hisse portföyü ve taşınan fonlar
 // birbirinden bağımsız okunur. Bir bölüm bozulursa diğer bölümler düşmez.
@@ -174,7 +174,7 @@ function extractAnchorHoldings(html, fundCode, mode) {
   const out = [];
   const seen = new Set();
   const raw = String(html || '');
-  const anchorRe = /<a\b[^>]*href=["']\/(sirket|fonlar)\/detay\/([A-Za-z0-9]+)(?:\/[^"']*)?["'][^>]*>([\s\S]*?)<\/a>/gi;
+  const anchorRe = /<a\b[^>]*href=["'](?:https?:\/\/[^\/"']+)?\/(sirket|fonlar)\/detay\/([A-Za-z0-9]+)(?:\/[^"']*)?["'][^>]*>([\s\S]*?)<\/a>/gi;
   const matches = [...raw.matchAll(anchorRe)];
 
   for (let i = 0; i < matches.length; i++) {
