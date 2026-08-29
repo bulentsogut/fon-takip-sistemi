@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Fon Yönetim Merkezi — Takip & Tahmin · V50</title>
+<title>Fon Yönetim Merkezi — Takip & Tahmin · V51</title>
 <!-- ORKA_HISSE_VERI_KORUMA_RECOVERY_2026-07-23 -->
 <!-- ORKA_HISSE_SATIS_GECMISI_FIX_2026-07-23 -->
 <!-- ORKA_FON_SATIS_GECMISI_FIX_2026-07-22 -->
@@ -2774,12 +2774,26 @@ window.addEventListener('unhandledrejection', function(ev){
 
 <script>
 window.ORKA_BUILD_INFO = {
-  version:'V50',
-  build:'KHA-Renk-Versiyon-Gostergesi',
+  version:'V51',
+  build:'KHA-Gunluk-Detay-Renk-Fix',
   khaColor:'#FFB000'
 };
 console.log('ORKA BUILD AKTIF', window.ORKA_BUILD_INFO);
 </script>
+
+
+<style id="orka-v51-kha-color-fix">
+/* KHA: koyu temada mor yerine yüksek kontrastlı amber */
+.orka-kha-v51,
+.orka-kha-v51 *,
+[data-fund="KHA"],
+[data-fund="kha"],
+.fund-kha,
+.kha-color {
+  color:#FFB000 !important;
+  text-shadow:none !important;
+}
+</style>
 
 </head>
 <body>
@@ -2789,8 +2803,8 @@ background:rgba(8,15,30,.92);border:1px solid rgba(255,255,255,.18);
 border-radius:10px;padding:8px 11px;font:600 12px/1.2 system-ui,-apple-system,Segoe UI,sans-serif;
 color:#fff;box-shadow:0 6px 20px rgba(0,0,0,.28);backdrop-filter:blur(6px);
 ">
-  <div style="color:#FFB000">ORKA V50 AKTİF</div>
-  <div style="opacity:.72;font-weight:500;margin-top:3px">KHA renk + sürüm göstergesi</div>
+  <div style="color:#FFB000">ORKA V51 AKTİF</div>
+  <div style="opacity:.72;font-weight:500;margin-top:3px">KHA Günlük Detay renk düzeltmesi</div>
 </div>
 
 <div id="fcard-global-tooltip"></div>
@@ -8175,6 +8189,47 @@ function removeFundFromPredictionWatchlistV46(code){
 const ORKA_FUND_COLOR_OVERRIDES_V50 = {
   KHA:'#FFB000' // yüksek kontrastlı amber
 };
+
+
+// ORKA V51 — Günlük Detay KHA sütunu kesin renk düzeltmesi.
+// V50 FUNDS rengini değiştirdi fakat Günlük Detay'ın bazı hücreleri
+// tarihsel/dinamik HTML'de eski inline mor rengi kullanıyordu.
+// Render sonrası KHA başlık kolonunu tespit edip tüm KHA hücrelerine class uygular.
+function applyDailyDetailKhaColorV51(){
+  try{
+    var tables=document.querySelectorAll('table');
+    tables.forEach(function(table){
+      var headerCells=Array.from(table.querySelectorAll('thead th'));
+      if(!headerCells.length){
+        var first=table.querySelector('tr');
+        if(first) headerCells=Array.from(first.children);
+      }
+      var khaCols=[];
+      headerCells.forEach(function(cell,idx){
+        var t=String(cell.textContent||'').trim().toUpperCase();
+        if(t==='KHA%' || t==='KHA TL' || t==='KHA BAK' || t.indexOf('KHA%')===0 || t.indexOf('KHA TL')===0 || t.indexOf('KHA BAK')===0){
+          khaCols.push(idx+1);
+          cell.classList.add('orka-kha-v51');
+        }
+      });
+      if(!khaCols.length) return;
+      Array.from(table.querySelectorAll('tr')).forEach(function(row){
+        khaCols.forEach(function(col){
+          var cell=row.children[col-1];
+          if(cell) cell.classList.add('orka-kha-v51');
+        });
+      });
+    });
+  }catch(e){}
+}
+
+function scheduleDailyDetailKhaColorV51(){
+  requestAnimationFrame(function(){
+    applyDailyDetailKhaColorV51();
+    setTimeout(applyDailyDetailKhaColorV51,80);
+    setTimeout(applyDailyDetailKhaColorV51,350);
+  });
+}
 
 function getFundDisplayColorV50(code, fallback){
   code=String(code||'').toUpperCase().trim();
@@ -13649,7 +13704,7 @@ async function fetchAllFunds_V19_OVERRIDE_DISABLED(){
     if (button) button.disabled = false;
   };
 
-  console.log('ORKA V50 hazır: Portföy kartları, Günlük Detay ve arka plan güncellemeleri tek aktif-fon kaynağına bağlandı.');
+  console.log('ORKA V51 hazır: Portföy kartları, Günlük Detay ve arka plan güncellemeleri tek aktif-fon kaynağına bağlandı.');
 })();
 </script>
 
@@ -14161,6 +14216,27 @@ async function fetchAllFunds_V19_OVERRIDE_DISABLED(){
 // V47 global hook: mevcut "ağırlık/hisse güncelle" akışından sonra çağrılabilir.
 window.orkaRefreshPredictionFunds = refreshAllPredictionFundsV47;
 
+</script>
+
+
+<script>
+(function(){
+  function run(){ try{ scheduleDailyDetailKhaColorV51(); }catch(e){} }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',run);
+  else run();
+
+  var pending=false;
+  try{
+    new MutationObserver(function(){
+      if(pending) return;
+      pending=true;
+      requestAnimationFrame(function(){
+        pending=false;
+        try{ applyDailyDetailKhaColorV51(); }catch(e){}
+      });
+    }).observe(document.body,{childList:true,subtree:true});
+  }catch(e){}
+})();
 </script>
 
 </body>
