@@ -8146,6 +8146,13 @@ function removeFundFromPredictionWatchlistV46(code){
   try{ if(typeof renderGetiriTahmin==='function') renderGetiriTahmin(); }catch(e){}
 }
 
+
+// ORKA V49 — KHA okunabilirlik rengi
+// Mor arayüzde ayırt edilmesi zor olduğu için KHA amber/turuncu gösterilir.
+try{
+  if(typeof FUNDS!=='undefined' && FUNDS.KHA) FUNDS.KHA.color='#F59E0B';
+}catch(e){}
+
 function getSelectedFundEntries() {
   // V46: Getiri Tahmin ayrı watchlist kullanır; current portföyü değiştirmez.
   if(!Array.isArray(selectedFundIds)) selectedFundIds=loadSelectedFundIds();
@@ -13602,7 +13609,7 @@ async function fetchAllFunds_V19_OVERRIDE_DISABLED(){
     if (button) button.disabled = false;
   };
 
-  console.log('ORKA V48 hazır: Portföy kartları, Günlük Detay ve arka plan güncellemeleri tek aktif-fon kaynağına bağlandı.');
+  console.log('ORKA V49 hazır: Portföy kartları, Günlük Detay ve arka plan güncellemeleri tek aktif-fon kaynağına bağlandı.');
 })();
 </script>
 
