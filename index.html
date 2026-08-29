@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Fon Yönetim Merkezi — Takip & Tahmin</title>
+<title>Fon Yönetim Merkezi — Takip & Tahmin · V50</title>
 <!-- ORKA_HISSE_VERI_KORUMA_RECOVERY_2026-07-23 -->
 <!-- ORKA_HISSE_SATIS_GECMISI_FIX_2026-07-23 -->
 <!-- ORKA_FON_SATIS_GECMISI_FIX_2026-07-22 -->
@@ -314,7 +314,8 @@ function fonFirebaseApply(data){
 }
 function fonFirebaseRefreshUI(){
   function run(){
-    try{ if(typeof loadCustomFundsIntoRegistry === 'function') loadCustomFundsIntoRegistry(); }catch(e){}
+    try{ if(typeof loadCustomFundsIntoRegistry === 'function') loadCustomFundsIntoRegistry();
+    try{ applyFundColorOverridesV50(); }catch(e){} }catch(e){}
     try{ if(typeof loadSelectedFundIds === 'function' && typeof selectedFundIds !== 'undefined') selectedFundIds = loadSelectedFundIds(); }catch(e){}
     try{ if(typeof initTakipAyOtomasyon === 'function') initTakipAyOtomasyon(); }catch(e){}
     try{ if(typeof render === 'function') render(); }catch(e){}
@@ -2770,8 +2771,28 @@ window.addEventListener('unhandledrejection', function(ev){
 });
 </script>
 
+
+<script>
+window.ORKA_BUILD_INFO = {
+  version:'V50',
+  build:'KHA-Renk-Versiyon-Gostergesi',
+  khaColor:'#FFB000'
+};
+console.log('ORKA BUILD AKTIF', window.ORKA_BUILD_INFO);
+</script>
+
 </head>
 <body>
+<div id="orka-build-badge" style="
+position:fixed;right:12px;bottom:12px;z-index:99999;
+background:rgba(8,15,30,.92);border:1px solid rgba(255,255,255,.18);
+border-radius:10px;padding:8px 11px;font:600 12px/1.2 system-ui,-apple-system,Segoe UI,sans-serif;
+color:#fff;box-shadow:0 6px 20px rgba(0,0,0,.28);backdrop-filter:blur(6px);
+">
+  <div style="color:#FFB000">ORKA V50 AKTİF</div>
+  <div style="opacity:.72;font-weight:500;margin-top:3px">KHA renk + sürüm göstergesi</div>
+</div>
+
 <div id="fcard-global-tooltip"></div>
 
 <!-- Ana Navigasyon -->
@@ -7990,6 +8011,7 @@ function ensureFundDefinition(code) {
 loadCustomFundsIntoRegistry();
 loadFVTPortfolioOverrides();
 normalizeAllHoldingTypes();
+    try{ applyFundColorOverridesV50(); }catch(e){}
 let selectedFundIds = loadSelectedFundIds();
 
 function loadSelectedFundIds() {
@@ -8147,11 +8169,28 @@ function removeFundFromPredictionWatchlistV46(code){
 }
 
 
-// ORKA V49 — KHA okunabilirlik rengi
-// Mor arayüzde ayırt edilmesi zor olduğu için KHA amber/turuncu gösterilir.
-try{
-  if(typeof FUNDS!=='undefined' && FUNDS.KHA) FUNDS.KHA.color='#F59E0B';
-}catch(e){}
+
+// ORKA V50 — Merkezi fon renk standardı
+// KHA rengi hiçbir cache/custom/Firebase yüklemesiyle tekrar mora dönememeli.
+const ORKA_FUND_COLOR_OVERRIDES_V50 = {
+  KHA:'#FFB000' // yüksek kontrastlı amber
+};
+
+function getFundDisplayColorV50(code, fallback){
+  code=String(code||'').toUpperCase().trim();
+  if(ORKA_FUND_COLOR_OVERRIDES_V50[code]) return ORKA_FUND_COLOR_OVERRIDES_V50[code];
+  return fallback || '#69c9ff';
+}
+
+function applyFundColorOverridesV50(){
+  try{
+    if(typeof FUNDS!=='undefined'){
+      Object.keys(ORKA_FUND_COLOR_OVERRIDES_V50).forEach(function(code){
+        if(FUNDS[code]) getFundDisplayColorV50(code, FUNDS[code].color)=ORKA_FUND_COLOR_OVERRIDES_V50[code];
+      });
+    }
+  }catch(e){}
+}
 
 function getSelectedFundEntries() {
   // V46: Getiri Tahmin ayrı watchlist kullanır; current portföyü değiştirmez.
@@ -8502,6 +8541,7 @@ function renderSummaryCards() {
 // RENDER — initial skeleton
 // ════════════════════════════════════════════════════════
 function renderFunds() {
+  try{ applyFundColorOverridesV50(); }catch(e){}
   const grid = document.getElementById('fundsGrid');
   renderSummaryCards();
   renderFundSelector();
@@ -13609,7 +13649,7 @@ async function fetchAllFunds_V19_OVERRIDE_DISABLED(){
     if (button) button.disabled = false;
   };
 
-  console.log('ORKA V49 hazır: Portföy kartları, Günlük Detay ve arka plan güncellemeleri tek aktif-fon kaynağına bağlandı.');
+  console.log('ORKA V50 hazır: Portföy kartları, Günlük Detay ve arka plan güncellemeleri tek aktif-fon kaynağına bağlandı.');
 })();
 </script>
 
@@ -14021,7 +14061,7 @@ async function fetchAllFunds_V19_OVERRIDE_DISABLED(){
     overlay.id='fund-detail-overlay';
     overlay.innerHTML=
       '<div class="fund-detail-modal" role="dialog" aria-modal="true" aria-label="'+fdEsc(code)+' fon detayları">'
-      +'<div class="fund-detail-head"><div><div class="fund-detail-code" style="color:'+(fund.color||'#69c9ff')+'">'+fdEsc(code)+' · FON DETAYI</div>'
+      +'<div class="fund-detail-head"><div><div class="fund-detail-code" style="color:'+(getFundDisplayColorV50(id, fund.color||'#69c9ff'))+'">'+fdEsc(code)+' · FON DETAYI</div>'
       +'<div class="fund-detail-name">'+fdEsc(info.name||fund.name||code)+'</div></div>'
       +'<button class="fund-detail-close" onclick="closeFundDetail()">✕ Kapat</button></div>'
       +'<div class="fund-detail-body">'
