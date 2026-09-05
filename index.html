@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Fon Yönetim Merkezi — Takip & Tahmin · V52</title>
+<title>Fon Yönetim Merkezi — Takip & Tahmin · V54</title>
 <!-- ORKA_HISSE_VERI_KORUMA_RECOVERY_2026-07-23 -->
 <!-- ORKA_HISSE_SATIS_GECMISI_FIX_2026-07-23 -->
 <!-- ORKA_FON_SATIS_GECMISI_FIX_2026-07-22 -->
@@ -2835,8 +2835,8 @@ window.addEventListener('unhandledrejection', function(ev){
 
 <script>
 window.ORKA_BUILD_INFO = {
-  version:'V52',
-  build:'KHA-Renk-THF-Kurtarma',
+  version:'V54',
+  build:'Excel-Ciktisi-15sn-Surum',
   khaColor:'#FFB000',
   thfRecovery:'Ekofin/KAP 2026-08-03'
 };
@@ -2851,9 +2851,9 @@ position:fixed;right:12px;bottom:12px;z-index:99999;
 background:rgba(8,15,30,.92);border:1px solid rgba(255,255,255,.18);
 border-radius:10px;padding:8px 11px;font:600 12px/1.2 system-ui,-apple-system,Segoe UI,sans-serif;
 color:#fff;box-shadow:0 6px 20px rgba(0,0,0,.28);backdrop-filter:blur(6px);
-">
-  <div style="color:#FFB000">ORKA V52 AKTİF</div>
-  <div style="opacity:.72;font-weight:500;margin-top:3px">KHA renk + THF veri kurtarma</div>
+transition:opacity .35s ease,transform .35s ease;">
+  <div style="color:#FFB000">ORKA V54 AKTİF</div>
+  <div style="opacity:.72;font-weight:500;margin-top:3px">Excel çıktısı + 15 sn sürüm</div>
 </div>
 
 <div id="fcard-global-tooltip"></div>
@@ -3020,7 +3020,7 @@ color:#fff;box-shadow:0 6px 20px rgba(0,0,0,.28);backdrop-filter:blur(6px);
 <div class="tbox">
   <div class="thead-bar">
     <h3 id="detay-baslik">Günlük Detay — Haziran 2026</h3>
-    <div style="display:flex;align-items:center;gap:8px"><button class="ay-btn ay-btn-aktif" data-ay="MAY" onclick="ayDegistir('MAY')" style="font-family:var(--mono);font-size:0.65rem;padding:3px 10px;border-radius:6px;border:1px solid rgba(0,180,255,0.4);background:rgba(0,180,255,0.12);color:#00b4ff;cursor:pointer;">Mayıs</button><button class="ay-btn" data-ay="HAZ" onclick="ayDegistir('HAZ')" style="font-family:var(--mono);font-size:0.65rem;padding:3px 10px;border-radius:6px;border:1px solid rgba(0,180,255,0.2);background:transparent;color:var(--muted);cursor:pointer;">Haziran</button><span style="font-size:0.65rem;color:var(--muted)"><span class="live-dot"></span>Yeşil kutular TEFAS’tan otomatik dolduruldu</span></div>
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><button class="abtn save" onclick="exportDailyDetailExcelV54()" title="Seçili ayın günlük fon detayını Excel olarak indir">⬇ Excel Çıktısı</button><button class="ay-btn ay-btn-aktif" data-ay="MAY" onclick="ayDegistir('MAY')" style="font-family:var(--mono);font-size:0.65rem;padding:3px 10px;border-radius:6px;border:1px solid rgba(0,180,255,0.4);background:rgba(0,180,255,0.12);color:#00b4ff;cursor:pointer;">Mayıs</button><button class="ay-btn" data-ay="HAZ" onclick="ayDegistir('HAZ')" style="font-family:var(--mono);font-size:0.65rem;padding:3px 10px;border-radius:6px;border:1px solid rgba(0,180,255,0.2);background:transparent;color:var(--muted);cursor:pointer;">Haziran</button><span style="font-size:0.65rem;color:var(--muted)"><span class="live-dot"></span>Yeşil kutular TEFAS’tan otomatik dolduruldu</span></div>
   </div>
   <div class="tscroll"><table>
     <thead><tr id="fon-daily-thead"><th>Tarih</th><th>% Değişim</th><th>Günlük K/Z</th><th>Sepet Toplamı</th></tr></thead>
@@ -6107,6 +6107,142 @@ function renderPortfolioPie(bakiye){
       +'</div>'
       +'</div>';
   }).join('');
+}
+
+// ORKA V54 — Günlük Detay Excel çıktısı
+// Seçili ayda gerçekten portföyde bulunmuş fonları 3'er sütun halinde dışa aktarır.
+function getExcelExportFundsV54(){
+  var funds=[];
+  try{
+    if(typeof getHistoricalFundsForMonthV45==='function') funds=getHistoricalFundsForMonthV45(aktifAy)||[];
+  }catch(e){}
+  if(!funds.length){
+    try{ funds=(typeof getCurrentPortfolioFunds==='function') ? getCurrentPortfolioFunds() : []; }catch(e){ funds=[]; }
+  }
+  return Array.from(new Set((funds||[]).map(function(f){return String(f||'').toUpperCase().trim();}).filter(Boolean)));
+}
+
+function buildDailyDetailExportV54(){
+  var usr=loadR(), merged={};
+  Object.keys(PREFILLED).forEach(function(d){ merged[d]=Object.assign({},PREFILLED[d]); });
+  Object.keys(liveRates||{}).forEach(function(d){
+    if(!merged[d]) merged[d]={};
+    Object.keys(liveRates[d]).forEach(function(f){ if(liveRates[d][f]!==0) merged[d][f]=liveRates[d][f]; });
+  });
+  Object.keys(usr||{}).forEach(function(d){
+    if(!merged[d]) merged[d]={};
+    Object.keys(usr[d]).forEach(function(f){ if(usr[d][f]!==null && usr[d][f]!==undefined) merged[d][f]=usr[d][f]; });
+  });
+  if(monthNoFromKey(aktifAy)===7){ if(!merged['07.07']) merged['07.07']={}; merged['07.07'].ijc=0; }
+
+  var result=compute(merged);
+  var funds=getExcelExportFundsV54();
+  var year=monthYearFromKey(aktifAy);
+  var month=monthNoFromKey(aktifAy);
+  var rows=[];
+  (result.rows||[]).forEach(function(wk){
+    (wk.days||[]).forEach(function(row){
+      var dateParts=String(row.date||'').split('.');
+      var dayNum=parseInt(dateParts[0]||0,10);
+      var rowDate=String(dayNum).padStart(2,'0')+'.'+String(month).padStart(2,'0')+'.'+year;
+      var line=[rowDate];
+      funds.forEach(function(f){
+        var det=(row.fonDetay||{})[f]||{};
+        var pct=Number(det.pct)||0;                 // uygulamada yüzde puanı (örn 0.85)
+        var tl=Number(det.tl)||0;                   // günlük TL kazanç
+        var bak=Number((row.bakiyeSnap||{})[f])||0; // getiri yansımış gün sonu fon toplamı
+        line.push(pct/100, tl, bak);                 // Excel yüzde formatı için 100'e böl
+      });
+      line.push(Number(row.pct)||0, Number(row.kz)||0, Number(row.total)||0);
+      rows.push(line);
+    });
+  });
+  return {funds:funds, rows:rows, year:year, month:month};
+}
+
+function ensureSheetJSV54(){
+  return new Promise(function(resolve,reject){
+    if(window.XLSX){ resolve(window.XLSX); return; }
+    var old=document.getElementById('orka-sheetjs-v54');
+    if(old){
+      old.addEventListener('load',function(){ window.XLSX?resolve(window.XLSX):reject(new Error('Excel kütüphanesi yüklenemedi')); },{once:true});
+      old.addEventListener('error',function(){ reject(new Error('Excel kütüphanesi yüklenemedi')); },{once:true});
+      return;
+    }
+    var sc=document.createElement('script');
+    sc.id='orka-sheetjs-v54';
+    sc.src='https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js';
+    sc.onload=function(){ window.XLSX?resolve(window.XLSX):reject(new Error('Excel kütüphanesi yüklenemedi')); };
+    sc.onerror=function(){ reject(new Error('Excel kütüphanesi internet üzerinden yüklenemedi')); };
+    document.head.appendChild(sc);
+  });
+}
+
+async function exportDailyDetailExcelV54(){
+  try{
+    var data=buildDailyDetailExportV54();
+    if(!data.funds.length){ toast('Excel için portföy fonu bulunamadı.','info'); return; }
+    if(!data.rows.length){ toast('Excel için günlük veri bulunamadı.','info'); return; }
+    toast('Excel hazırlanıyor…','info');
+    var XLSXlib=await ensureSheetJSV54();
+
+    var top=['Tarih'];
+    var sub=['Gün'];
+    data.funds.forEach(function(f){
+      top.push(f,'','');
+      sub.push('% Getiri','Günlük Kazanç (TL)','Fon Toplamı (TL)');
+    });
+    top.push('TOPLAM','','');
+    sub.push('Toplam % Getiri','Toplam Kazanç (TL)','Portföy Toplamı (TL)');
+
+    var aoa=[top,sub].concat(data.rows);
+    var ws=XLSXlib.utils.aoa_to_sheet(aoa);
+    var merges=[];
+    merges.push({s:{r:0,c:0},e:{r:1,c:0}});
+    var c=1;
+    data.funds.forEach(function(){ merges.push({s:{r:0,c:c},e:{r:0,c:c+2}}); c+=3; });
+    merges.push({s:{r:0,c:c},e:{r:0,c:c+2}});
+    ws['!merges']=merges;
+
+    var widths=[{wch:13}];
+    data.funds.forEach(function(){ widths.push({wch:13},{wch:19},{wch:20}); });
+    widths.push({wch:16},{wch:19},{wch:22});
+    ws['!cols']=widths;
+
+    var lastRow=aoa.length;
+    var lastCol=top.length-1;
+    for(var r=2;r<lastRow;r++){
+      var col=1;
+      data.funds.forEach(function(){
+        var pctCell=XLSXlib.utils.encode_cell({r:r,c:col});
+        var tlCell=XLSXlib.utils.encode_cell({r:r,c:col+1});
+        var bakCell=XLSXlib.utils.encode_cell({r:r,c:col+2});
+        if(ws[pctCell]) ws[pctCell].z='0.0000%';
+        if(ws[tlCell]) ws[tlCell].z='₺#,##0.00;[Red]-₺#,##0.00';
+        if(ws[bakCell]) ws[bakCell].z='₺#,##0.00';
+        col+=3;
+      });
+      var totalPct=XLSXlib.utils.encode_cell({r:r,c:lastCol-2});
+      var totalTl=XLSXlib.utils.encode_cell({r:r,c:lastCol-1});
+      var totalBak=XLSXlib.utils.encode_cell({r:r,c:lastCol});
+      if(ws[totalPct]) ws[totalPct].z='0.0000%';
+      if(ws[totalTl]) ws[totalTl].z='₺#,##0.00;[Red]-₺#,##0.00';
+      if(ws[totalBak]) ws[totalBak].z='₺#,##0.00';
+    }
+
+    ws['!autofilter']={ref:'A2:'+XLSXlib.utils.encode_col(lastCol)+'2'};
+    var wb=XLSXlib.utils.book_new();
+    var sheetName=(monthDisplay(aktifAy)+' '+data.year).slice(0,31);
+    XLSXlib.utils.book_append_sheet(wb,ws,sheetName);
+    wb.Props={Title:'ORKA Günlük Fon Detayı',Subject:'Portföy günlük getiri ve bakiye dökümü',Author:'ORKA'};
+
+    var fileName='ORKA_Gunluk_Fon_Detayi_'+data.year+'-'+String(data.month).padStart(2,'0')+'.xlsx';
+    XLSXlib.writeFile(wb,fileName,{compression:true});
+    toast('Excel indirildi: '+fileName,'ok');
+  }catch(e){
+    console.error('ORKA V54 Excel export error',e);
+    toast('Excel oluşturulamadı: '+(e&&e.message?e.message:e),'err');
+  }
 }
 
 function render(){
@@ -14285,6 +14421,26 @@ window.orkaRefreshPredictionFunds = refreshAllPredictionFundsV47;
 
 </script>
 
+
+
+<script>
+(function(){
+  function startV53BadgeTimer(){
+    var badge=document.getElementById('orka-build-badge');
+    if(!badge) return;
+    window.setTimeout(function(){
+      badge.style.opacity='0';
+      badge.style.transform='translateY(8px)';
+      badge.style.pointerEvents='none';
+      window.setTimeout(function(){ badge.style.display='none'; },400);
+    },15000);
+  }
+  if(document.readyState==='loading')
+    document.addEventListener('DOMContentLoaded',startV53BadgeTimer,{once:true});
+  else
+    startV53BadgeTimer();
+})();
+</script>
 
 </body>
 </html>
