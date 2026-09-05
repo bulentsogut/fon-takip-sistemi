@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Fon Yönetim Merkezi — Takip & Tahmin · V54</title>
+<title>Fon Yönetim Merkezi — Takip & Tahmin · V55</title>
 <!-- ORKA_HISSE_VERI_KORUMA_RECOVERY_2026-07-23 -->
 <!-- ORKA_HISSE_SATIS_GECMISI_FIX_2026-07-23 -->
 <!-- ORKA_FON_SATIS_GECMISI_FIX_2026-07-22 -->
@@ -2835,14 +2835,23 @@ window.addEventListener('unhandledrejection', function(ev){
 
 <script>
 window.ORKA_BUILD_INFO = {
-  version:'V54',
-  build:'Excel-Ciktisi-15sn-Surum',
+  version:'V55',
+  build:'Excel-Butonu-Gorunur-Fix',
   khaColor:'#FFB000',
   thfRecovery:'Ekofin/KAP 2026-08-03'
 };
 console.log('ORKA BUILD AKTIF', window.ORKA_BUILD_INFO);
 </script>
 
+
+
+<style id="orka-v55-excel-button-style">
+#orka-excel-export-btn-v55:hover{background:rgba(46,213,115,.24) !important;border-color:#2ed573 !important;}
+@media(max-width:768px){
+  #orka-excel-export-row-v55{padding:10px !important;}
+  #orka-excel-export-btn-v55{width:100% !important;min-height:44px !important;font-size:.76rem !important;}
+}
+</style>
 
 </head>
 <body>
@@ -2852,8 +2861,8 @@ background:rgba(8,15,30,.92);border:1px solid rgba(255,255,255,.18);
 border-radius:10px;padding:8px 11px;font:600 12px/1.2 system-ui,-apple-system,Segoe UI,sans-serif;
 color:#fff;box-shadow:0 6px 20px rgba(0,0,0,.28);backdrop-filter:blur(6px);
 transition:opacity .35s ease,transform .35s ease;">
-  <div style="color:#FFB000">ORKA V54 AKTİF</div>
-  <div style="opacity:.72;font-weight:500;margin-top:3px">Excel çıktısı + 15 sn sürüm</div>
+  <div style="color:#FFB000">ORKA V55 AKTİF</div>
+  <div style="opacity:.72;font-weight:500;margin-top:3px">Excel butonu görünür + 15 sn sürüm</div>
 </div>
 
 <div id="fcard-global-tooltip"></div>
@@ -3020,7 +3029,12 @@ transition:opacity .35s ease,transform .35s ease;">
 <div class="tbox">
   <div class="thead-bar">
     <h3 id="detay-baslik">Günlük Detay — Haziran 2026</h3>
-    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><button class="abtn save" onclick="exportDailyDetailExcelV54()" title="Seçili ayın günlük fon detayını Excel olarak indir">⬇ Excel Çıktısı</button><button class="ay-btn ay-btn-aktif" data-ay="MAY" onclick="ayDegistir('MAY')" style="font-family:var(--mono);font-size:0.65rem;padding:3px 10px;border-radius:6px;border:1px solid rgba(0,180,255,0.4);background:rgba(0,180,255,0.12);color:#00b4ff;cursor:pointer;">Mayıs</button><button class="ay-btn" data-ay="HAZ" onclick="ayDegistir('HAZ')" style="font-family:var(--mono);font-size:0.65rem;padding:3px 10px;border-radius:6px;border:1px solid rgba(0,180,255,0.2);background:transparent;color:var(--muted);cursor:pointer;">Haziran</button><span style="font-size:0.65rem;color:var(--muted)"><span class="live-dot"></span>Yeşil kutular TEFAS’tan otomatik dolduruldu</span></div>
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><button class="ay-btn ay-btn-aktif" data-ay="MAY" onclick="ayDegistir('MAY')" style="font-family:var(--mono);font-size:0.65rem;padding:3px 10px;border-radius:6px;border:1px solid rgba(0,180,255,0.4);background:rgba(0,180,255,0.12);color:#00b4ff;cursor:pointer;">Mayıs</button><button class="ay-btn" data-ay="HAZ" onclick="ayDegistir('HAZ')" style="font-family:var(--mono);font-size:0.65rem;padding:3px 10px;border-radius:6px;border:1px solid rgba(0,180,255,0.2);background:transparent;color:var(--muted);cursor:pointer;">Haziran</button><span style="font-size:0.65rem;color:var(--muted)"><span class="live-dot"></span>Yeşil kutular TEFAS’tan otomatik dolduruldu</span></div>
+  </div>
+  <div id="orka-excel-export-row-v55" style="display:flex;justify-content:flex-end;align-items:center;padding:10px 20px;border-bottom:1px solid var(--border);background:rgba(46,213,115,.035);">
+    <button id="orka-excel-export-btn-v55" type="button" onclick="exportDailyDetailExcelV54()" style="display:inline-flex !important;visibility:visible !important;opacity:1 !important;align-items:center;justify-content:center;gap:7px;min-height:38px;padding:8px 16px;border-radius:8px;border:1px solid rgba(46,213,115,.55);background:rgba(46,213,115,.14);color:#2ed573;font-family:DM Mono,monospace;font-size:.72rem;font-weight:700;cursor:pointer;white-space:nowrap;box-shadow:0 0 0 1px rgba(46,213,115,.05) inset;">
+      ⬇ EXCEL ÇIKTISI
+    </button>
   </div>
   <div class="tscroll"><table>
     <thead><tr id="fon-daily-thead"><th>Tarih</th><th>% Değişim</th><th>Günlük K/Z</th><th>Sepet Toplamı</th></tr></thead>
