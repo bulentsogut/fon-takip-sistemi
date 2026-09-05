@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Fon Yönetim Merkezi — Takip & Tahmin · V55</title>
+<title>Fon Yönetim Merkezi — Takip & Tahmin · V56</title>
 <!-- ORKA_HISSE_VERI_KORUMA_RECOVERY_2026-07-23 -->
 <!-- ORKA_HISSE_SATIS_GECMISI_FIX_2026-07-23 -->
 <!-- ORKA_FON_SATIS_GECMISI_FIX_2026-07-22 -->
@@ -2835,8 +2835,8 @@ window.addEventListener('unhandledrejection', function(ev){
 
 <script>
 window.ORKA_BUILD_INFO = {
-  version:'V55',
-  build:'Excel-Butonu-Gorunur-Fix',
+  version:'V56',
+  build:'Excel-Format-Kurallari',
   khaColor:'#FFB000',
   thfRecovery:'Ekofin/KAP 2026-08-03'
 };
@@ -2861,8 +2861,8 @@ background:rgba(8,15,30,.92);border:1px solid rgba(255,255,255,.18);
 border-radius:10px;padding:8px 11px;font:600 12px/1.2 system-ui,-apple-system,Segoe UI,sans-serif;
 color:#fff;box-shadow:0 6px 20px rgba(0,0,0,.28);backdrop-filter:blur(6px);
 transition:opacity .35s ease,transform .35s ease;">
-  <div style="color:#FFB000">ORKA V55 AKTİF</div>
-  <div style="opacity:.72;font-weight:500;margin-top:3px">Excel butonu görünür + 15 sn sürüm</div>
+  <div style="color:#FFB000">ORKA V56 AKTİF</div>
+  <div style="opacity:.72;font-weight:500;margin-top:3px">Excel format + kurallar</div>
 </div>
 
 <div id="fcard-global-tooltip"></div>
@@ -3032,7 +3032,7 @@ transition:opacity .35s ease,transform .35s ease;">
     <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><button class="ay-btn ay-btn-aktif" data-ay="MAY" onclick="ayDegistir('MAY')" style="font-family:var(--mono);font-size:0.65rem;padding:3px 10px;border-radius:6px;border:1px solid rgba(0,180,255,0.4);background:rgba(0,180,255,0.12);color:#00b4ff;cursor:pointer;">Mayıs</button><button class="ay-btn" data-ay="HAZ" onclick="ayDegistir('HAZ')" style="font-family:var(--mono);font-size:0.65rem;padding:3px 10px;border-radius:6px;border:1px solid rgba(0,180,255,0.2);background:transparent;color:var(--muted);cursor:pointer;">Haziran</button><span style="font-size:0.65rem;color:var(--muted)"><span class="live-dot"></span>Yeşil kutular TEFAS’tan otomatik dolduruldu</span></div>
   </div>
   <div id="orka-excel-export-row-v55" style="display:flex;justify-content:flex-end;align-items:center;padding:10px 20px;border-bottom:1px solid var(--border);background:rgba(46,213,115,.035);">
-    <button id="orka-excel-export-btn-v55" type="button" onclick="exportDailyDetailExcelV54()" style="display:inline-flex !important;visibility:visible !important;opacity:1 !important;align-items:center;justify-content:center;gap:7px;min-height:38px;padding:8px 16px;border-radius:8px;border:1px solid rgba(46,213,115,.55);background:rgba(46,213,115,.14);color:#2ed573;font-family:DM Mono,monospace;font-size:.72rem;font-weight:700;cursor:pointer;white-space:nowrap;box-shadow:0 0 0 1px rgba(46,213,115,.05) inset;">
+    <button id="orka-excel-export-btn-v55" type="button" onclick="exportDailyDetailExcelV56()" style="display:inline-flex !important;visibility:visible !important;opacity:1 !important;align-items:center;justify-content:center;gap:7px;min-height:38px;padding:8px 16px;border-radius:8px;border:1px solid rgba(46,213,115,.55);background:rgba(46,213,115,.14);color:#2ed573;font-family:DM Mono,monospace;font-size:.72rem;font-weight:700;cursor:pointer;white-space:nowrap;box-shadow:0 0 0 1px rgba(46,213,115,.05) inset;">
       ⬇ EXCEL ÇIKTISI
     </button>
   </div>
@@ -6174,31 +6174,82 @@ function buildDailyDetailExportV54(){
   return {funds:funds, rows:rows, year:year, month:month};
 }
 
-function ensureSheetJSV54(){
+
+function ensureStyledExcelV56(){
   return new Promise(function(resolve,reject){
-    if(window.XLSX){ resolve(window.XLSX); return; }
-    var old=document.getElementById('orka-sheetjs-v54');
+    if(window.XLSX && window.__ORKA_XLSX_STYLE_V56){ resolve(window.XLSX); return; }
+    var old=document.getElementById('orka-xlsx-js-style-v56');
     if(old){
-      old.addEventListener('load',function(){ window.XLSX?resolve(window.XLSX):reject(new Error('Excel kütüphanesi yüklenemedi')); },{once:true});
-      old.addEventListener('error',function(){ reject(new Error('Excel kütüphanesi yüklenemedi')); },{once:true});
+      old.addEventListener('load',function(){
+        window.__ORKA_XLSX_STYLE_V56=true;
+        window.XLSX?resolve(window.XLSX):reject(new Error('Excel stil kütüphanesi yüklenemedi'));
+      },{once:true});
+      old.addEventListener('error',function(){ reject(new Error('Excel stil kütüphanesi yüklenemedi')); },{once:true});
       return;
     }
     var sc=document.createElement('script');
-    sc.id='orka-sheetjs-v54';
-    sc.src='https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js';
-    sc.onload=function(){ window.XLSX?resolve(window.XLSX):reject(new Error('Excel kütüphanesi yüklenemedi')); };
-    sc.onerror=function(){ reject(new Error('Excel kütüphanesi internet üzerinden yüklenemedi')); };
+    sc.id='orka-xlsx-js-style-v56';
+    sc.src='https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.min.js';
+    sc.onload=function(){
+      window.__ORKA_XLSX_STYLE_V56=true;
+      window.XLSX?resolve(window.XLSX):reject(new Error('Excel stil kütüphanesi yüklenemedi'));
+    };
+    sc.onerror=function(){ reject(new Error('Excel stil kütüphanesi internet üzerinden yüklenemedi')); };
     document.head.appendChild(sc);
   });
 }
 
-async function exportDailyDetailExcelV54(){
+function orkaExcelBorderV56(){
+  return {
+    top:{style:'thin',color:{rgb:'000000'}},
+    bottom:{style:'thin',color:{rgb:'000000'}},
+    left:{style:'thin',color:{rgb:'000000'}},
+    right:{style:'thin',color:{rgb:'000000'}}
+  };
+}
+
+function orkaApplyExcelStyleV56(ws, ref, style){
+  if(!ws[ref]) return;
+  ws[ref].s=Object.assign({},ws[ref].s||{},style||{});
+}
+
+function orkaFundCellStylesV56(pct, tl){
+  var pctStyle={
+    font:{name:'Calibri',sz:12,color:{rgb:'000000'}},
+    border:orkaExcelBorderV56(),
+    numFmt:'0.0000%'
+  };
+  var tlStyle={
+    font:{name:'Calibri',sz:12,color:{rgb:'000000'}},
+    border:orkaExcelBorderV56(),
+    numFmt:'₺#,##0.00;[Red]-₺#,##0.00'
+  };
+
+  if(pct>0){
+    pctStyle.fill={patternType:'solid',fgColor:{rgb:'00FF00'}};
+  }else if(pct<0){
+    pctStyle.fill={patternType:'solid',fgColor:{rgb:'FF0000'}};
+  }else{
+    pctStyle.fill={patternType:'solid',fgColor:{rgb:'FFFF00'}};
+  }
+
+  if(tl>0){
+    tlStyle.fill={patternType:'solid',fgColor:{rgb:'00FF00'}};
+  }else if(tl<0){
+    tlStyle.font={name:'Calibri',sz:12,color:{rgb:'FF0000'}};
+  }
+
+  return {pct:pctStyle,tl:tlStyle};
+}
+
+async function exportDailyDetailExcelV56(){
   try{
     var data=buildDailyDetailExportV54();
     if(!data.funds.length){ toast('Excel için portföy fonu bulunamadı.','info'); return; }
     if(!data.rows.length){ toast('Excel için günlük veri bulunamadı.','info'); return; }
+
     toast('Excel hazırlanıyor…','info');
-    var XLSXlib=await ensureSheetJSV54();
+    var XLSXlib=await ensureStyledExcelV56();
 
     var top=['Tarih'];
     var sub=['Gün'];
@@ -6211,50 +6262,85 @@ async function exportDailyDetailExcelV54(){
 
     var aoa=[top,sub].concat(data.rows);
     var ws=XLSXlib.utils.aoa_to_sheet(aoa);
-    var merges=[];
-    merges.push({s:{r:0,c:0},e:{r:1,c:0}});
+
+    var merges=[{s:{r:0,c:0},e:{r:1,c:0}}];
     var c=1;
-    data.funds.forEach(function(){ merges.push({s:{r:0,c:c},e:{r:0,c:c+2}}); c+=3; });
+    data.funds.forEach(function(){
+      merges.push({s:{r:0,c:c},e:{r:0,c:c+2}});
+      c+=3;
+    });
     merges.push({s:{r:0,c:c},e:{r:0,c:c+2}});
     ws['!merges']=merges;
 
-    var widths=[{wch:13}];
-    data.funds.forEach(function(){ widths.push({wch:13},{wch:19},{wch:20}); });
-    widths.push({wch:16},{wch:19},{wch:22});
+    var widths=[{wch:13.8125}];
+    data.funds.forEach(function(){
+      widths.push({wch:13.8125},{wch:19.8125},{wch:20.8125});
+    });
+    widths.push({wch:16.8125},{wch:19.8125},{wch:22.8125});
     ws['!cols']=widths;
+    ws['!rows']=aoa.map(function(){ return {hpt:15.75}; });
 
     var lastRow=aoa.length;
     var lastCol=top.length-1;
+    var baseFont={name:'Calibri',sz:12,color:{rgb:'000000'}};
+
+    for(var hc=0;hc<=lastCol;hc++){
+      var h1=XLSXlib.utils.encode_cell({r:0,c:hc});
+      var h2=XLSXlib.utils.encode_cell({r:1,c:hc});
+      orkaApplyExcelStyleV56(ws,h1,{font:baseFont,alignment:{horizontal:hc===0?'left':'center',vertical:'center'}});
+      orkaApplyExcelStyleV56(ws,h2,{font:baseFont,alignment:{vertical:'center'}});
+    }
+
     for(var r=2;r<lastRow;r++){
+      var dateCell=XLSXlib.utils.encode_cell({r:r,c:0});
+      orkaApplyExcelStyleV56(ws,dateCell,{font:baseFont,border:orkaExcelBorderV56()});
+
       var col=1;
       data.funds.forEach(function(){
         var pctCell=XLSXlib.utils.encode_cell({r:r,c:col});
         var tlCell=XLSXlib.utils.encode_cell({r:r,c:col+1});
         var bakCell=XLSXlib.utils.encode_cell({r:r,c:col+2});
-        if(ws[pctCell]) ws[pctCell].z='0.0000%';
-        if(ws[tlCell]) ws[tlCell].z='₺#,##0.00;[Red]-₺#,##0.00';
-        if(ws[bakCell]) ws[bakCell].z='₺#,##0.00';
+        var pctVal=ws[pctCell] ? Number(ws[pctCell].v)||0 : 0;
+        var tlVal=ws[tlCell] ? Number(ws[tlCell].v)||0 : 0;
+        var st=orkaFundCellStylesV56(pctVal,tlVal);
+
+        orkaApplyExcelStyleV56(ws,pctCell,st.pct);
+        orkaApplyExcelStyleV56(ws,tlCell,st.tl);
+        orkaApplyExcelStyleV56(ws,bakCell,{
+          font:baseFont,
+          border:orkaExcelBorderV56(),
+          numFmt:'₺#,##0.00'
+        });
         col+=3;
       });
+
       var totalPct=XLSXlib.utils.encode_cell({r:r,c:lastCol-2});
       var totalTl=XLSXlib.utils.encode_cell({r:r,c:lastCol-1});
       var totalBak=XLSXlib.utils.encode_cell({r:r,c:lastCol});
-      if(ws[totalPct]) ws[totalPct].z='0.0000%';
-      if(ws[totalTl]) ws[totalTl].z='₺#,##0.00;[Red]-₺#,##0.00';
-      if(ws[totalBak]) ws[totalBak].z='₺#,##0.00';
+
+      orkaApplyExcelStyleV56(ws,totalPct,{
+        font:baseFont,border:orkaExcelBorderV56(),numFmt:'0.0000%'
+      });
+      orkaApplyExcelStyleV56(ws,totalTl,{
+        font:baseFont,border:orkaExcelBorderV56(),numFmt:'₺#,##0.00;[Red]-₺#,##0.00'
+      });
+      orkaApplyExcelStyleV56(ws,totalBak,{
+        font:baseFont,border:orkaExcelBorderV56(),numFmt:'₺#,##0.00'
+      });
     }
 
-    ws['!autofilter']={ref:'A2:'+XLSXlib.utils.encode_col(lastCol)+'2'};
+    ws['!autofilter']={ref:'A2:'+XLSXlib.utils.encode_col(lastCol)+lastRow};
+
     var wb=XLSXlib.utils.book_new();
     var sheetName=(monthDisplay(aktifAy)+' '+data.year).slice(0,31);
     XLSXlib.utils.book_append_sheet(wb,ws,sheetName);
     wb.Props={Title:'ORKA Günlük Fon Detayı',Subject:'Portföy günlük getiri ve bakiye dökümü',Author:'ORKA'};
 
     var fileName='ORKA_Gunluk_Fon_Detayi_'+data.year+'-'+String(data.month).padStart(2,'0')+'.xlsx';
-    XLSXlib.writeFile(wb,fileName,{compression:true});
+    XLSXlib.writeFile(wb,fileName,{compression:true,cellStyles:true});
     toast('Excel indirildi: '+fileName,'ok');
   }catch(e){
-    console.error('ORKA V54 Excel export error',e);
+    console.error('ORKA V56 Excel export error',e);
     toast('Excel oluşturulamadı: '+(e&&e.message?e.message:e),'err');
   }
 }
